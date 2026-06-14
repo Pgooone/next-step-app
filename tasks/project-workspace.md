@@ -2,21 +2,21 @@
 
 模块目标：项目注册表 + 选择器 + 起会话绑 cwd + 环境自检。
 规格：`../../next-step/docs/05-features-功能清单.md` §5.1；路线图 `docs/06` Iter A。
-状态：🔄 进行中（A1）
+状态：🔄 进行中（A1 ✅ 已完成，下一张 A2）
 
 ---
 
-## A1 · 项目注册表与 API — 🔄 进行中
+## A1 · 项目注册表与 API — ✅ 已完成（commit d0b002a）
 - 依赖：无
-- 涉及：`lib/domain/project-registry.ts`、`app/api/projects/**`
+- 涉及：`lib/domain/project-registry.ts`、`lib/api/errors.ts`、`app/api/projects/**`
 - 完成定义：`projects.json` 读写 + CRUD 路由
-- 验证：5.1 AC（新建/切换）
+- 验证：5.1 AC（新建/切换）；`npm run test` 9/9 PASS、`npm run lint` clean
 - 子步骤：
-  - [ ] `ProjectRegistry`：`~/.pi/projects.json` 的 list/create/get/update/remove（纯 TS，可单测）
-  - [ ] 单元测试覆盖 CRUD 与边界（重复名、缺失文件、非法 root）
-  - [ ] `app/api/projects/route.ts`：GET 列表 / POST 新建
-  - [ ] `app/api/projects/[id]/route.ts`：GET / PATCH / DELETE（删除仅移注册项）
-  - [ ] 自检：`npm run lint && npm run test` 通过，按 5.1 AC 逐条核对
+  - [x] `ProjectRegistry`：`~/.pi/projects.json` 的 list/create/get/update/remove（纯 TS，可单测）
+  - [x] 单元测试覆盖 CRUD 与边界（重复名、缺失文件、非法 root、损坏 json）
+  - [x] `app/api/projects/route.ts`：GET 列表 / POST 新建
+  - [x] `app/api/projects/[id]/route.ts`：GET / PATCH / DELETE（删除仅移注册项）
+  - [x] 自检：`npm run lint && npm run test` 通过
 
 ## A2 · 项目选择器 UI + 起会话绑 cwd — ⬜ 未开始
 - 依赖：A1
