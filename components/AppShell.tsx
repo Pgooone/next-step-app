@@ -9,9 +9,14 @@ import { FileViewer } from "./FileViewer";
 import { TabBar, type Tab } from "./TabBar";
 import { ModelsConfig } from "./ModelsConfig";
 import { SkillsConfig } from "./SkillsConfig";
+import { AgentManager } from "./AgentManager";
 import { BranchNavigator } from "./BranchNavigator";
 import { useTheme } from "@/hooks/useTheme";
-import { useProjectStore, selectCurrentRoot } from "@/lib/stores/useProjectStore";
+import {
+  useProjectStore,
+  selectCurrentRoot,
+  selectCurrentProjectId,
+} from "@/lib/stores/useProjectStore";
 import type { SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { ChatInputHandle } from "./ChatInput";
 
@@ -20,6 +25,7 @@ export function AppShell() {
   const searchParams = useSearchParams();
   const { isDark, toggleTheme } = useTheme();
   const currentRoot = useProjectStore(selectCurrentRoot);
+  const currentProjectId = useProjectStore(selectCurrentProjectId);
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
   // When user clicks +, we only store the cwd — no fake session id
   const [newSessionCwd, setNewSessionCwd] = useState<string | null>(null);
@@ -29,6 +35,7 @@ export function AppShell() {
   const [modelsConfigOpen, setModelsConfigOpen] = useState(false);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
   const [skillsConfigOpen, setSkillsConfigOpen] = useState(false);
+  const [agentManagerOpen, setAgentManagerOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
@@ -43,6 +50,8 @@ export function AppShell() {
       .catch(() => setCredentialsOk(null));
   }, []);
   useEffect(() => { refreshHealth(); }, [refreshHealth]);
+  // 挂载后从 localStorage 恢复当前项目（store 初始为 null 以避免 SSR hydration mismatch）
+  useEffect(() => { useProjectStore.getState().hydrate(); }, []);
 
   // Branch navigator state — populated by ChatWindow via onBranchDataChange
   const [branchTree, setBranchTree] = useState<SessionTreeNode[]>([]);
@@ -290,9 +299,23 @@ export function AppShell() {
               </svg>
             ),
           },
+          {
+            label: "Agents",
+            onClick: () => setAgentManagerOpen(true),
+            disabled: !currentProjectId,
+            icon: (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+            ),
+          },
         ] as { label: string; onClick: () => void; disabled: boolean; icon: React.ReactNode }[]).map(({ label, onClick, disabled, icon }) => (
           <button
             key={label}
+            data-testid={`open-${label.toLowerCase()}-btn`}
             onClick={onClick}
             disabled={disabled}
             title={label}
@@ -753,6 +776,13 @@ export function AppShell() {
     {modelsConfigOpen && <ModelsConfig onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((k) => k + 1); refreshHealth(); }} />}
     {skillsConfigOpen && (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) && (
       <SkillsConfig cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd)!} onClose={() => setSkillsConfigOpen(false)} />
+    )}
+    {agentManagerOpen && currentProjectId && (
+      <AgentManager
+        projectId={currentProjectId}
+        projectRoot={currentRoot}
+        onClose={() => setAgentManagerOpen(false)}
+      />
     )}
     </>
   );

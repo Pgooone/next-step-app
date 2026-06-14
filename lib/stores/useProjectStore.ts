@@ -33,6 +33,12 @@ export function resolveCurrentProject(
 interface ProjectState {
   projects: Project[];
   currentProjectId: string | null;
+  /**
+   * 从 localStorage 恢复 currentProjectId（client-only，挂载后调一次）。
+   * 初始 state 故意不读 localStorage，使 SSR 与客户端首屏一致（都 null），
+   * 避免 hydration mismatch；恢复推迟到挂载后由此 action 完成。
+   */
+  hydrate: () => void;
   /** 拉取项目列表；若持久化的 currentProjectId 在新列表中已不存在则回退无选中。 */
   refresh: () => Promise<void>;
   /** 选中 / 取消选中（null）项目，并持久化。 */
@@ -45,7 +51,10 @@ interface ProjectState {
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
-  currentProjectId: loadPersistedId(),
+  // 初始为 null（不在创建期读 localStorage），SSR/client 首屏一致；挂载后 hydrate() 恢复
+  currentProjectId: null,
+
+  hydrate: () => set({ currentProjectId: loadPersistedId() }),
 
   refresh: async () => {
     const res = await fetch("/api/projects");
@@ -94,6 +103,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 /** 派生：当前选中的项目对象（无则 null）。 */
 export const selectCurrentProject = (s: ProjectState): Project | null =>
   resolveCurrentProject(s.projects, s.currentProjectId);
+
+/** 派生：当前选中项目的 id（无则 null）。 */
+export const selectCurrentProjectId = (s: ProjectState): string | null => s.currentProjectId;
 
 /** 派生：当前项目的 root（= cwd）；无选中则 null。 */
 export const selectCurrentRoot = (s: ProjectState): string | null =>

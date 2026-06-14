@@ -1,0 +1,793 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
+import type { AgentProfile } from "@/lib/domain/agent-profile-store";
+import {
+  CODING_TOOL_NAMES,
+  joinModel,
+  splitModel,
+  toggleTool,
+  useAgentStore,
+} from "@/lib/stores/useAgentStore";
+
+interface Props {
+  projectId: string;
+  /** 项目根目录（= cwd），用于拉技能列表；无则技能多选禁用。 */
+  projectRoot: string | null;
+  onClose: () => void;
+}
+
+type ModelOption = { id: string; name: string; provider: string };
+type SkillOption = { name: string; description?: string };
+
+const THINKING_OPTIONS: { value: "off" | "low" | "medium" | "high"; label: string }[] = [
+  { value: "off", label: "关闭" },
+  { value: "low", label: "低" },
+  { value: "medium", label: "中" },
+  { value: "high", label: "高" },
+];
+
+/** 表单可编辑字段（与 AgentProfileInput 对齐；model 以 provider/modelId 单 string 存）。 */
+type FormState = {
+  name: string;
+  role: string;
+  model: string;
+  skills: string[];
+  tools: string[];
+  thinkingLevel: "off" | "low" | "medium" | "high";
+};
+
+const EMPTY_FORM: FormState = {
+  name: "",
+  role: "",
+  model: "",
+  skills: [],
+  tools: [],
+  thinkingLevel: "off",
+};
+
+function fromProfile(p: AgentProfile): FormState {
+  return {
+    name: p.name,
+    role: p.role,
+    model: p.model,
+    skills: p.skills,
+    tools: p.tools,
+    thinkingLevel: p.thinkingLevel,
+  };
+}
+
+export function AgentManager({ projectId, projectRoot, onClose }: Props) {
+  const { agents, loadedProjectId, refresh, create, update, remove } = useAgentStore(
+    useShallow((s) => ({
+      agents: s.agents,
+      loadedProjectId: s.loadedProjectId,
+      refresh: s.refresh,
+      create: s.create,
+      update: s.update,
+      remove: s.remove,
+    })),
+  );
+  // loadedProjectId 不匹配时（切项目瞬间）视为空，避免串显
+  const visibleAgents = loadedProjectId === projectId ? agents : [];
+
+  // 选项源
+  const [models, setModels] = useState<ModelOption[]>([]);
+  const [skills, setSkills] = useState<SkillOption[]>([]);
+
+  // 视图：列表 | 编辑表单（editingId=null 为新建）
+  const [editing, setEditing] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // 待确认删除的档案 id（内联确认条）
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+
+  useEffect(() => {
+    refresh(projectId).catch(() => {});
+  }, [projectId, refresh]);
+
+  // 模型列表
+  useEffect(() => {
+    fetch("/api/models")
+      .then((r) => r.json())
+      .then((d: { modelList?: ModelOption[] }) => setModels(d.modelList ?? []))
+      .catch(() => {});
+  }, []);
+
+  // 技能列表（依赖 projectRoot；无则不拉、多选禁用）
+  useEffect(() => {
+    if (!projectRoot) {
+      setSkills([]);
+      return;
+    }
+    fetch(`/api/skills?cwd=${encodeURIComponent(projectRoot)}`)
+      .then((r) => r.json())
+      .then((d: { skills?: SkillOption[] }) => setSkills(d.skills ?? []))
+      .catch(() => {});
+  }, [projectRoot]);
+
+  const openCreate = useCallback(() => {
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+    setFormError(null);
+    setEditing(true);
+  }, []);
+
+  const openEdit = useCallback((p: AgentProfile) => {
+    setEditingId(p.id);
+    setForm(fromProfile(p));
+    setFormError(null);
+    setEditing(true);
+  }, []);
+
+  const closeForm = useCallback(() => {
+    setEditing(false);
+    setEditingId(null);
+    setFormError(null);
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    if (saving) return;
+    const name = form.name.trim();
+    if (!name) {
+      setFormError("name 不能为空");
+      return;
+    }
+    setSaving(true);
+    setFormError(null);
+    const payload = {
+      name,
+      role: form.role,
+      model: form.model,
+      skills: form.skills,
+      tools: form.tools,
+      thinkingLevel: form.thinkingLevel,
+    };
+    try {
+      if (editingId === null) await create(projectId, payload);
+      else await update(projectId, editingId, payload);
+      closeForm();
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }, [saving, form, editingId, create, update, projectId, closeForm]);
+
+  const handleRemoveConfirm = useCallback(
+    async (id: string) => {
+      setConfirmId(null);
+      try {
+        await remove(projectId, id);
+      } catch {
+        // 删除失败保持原状（后端 404 已被 store 视为成功）
+      }
+    },
+    [remove, projectId],
+  );
+
+  // model 单 string → 下拉选中值（拼回 provider/modelId）
+  const selectedModelValue = useMemo(() => {
+    const parsed = splitModel(form.model);
+    return parsed ? joinModel(parsed.provider, parsed.modelId) : "";
+  }, [form.model]);
+
+  return (
+    <div
+      data-testid="agent-manager"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1000,
+        background: "rgba(0,0,0,0.35)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        style={{
+          width: "min(560px, 92vw)",
+          maxHeight: "86vh",
+          display: "flex",
+          flexDirection: "column",
+          background: "var(--bg)",
+          border: "1px solid var(--border)",
+          borderRadius: 12,
+          boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
+          overflow: "hidden",
+        }}
+      >
+        {/* 头部 */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "14px 16px",
+            borderBottom: "1px solid var(--border)",
+          }}
+        >
+          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
+            {editing ? (editingId === null ? "新建 Agent" : "编辑 Agent") : "Agent 管理"}
+          </div>
+          <button
+            onClick={onClose}
+            title="关闭"
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+              fontSize: 20,
+              lineHeight: 1,
+              padding: "2px 6px",
+            }}
+          >
+            ×
+          </button>
+        </div>
+
+        {/* 主体 */}
+        <div style={{ padding: 16, overflowY: "auto" }}>
+          {editing ? (
+            <AgentForm
+              form={form}
+              setForm={setForm}
+              models={models}
+              skills={skills}
+              skillsDisabled={!projectRoot}
+              selectedModelValue={selectedModelValue}
+              error={formError}
+              saving={saving}
+              onSave={handleSave}
+              onCancel={closeForm}
+            />
+          ) : (
+            <AgentList
+              agents={visibleAgents}
+              confirmId={confirmId}
+              onCreate={openCreate}
+              onEdit={openEdit}
+              onAskDelete={setConfirmId}
+              onCancelDelete={() => setConfirmId(null)}
+              onConfirmDelete={handleRemoveConfirm}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── 列表区 ───────────────────────────────────────────────── */
+
+function AgentList({
+  agents,
+  confirmId,
+  onCreate,
+  onEdit,
+  onAskDelete,
+  onCancelDelete,
+  onConfirmDelete,
+}: {
+  agents: AgentProfile[];
+  confirmId: string | null;
+  onCreate: () => void;
+  onEdit: (p: AgentProfile) => void;
+  onAskDelete: (id: string) => void;
+  onCancelDelete: () => void;
+  onConfirmDelete: (id: string) => void;
+}) {
+  return (
+    <div>
+      <button
+        data-testid="agent-new-btn"
+        onClick={onCreate}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          width: "100%",
+          justifyContent: "center",
+          padding: "9px 0",
+          marginBottom: 12,
+          background: "var(--accent)",
+          border: "none",
+          borderRadius: 8,
+          color: "#fff",
+          fontSize: 13,
+          fontWeight: 600,
+          cursor: "pointer",
+        }}
+      >
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 10 10"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        >
+          <line x1="5" y1="1" x2="5" y2="9" />
+          <line x1="1" y1="5" x2="9" y2="5" />
+        </svg>
+        新建 Agent
+      </button>
+
+      {agents.length === 0 ? (
+        <div
+          style={{
+            padding: "28px 12px",
+            textAlign: "center",
+            fontSize: 12,
+            color: "var(--text-muted)",
+          }}
+        >
+          暂无 Agent，点上方「新建 Agent」创建一个。
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {agents.map((p) => (
+            <div
+              key={p.id}
+              data-testid="agent-item"
+              data-agent-name={p.name}
+              style={{
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                background:
+                  confirmId === p.id ? "rgba(239,68,68,0.06)" : "var(--bg-hover)",
+                overflow: "hidden",
+              }}
+            >
+              {confirmId === p.id ? (
+                /* 内联删除确认条：强调删除整个 .pi/agents/<id>/ 目录（D-31/D-19） */
+                <div style={{ padding: "10px 12px" }}>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text)",
+                      lineHeight: 1.5,
+                      marginBottom: 8,
+                    }}
+                  >
+                    删除 <span style={{ fontWeight: 600 }}>{p.name}</span>？
+                    <span style={{ color: "var(--text-dim)" }}>
+                      {" "}
+                      将删除整个 <code>.pi/agents/{p.id}/</code> 目录（含 agent.md / memory.md），
+                      不可恢复。
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button
+                      data-testid="agent-delete-confirm"
+                      onClick={() => onConfirmDelete(p.id)}
+                      style={{
+                        flex: 1,
+                        padding: "5px 0",
+                        background: "#ef4444",
+                        border: "none",
+                        borderRadius: 6,
+                        color: "#fff",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                    >
+                      确认删除
+                    </button>
+                    <button
+                      onClick={onCancelDelete}
+                      style={{
+                        flex: 1,
+                        padding: "5px 0",
+                        background: "var(--bg)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 6,
+                        color: "var(--text-muted)",
+                        fontSize: 12,
+                        cursor: "pointer",
+                      }}
+                    >
+                      取消
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "10px 12px",
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 500,
+                        color: "var(--text)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {p.name}
+                    </div>
+                    {p.role && (
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "var(--text-dim)",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          marginTop: 2,
+                        }}
+                      >
+                        {p.role}
+                      </div>
+                    )}
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        flexWrap: "wrap",
+                        marginTop: 4,
+                        fontSize: 10,
+                        color: "var(--text-muted)",
+                      }}
+                    >
+                      <span title="模型">{p.model || "默认模型"}</span>
+                      <span>·</span>
+                      <span title="技能数">技能 {p.skills.length}</span>
+                      <span>·</span>
+                      <span title="工具数">工具 {p.tools.length}</span>
+                      <span>·</span>
+                      <span title="思考强度">
+                        思考 {THINKING_OPTIONS.find((t) => t.value === p.thinkingLevel)?.label}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    data-testid="agent-edit-btn"
+                    onClick={() => onEdit(p)}
+                    style={{
+                      padding: "4px 10px",
+                      background: "var(--bg)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 6,
+                      color: "var(--text-muted)",
+                      fontSize: 11,
+                      cursor: "pointer",
+                      flexShrink: 0,
+                    }}
+                  >
+                    编辑
+                  </button>
+                  <button
+                    data-testid="agent-delete-btn"
+                    onClick={() => onAskDelete(p.id)}
+                    title="删除 Agent"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 28,
+                      height: 28,
+                      padding: 0,
+                      background: "none",
+                      border: "none",
+                      color: "var(--text-dim)",
+                      cursor: "pointer",
+                      borderRadius: 6,
+                      flexShrink: 0,
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = "#ef4444";
+                      e.currentTarget.style.background = "rgba(239,68,68,0.08)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = "var(--text-dim)";
+                      e.currentTarget.style.background = "none";
+                    }}
+                  >
+                    <svg
+                      width="13"
+                      height="13"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                      <path d="M10 11v6M14 11v6" />
+                      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── 表单区 ───────────────────────────────────────────────── */
+
+const labelStyle: React.CSSProperties = {
+  display: "block",
+  fontSize: 11,
+  fontWeight: 600,
+  color: "var(--text-muted)",
+  marginBottom: 5,
+};
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  fontSize: 12,
+  padding: "7px 9px",
+  border: "1px solid var(--border)",
+  borderRadius: 6,
+  outline: "none",
+  background: "var(--bg)",
+  color: "var(--text)",
+  boxSizing: "border-box",
+};
+
+function AgentForm({
+  form,
+  setForm,
+  models,
+  skills,
+  skillsDisabled,
+  selectedModelValue,
+  error,
+  saving,
+  onSave,
+  onCancel,
+}: {
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  models: ModelOption[];
+  skills: SkillOption[];
+  skillsDisabled: boolean;
+  selectedModelValue: string;
+  error: string | null;
+  saving: boolean;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  const toggleSkill = (name: string) => {
+    setForm((f) => {
+      const set = new Set(f.skills);
+      if (set.has(name)) set.delete(name);
+      else set.add(name);
+      return { ...f, skills: [...set] };
+    });
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* name（必填） */}
+      <div>
+        <label style={labelStyle}>
+          名称 <span style={{ color: "#ef4444" }}>*</span>
+        </label>
+        <input
+          data-testid="agent-form-name"
+          value={form.name}
+          onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+          placeholder="例如：方案设计员"
+          style={inputStyle}
+        />
+      </div>
+
+      {/* role（多行） */}
+      <div>
+        <label style={labelStyle}>角色描述</label>
+        <textarea
+          data-testid="agent-form-role"
+          value={form.role}
+          onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
+          placeholder="这个 Agent 的职责与风格…"
+          rows={3}
+          style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }}
+        />
+      </div>
+
+      {/* model（下拉，允许留空） */}
+      <div>
+        <label style={labelStyle}>模型</label>
+        <select
+          data-testid="agent-form-model"
+          value={selectedModelValue}
+          onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))}
+          style={{ ...inputStyle, cursor: "pointer" }}
+        >
+          <option value="">（默认模型）</option>
+          {models.map((m) => {
+            const value = `${m.provider}/${m.id}`;
+            return (
+              <option key={value} value={value}>
+                {m.name} · {m.provider}
+              </option>
+            );
+          })}
+        </select>
+      </div>
+
+      {/* skills（多选） */}
+      <div>
+        <label style={labelStyle}>技能</label>
+        {skillsDisabled ? (
+          <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
+            当前项目无可用根目录，无法加载技能列表。
+          </div>
+        ) : skills.length === 0 ? (
+          <div style={{ fontSize: 11, color: "var(--text-dim)" }}>该项目暂无可选技能。</div>
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 6,
+              maxHeight: 140,
+              overflowY: "auto",
+            }}
+          >
+            {skills.map((s) => {
+              const on = form.skills.includes(s.name);
+              return (
+                <button
+                  key={s.name}
+                  data-testid="agent-form-skill"
+                  data-skill-name={s.name}
+                  data-selected={on}
+                  onClick={() => toggleSkill(s.name)}
+                  title={s.description}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 14,
+                    border: on ? "1px solid var(--accent)" : "1px solid var(--border)",
+                    background: on ? "rgba(37,99,235,0.10)" : "var(--bg)",
+                    color: on ? "var(--accent)" : "var(--text-muted)",
+                    fontSize: 11,
+                    cursor: "pointer",
+                  }}
+                >
+                  {s.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* tools（内置编码工具固定集勾选） */}
+      <div>
+        <label style={labelStyle}>工具（内置编码工具）</label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {CODING_TOOL_NAMES.map((t) => {
+            const on = form.tools.includes(t);
+            return (
+              <button
+                key={t}
+                data-testid="agent-form-tool"
+                data-tool-name={t}
+                data-selected={on}
+                onClick={() => setForm((f) => ({ ...f, tools: toggleTool(f.tools, t) }))}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 6,
+                  border: on ? "1px solid var(--accent)" : "1px solid var(--border)",
+                  background: on ? "rgba(37,99,235,0.10)" : "var(--bg)",
+                  color: on ? "var(--accent)" : "var(--text-muted)",
+                  fontSize: 11,
+                  fontFamily: "var(--font-mono)",
+                  cursor: "pointer",
+                }}
+              >
+                {t}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* thinkingLevel（单选） */}
+      <div>
+        <label style={labelStyle}>思考强度</label>
+        <div style={{ display: "flex", gap: 6 }}>
+          {THINKING_OPTIONS.map((opt) => {
+            const on = form.thinkingLevel === opt.value;
+            return (
+              <button
+                key={opt.value}
+                data-testid="agent-form-thinking"
+                data-thinking={opt.value}
+                data-selected={on}
+                onClick={() => setForm((f) => ({ ...f, thinkingLevel: opt.value }))}
+                style={{
+                  flex: 1,
+                  padding: "6px 0",
+                  borderRadius: 6,
+                  border: on ? "1px solid var(--accent)" : "1px solid var(--border)",
+                  background: on ? "rgba(37,99,235,0.10)" : "var(--bg)",
+                  color: on ? "var(--accent)" : "var(--text-muted)",
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 错误（含后端 422） */}
+      {error && (
+        <div
+          data-testid="agent-form-error"
+          style={{ color: "#dc2626", fontSize: 12, lineHeight: 1.4, overflowWrap: "anywhere" }}
+        >
+          {error}
+        </div>
+      )}
+
+      {/* 操作 */}
+      <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
+        <button
+          data-testid="agent-save-btn"
+          onClick={onSave}
+          disabled={saving || !form.name.trim()}
+          style={{
+            flex: 1,
+            padding: "8px 0",
+            background: "var(--accent)",
+            border: "none",
+            borderRadius: 7,
+            color: "#fff",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: saving || !form.name.trim() ? "not-allowed" : "pointer",
+            opacity: saving || !form.name.trim() ? 0.65 : 1,
+          }}
+        >
+          {saving ? "保存中…" : "保存"}
+        </button>
+        <button
+          onClick={onCancel}
+          style={{
+            flex: 1,
+            padding: "8px 0",
+            background: "var(--bg-hover)",
+            border: "1px solid var(--border)",
+            borderRadius: 7,
+            color: "var(--text-muted)",
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          取消
+        </button>
+      </div>
+    </div>
+  );
+}

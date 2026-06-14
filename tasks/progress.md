@@ -45,4 +45,8 @@ C → D        （D 依赖 A 与 C）
   `appendSystemPromptOverride` 注入 agent.md+memory（记忆只读、实测扛 rebuild）、`skillsOverride` 过滤技能、
   model 单串解析+降级、thinkingLevel 直传；`assembleProfileSessionOptions` + `applyProfileRuntime` 两函数，
   createAgentSession 留给调用方（D-24~D-28）。
-- 🔄 下一张：B3 Agent 管理 UI（增删改档案可视化）。
+- ✅ B3 Agent 管理 UI（纯 CRUD，test 66/66）：`AgentManager.tsx`（模态：列表/新建/编辑/内联删除确认）+ `useAgentStore`；
+  表单 model 下拉(/api/models)、skills 多选(/api/skills)、tools 勾选内置集、删除文案强调删整个目录（D-30/31）。
+  **真浏览器 E2E 验收**（Playwright + 缓存 chromium）：建→改→删全程跑通、三件套真落盘、删除真清目录、中文正常。
+  E2E 发现并修复 SSR hydration 真 bug（useProjectStore 以 localStorage 作初始 state → Agents 按钮刷新后卡死禁用；改 init null + 挂载后 hydrate）。决策 D-29~D-33。
+- 🔄 下一张：B4 按档案起会话接线（wiring：新会话端点 + 起会话入口；首步 spike E1 rpc-manager 注册）。之后 Iter C / Iter D。

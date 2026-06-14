@@ -50,6 +50,25 @@ describe("纯逻辑：localStorage 持久化", () => {
   });
 });
 
+describe("hydrate：避免 SSR 不一致，挂载后才恢复持久化项目", () => {
+  it("即使已有持久化值，初始 currentProjectId 仍为 null；hydrate 后才恢复", () => {
+    // 模拟「持久化里有项目、但尚未 hydrate」：首屏须为 null（与 SSR 一致）
+    persistId("a");
+    useProjectStore.setState({ currentProjectId: null });
+    expect(useProjectStore.getState().currentProjectId).toBeNull();
+
+    useProjectStore.getState().hydrate();
+    expect(useProjectStore.getState().currentProjectId).toBe("a");
+  });
+
+  it("持久化为空时 hydrate 保持 null", () => {
+    persistId(null);
+    useProjectStore.setState({ currentProjectId: null });
+    useProjectStore.getState().hydrate();
+    expect(useProjectStore.getState().currentProjectId).toBeNull();
+  });
+});
+
 describe("纯逻辑：按 id 解析当前项目 + 回退", () => {
   const projects = [makeProject("a"), makeProject("b")];
 

@@ -9,7 +9,10 @@
 ## 关键模块
 - `useProjectStore.ts` — 当前项目 + 项目列表 + 动作（refresh / select / create / remove）；
   `currentProjectId` 持久化到 localStorage；导出纯函数（持久化/解析）与 selector 便于单测。
-- （后续）`useAgentStore` / `useDispatchStore` / `useArtifactStore`
+- `useAgentStore.ts` — 当前项目下 Agent 档案的 CRUD（refresh / create / update / remove），
+  带 `loadedProjectId` 维度（切项目重拉、不跨项目缓存脏数据）；导出 model 拆/拼、tools
+  集合等纯函数与 `selectAgentsForProject` selector 便于单测。
+- （后续）`useDispatchStore` / `useArtifactStore`
 
 ## 约定 / 红线
 - 命名 `useXxxStore`，单一职责。
