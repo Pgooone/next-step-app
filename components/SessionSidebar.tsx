@@ -17,6 +17,7 @@ interface Props {
   onOpenFile?: (filePath: string, fileName: string) => void;
   explorerRefreshKey?: number;
   onAtMention?: (relativePath: string) => void;
+  headerSlot?: React.ReactNode;
 }
 
 function formatRelativeTime(dateStr: string): string {
@@ -196,7 +197,7 @@ function PiAgentTitle() {
   );
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, explorerRefreshKey, onAtMention }: Props) {
+export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, explorerRefreshKey, onAtMention, headerSlot }: Props) {
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -449,6 +450,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             </button>
           </div>
         </div>
+
+        {headerSlot}
 
         {/* CWD picker */}
         <div ref={dropdownRef} style={{ position: "relative" }}>

@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { SessionSidebar } from "./SessionSidebar";
+import { ProjectSwitcher } from "./ProjectSwitcher";
 import { ChatWindow } from "./ChatWindow";
 import { FileViewer } from "./FileViewer";
 import { TabBar, type Tab } from "./TabBar";
@@ -10,6 +11,7 @@ import { ModelsConfig } from "./ModelsConfig";
 import { SkillsConfig } from "./SkillsConfig";
 import { BranchNavigator } from "./BranchNavigator";
 import { useTheme } from "@/hooks/useTheme";
+import { useProjectStore, selectCurrentRoot } from "@/lib/stores/useProjectStore";
 import type { SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { ChatInputHandle } from "./ChatInput";
 
@@ -17,6 +19,7 @@ export function AppShell() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isDark, toggleTheme } = useTheme();
+  const currentRoot = useProjectStore(selectCurrentRoot);
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
   // When user clicks +, we only store the cwd — no fake session id
   const [newSessionCwd, setNewSessionCwd] = useState<string | null>(null);
@@ -241,11 +244,12 @@ export function AppShell() {
         onInitialRestoreDone={handleInitialRestoreDone}
         refreshKey={refreshKey}
         onSessionDeleted={handleSessionDeleted}
-        selectedCwd={selectedSession?.cwd ?? newSessionCwd ?? null}
+        selectedCwd={selectedSession?.cwd ?? newSessionCwd ?? currentRoot ?? null}
         onCwdChange={handleCwdChange}
         onOpenFile={handleOpenFile}
         explorerRefreshKey={explorerRefreshKey}
         onAtMention={handleAtMention}
+        headerSlot={<ProjectSwitcher onProjectSelected={handleCwdChange} />}
       />
       <div style={{ padding: "8px", flexShrink: 0, display: "flex", justifyContent: "space-between", gap: 4 }}>
         {([
