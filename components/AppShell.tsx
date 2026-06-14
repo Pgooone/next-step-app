@@ -33,6 +33,17 @@ export function AppShell() {
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
 
+  // Environment health — drives the "missing model credentials" banner
+  const [credentialsOk, setCredentialsOk] = useState<boolean | null>(null);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const refreshHealth = useCallback(() => {
+    fetch("/api/health")
+      .then((r) => r.json())
+      .then((d) => setCredentialsOk(d.credentials.ok))
+      .catch(() => setCredentialsOk(null));
+  }, []);
+  useEffect(() => { refreshHealth(); }, [refreshHealth]);
+
   // Branch navigator state — populated by ChatWindow via onBranchDataChange
   const [branchTree, setBranchTree] = useState<SessionTreeNode[]>([]);
   const [branchActiveLeafId, setBranchActiveLeafId] = useState<string | null>(null);
@@ -611,6 +622,40 @@ export function AppShell() {
 
         </div>
 
+        {/* Missing-credentials banner — dismissible, opens ModelsConfig */}
+        {credentialsOk === false && !bannerDismissed && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 10,
+            flexShrink: 0, padding: "8px 12px",
+            borderBottom: "1px solid var(--border)",
+            background: "rgba(234,179,8,0.12)",
+            color: "var(--text)", fontSize: 12,
+          }}>
+            <span>⚠ 未配置模型凭证</span>
+            <button
+              onClick={() => setModelsConfigOpen(true)}
+              style={{
+                padding: "3px 10px", background: "var(--accent)", border: "none",
+                borderRadius: 6, color: "#fff", cursor: "pointer", fontSize: 12,
+              }}
+            >
+              去配置
+            </button>
+            <button
+              onClick={() => setBannerDismissed(true)}
+              title="关闭"
+              aria-label="关闭"
+              style={{
+                marginLeft: "auto", background: "none", border: "none",
+                color: "var(--text-muted)", cursor: "pointer", fontSize: 16, lineHeight: 1,
+                padding: "0 4px",
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* Chat content */}
         <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
           {showChat ? (
@@ -705,7 +750,7 @@ export function AppShell() {
         <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="15" y1="3" x2="15" y2="21" />
       </svg>
     </button>
-    {modelsConfigOpen && <ModelsConfig onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((k) => k + 1); }} />}
+    {modelsConfigOpen && <ModelsConfig onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((k) => k + 1); refreshHealth(); }} />}
     {skillsConfigOpen && (activeCwd ?? selectedSession?.cwd ?? newSessionCwd) && (
       <SkillsConfig cwd={(activeCwd ?? selectedSession?.cwd ?? newSessionCwd)!} onClose={() => setSkillsConfigOpen(false)} />
     )}

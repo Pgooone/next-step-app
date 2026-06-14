@@ -16,7 +16,12 @@
     "next.config.ts",
     "package.json"
   ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
+    "doctor": "tsx scripts/doctor.ts",
+    "predev": "tsx scripts/doctor.ts",
     "dev": "next dev -p 30141",
     "build": "next build --webpack",
     "start": "next start -p 30141",
@@ -51,6 +56,7 @@
     "eslint-config-next": "16.2.1",
     "postcss": "^8",
     "tailwindcss": "^4.2.2",
+    "tsx": "^4.22.4",
     "typescript": "^5",
     "vitest": "^3.0.0"
   }
