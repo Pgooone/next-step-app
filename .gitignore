@@ -1,0 +1,29 @@
+# 依赖
+node_modules/
+.pnp
+.pnp.js
+
+# 构建产物
+dist/
+build/
+.next/
+out/
+
+# 环境与密钥
+.env
+.env.*
+!.env.example
+
+# 日志与缓存
+*.log
+npm-debug.log*
+.cache/
+.tsbuildinfo
+*.tsbuildinfo
+
+# spike 运行期产生的临时文件
+spike/**/.scratch/
+spike/**/_tmp/
+
+# 系统
+.DS_Store

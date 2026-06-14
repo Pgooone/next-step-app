@@ -1,0 +1,19 @@
+{
+  "name": "d2-intercept-spike",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "验证：能否在不 fork pi 内核下拦截 edit/write 的写盘",
+  "scripts": {
+    "spike": "tsx harness.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "^0.79.0",
+    "@earendil-works/pi-coding-agent": "^0.79.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
