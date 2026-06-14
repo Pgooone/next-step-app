@@ -30,12 +30,15 @@ npm run lint
 - `lib/domain/`：领域逻辑（project-registry；后续 agent-profile / orchestrator / artifact）
 - `lib/stores/`：Zustand 状态（useProjectStore；后续 agent / dispatch / artifact）
 - `lib/api/`：HTTP 辅助（errors）
+- `lib/env/`：环境自检（doctor-checks，被 doctor CLI 与 /api/health 复用）
 - `lib/pi/`：（后续 D2）内核封装 / 工具拦截层
-- `app/api/`：`projects`（后续 `agents` / `dispatch` / `artifacts` / `health`）
+- `app/api/`：`projects` · `health`（后续 `agents` / `dispatch` / `artifacts`）
+- `scripts/`：`doctor` CLI（`npm run doctor` / predev）
 - `components/`：`ProjectSwitcher`（后续 `ArtifactPanel` / `PendingChangeCard` / `AgentManager` / `DispatchPanel`）
 
 **被改动过的基座文件**（带 Next-Step 触点）
-- `components/AppShell.tsx`：注入 `ProjectSwitcher`（headerSlot）+ `currentRoot` 进 selectedCwd 表达式
+- `app/layout.tsx`：metadata title/description 改为 Next-Step 品牌
+- `components/AppShell.tsx`：注入 `ProjectSwitcher`（headerSlot）+ `currentRoot` 进 selectedCwd（A2）；首屏凭证 banner + `/api/health` fetch（A3）
 - `components/SessionSidebar.tsx`：新增可选 `headerSlot` prop
 
 ## 开发约定：区 README
