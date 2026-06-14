@@ -24,6 +24,11 @@
 | D-16 | A3 | doctor 检查逻辑放哪 | A) lib/domain/　B) lib/env/ | **B**（改 planner 建议） | 环境自检非业务领域；lib/domain 只放 Project/Agent/Artifact 业务实体；lib/env 仍在 lib/** 故 vitest 可测。 | 1ced9fd |
 | D-17 | A3 | ~/.pi 可写测哪个目录 | A) ~/.pi/agent　B) ~/.pi | **B** | projects.json 固定在 ~/.pi（agentDir 的父级），测父级覆盖最全；PI_CODING_AGENT_DIR 只改 agent 子目录。 | 1ced9fd |
 | D-18 | A3 | checkDeps 怎么检测「内核可加载」 | A) `createRequire().resolve(pkg)`　B) `await import(变量)`　C) `await import("字面量")` | **C**（实现期修正，非取舍） | 内核 ESM-only、`exports` 无 `require` 条件 → A 抛 `ERR_PACKAGE_PATH_NOT_EXPORTED`；B 被 webpack 当运行时动态请求、**Next 生产构建下失效**；C 可被 webpack 静态分析，vitest/tsx/Next 三上下文全通。checkDeps 因此改 async。 | 1ced9fd |
+| D-19 | B1 | 删除 agent 是否删整个 `.pi/agents/<id>/` 目录 | A) 仅摘注册（仿 A1）　B) rmSync 整个目录 | **B** | 与 A1 刻意不同：项目 root 是用户真实代码目录、误删灾难性故只摘注册；agent 目录是 Next-Step 在 `.pi/` 下生成的内部资产，删档案=删目录才符合直觉、避免孤儿目录。 | 2c7187c |
+| D-20 | B1 | agentMdPath/memoryPath 存相对还是绝对 | A) 相对 projectRoot　B) 绝对 | **A** | 与 docs/03 注释一致；项目目录移动/改名后相对路径仍有效，绝对路径会陈旧。消费侧 `join(root,path)` 还原。 | 2c7187c |
+| D-21 | B1 | agent.json 与 .md 的分工 | A) agent.json 内联 .md 内容　B) agent.json 仅结构化元数据 + path 指向 | **B** | agent.json 为结构化真相源（list/get 扫它），.md 为正文资产、内容不内联，避免双写不同步。 | 2c7187c |
+| D-22 | B1 | create 时是否校验 model/skills/tools 存在 | A) 校验　B) MVP 不校验 | **B** | 校验 model 需调 ModelRegistry、校验 skills 需扫技能目录，B1 引入耦合不划算；更适合 B2 起会话注入时校验/降级。B1 只存白名单字符串。 | 2c7187c |
+| D-23 | B1/流程 | API 路由目录是否各带薄 README | A) 每个 API 路由组都加　B) 不加（沿用 projects 先例） | **B** | app/api/projects 本就无 README；API 路由是领域层的薄 HTTP 包装，契约在 docs/04 + 领域区 README，逐路由加 README 碎片化。区 README 约定仅针对 lib/** 等逻辑区。 | 2c7187c |
 
 > 标「待回填」的行在对应任务卡落地提交后补 commit 哈希。
 > 标「改 planner 建议」的行是 lead 否决了方案设计员的推荐——回溯时重点看这些。

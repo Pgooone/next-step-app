@@ -32,7 +32,7 @@ npm run lint
 - `lib/api/`：HTTP 辅助（errors）
 - `lib/env/`：环境自检（doctor-checks，被 doctor CLI 与 /api/health 复用）
 - `lib/pi/`：（后续 D2）内核封装 / 工具拦截层
-- `app/api/`：`projects` · `health`（后续 `agents` / `dispatch` / `artifacts`）
+- `app/api/`：`projects` · `health` · `projects/[id]/agents`（后续 `dispatch` / `artifacts`）
 - `scripts/`：`doctor` CLI（`npm run doctor` / predev）
 - `components/`：`ProjectSwitcher`（后续 `ArtifactPanel` / `PendingChangeCard` / `AgentManager` / `DispatchPanel`）
 
@@ -49,8 +49,19 @@ npm run lint
 - **每区一份，不是每文件一份**；纯 pi-web 基座目录不必逐个写。
 - 只放**稳定信息**（定位 / 归属 / 红线 / spec 指针）；**不写**数据模型、AC、行号——这些在 `../next-step/docs/`，README 只链接，避免腐烂。
 - 20–40 行封顶。
+- **`app/api/**` 各路由目录不单独加 README**（API 路由是领域层的薄 HTTP 包装，契约在 `docs/04` + 对应领域区 README）。见决策 D-23。
 - **DoD**：每张任务卡改 / 建某区代码，顺手更新该区 README。
 
 ## 进度
 
-按 `tasks/progress.md` 推进（任务卡 + 总体看板）。D2 拦截可行性验证见 `spike/d2-intercept/`。
+详见 `tasks/progress.md`（看板）+ `tasks/decisions.md`（决策表 D-01~D-23）。D2 拦截可行性见 `spike/d2-intercept/`。
+
+| 里程碑 | 状态 |
+|---|---|
+| 前置 · D2 拦截验证 | ✅ 可行（`noTools:builtin` 替换 write/edit，spike 11/11） |
+| Iter A · 项目即工作区（A1/A2/A3） | ✅ 完成 |
+| Iter B · 多 Agent 可定义（B1/B2/B3） | 🔄 B1 ✅，下一张 B2 |
+| Iter C · 多 Agent 协作（C1/C2） | ⬜ 未开始 |
+| Iter D · 产物 Diff/版本/HITL（D1–D5） | ⬜ 未开始（D2 机制已预验证） |
+
+实测：Iter A 已在真实运行的 dev server 上验证 API 链路（建/切/删项目、错误码契约、删除不删盘、`/api/health`）。本环境无浏览器/模型凭证，GUI 点击层未驱动。
