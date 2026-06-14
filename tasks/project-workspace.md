@@ -2,7 +2,7 @@
 
 模块目标：项目注册表 + 选择器 + 起会话绑 cwd + 环境自检。
 规格：`../../next-step/docs/05-features-功能清单.md` §5.1；路线图 `docs/06` Iter A。
-状态：🔄 进行中（A1 ✅ 已完成，下一张 A2）
+状态：🔄 进行中（A1 ✅ A2 ✅，下一张 A3）
 
 ---
 
@@ -18,11 +18,13 @@
   - [x] `app/api/projects/[id]/route.ts`：GET / PATCH / DELETE（删除仅移注册项）
   - [x] 自检：`npm run lint && npm run test` 通过
 
-## A2 · 项目选择器 UI + 起会话绑 cwd — ⬜ 未开始
+## A2 · 项目选择器 UI + 起会话绑 cwd — ✅ 已完成
 - 依赖：A1
-- 涉及：`components/ProjectSwitcher`、起会话调用处
+- 涉及：`components/ProjectSwitcher`、`lib/stores/useProjectStore`、AppShell/SessionSidebar（headerSlot）
 - 完成定义：切换项目后新会话 cwd 正确
-- 验证：5.1 AC（cwd / 隔离）
+- 验证：5.1 AC（cwd / 隔离）；test 20/20、lint clean、build 成功
+- 实现：选项目 → `handleCwdChange` → `selectedCwd` 叠加 `currentRoot` → `/api/agent/new` cwd；
+  删除走内联二次确认、仅移注册项不删盘；状态用 Zustand `useProjectStore`
 
 ## A3 · 环境自检（doctor + /api/health）— ⬜ 未开始（可与 A1 并行）
 - 依赖：无
