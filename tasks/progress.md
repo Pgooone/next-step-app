@@ -11,7 +11,7 @@
 | 前置 | `spike/d2-intercept/` | D2 拦截可行性验证 | ✅ 已完成（11/11 PASS） |
 | Iter A | [project-workspace.md](project-workspace.md) | 项目即工作区（A1/A2/A3） | ✅ 完成（A1 ✅ A2 ✅ A3 ✅） |
 | Iter B | [agent-profiles.md](agent-profiles.md) | 多 Agent 可定义（B1/B2/B3/B4） | ✅ 完成（B1 ✅ B2 ✅ B3 ✅ B4 ✅） |
-| Iter C | [dispatch.md](dispatch.md) | 多 Agent 协作派发（C1/C2） | ⬜ 未开始 |
+| Iter C | [dispatch.md](dispatch.md) | 多 Agent 协作派发（C1/C2） | ✅ 完成（C1 ✅ C2 ✅；真实端到端待凭证） |
 | Iter D | [artifacts-diff-hitl.md](artifacts-diff-hitl.md) | 产物 Diff/版本/HITL（D1–D5，v2） | ⬜ 未开始（D2 机制已预验证） |
 
 ## 依赖图
@@ -51,3 +51,8 @@ C → D        （D 依赖 A 与 C）
   E2E 发现并修复 SSR hydration 真 bug（useProjectStore 以 localStorage 作初始 state → Agents 按钮刷新后卡死禁用；改 init null + 挂载后 hydrate）。决策 D-29~D-33。
 - ✅ **B4 按档案起会话接线（wiring）**（test 84/84、build 11/11 页）：新端点 `POST /api/projects/[id]/agents/[agentId]/session` + `lib/pi/profile-session-wiring.ts` 组合层 + `rpc-manager.registerInnerSession`（提取注册段、绕开旧 toolNames 段，D-B4-1）；端点带首条 message 一步建会话+发首条避内核懒落盘幻影会话（D-B4-3）；`renderAgentMd` create/update 共用、update 仅 name/role 变更才重写 agent.md（D-B4-6/D-B4-8，agent.md 定为可手编资产）。**真浏览器 E2E** 实测 AC②③④ 全 PASS（live systemPrompt 含 role/memory 特征、改 role 后只注入新 role、仅改 model 保留手编）。决策 D-B4-1~8。
 - 🔄 **Iter B 完成**；下一张 Iter C（多 Agent 协作派发）或 Iter D（产物 Diff/HITL，D2 已预验）。
+- ✅ **Iter C 多 Agent 协作派发（C1+C2）完成**（agent team `ns-iter-c`：c1-impl 后端 + c2-impl 前端，lead 协调）。test 113/113、lint、build(13 页) 全绿。
+  - **C1**（`lib/domain/orchestrator.ts` + `dispatch-store.ts` + `lib/pi/dispatch-runner.ts` + `concurrency-gate.ts` + dispatch API 两端点）：`runDispatch` 串行起 worker→上游产物喂下游(AC③)→assistant 产物落 `.pi/artifacts/<dispatchId>/<seq>-<agent>.md`(D-C-1 轻量普通文件)→状态机 pending→running→done/failed 实时落盘；并发≤3 等待式闸门(AC⑤，gate 60s + worker 执行 5min 双超时)；`GET /api/dispatch/[taskId]` 跨项目扫描定位(D-C1-3)。faux 单测真实断言产物(D-C1-2：每次 prompt 前 `setResponses`)。
+  - **C2**（`components/DispatchPanel.tsx` 模态 + `lib/stores/useDispatchStore.ts` + AppShell surgical 接线 +24/-0）：发起表单(goal+选 2–3 agent+子任务)⇄汇总视图(状态徽章+产物链接复用 `handleOpenFile`)，2s 轮询。**真浏览器 E2E 全过**（开模态/发起/状态/产物链接打开/刷新不卡死 hydration）。
+  - 决策 D-C-1~3（方向）+ D-C1-1/2/3 + D-C2-1/2。
+  - ✅ **真实端到端验收通过**（D-C-2，2026-06-16 配 DeepSeek deepseek-v4-flash 凭证后）：API 链路 2 worker 串行真跑 → 产物落盘 → 上游喂下游 → 状态机 done；真浏览器 E2E 全流程可用（开模态/选 agent/填子任务/发起/状态徽章/产物链接打开/刷新不卡死 hydration）。真实跑暴露并修复中文 agentName 文件名 bug（D-C1-4，faux 测不到）。最终 test 118、lint、build(13 页) 全绿。截图 `e2e-screenshots/iterc-*.png`。

@@ -24,6 +24,19 @@
   `assembleProfileSessionOptions` → `createAgentSession` → `applyProfileRuntime` →
   `registerInnerSession` → 发首条 message，返回 `{ sessionId, diagnostics }`。逻辑放此（而非
   `app/` 的 route）以便 faux 集成测（vitest 仅覆盖 lib/**，D-B4-7）；三个依赖注入口生产省略，route 退薄壳。
+- `dispatch-runner.ts` — **C1 单 worker 会话「起 + 等回合结束 + 取产物」**。`runWorker(...)` 与 B4 的区别：
+  B4 fire-and-forget 即返回；派发需**等 worker 跑完并取回产物文本**，故自己组合那 5 步，并在
+  `registerInnerSession` 之后、`send` 之前挂 `agent_end` 监听（包成 Promise，resolve 于
+  `agent_end && willRetry===false`）。返回 `{ sessionId, output, reason }`，`reason ∈ completed|timeout|aborted`。
+  **执行超时兜底（D-C1-1）**：worker 起会话发 prompt 后若 `timeoutMs` 内无 agent_end（卡住/异常），
+  按超时结束并**主动 `send({type:"abort"})` 停掉该会话**释放并发槽；中途 abort 信号同理。超时/取消皆
+  resolve（不 reject），由 orchestrator 据 reason 写明确失败信息。`extractAssistantText(messages)` 抽末条
+  assistant 的 `type:"text"` 文本作产物。复用 B2 注入装配，不重写。
+- `concurrency-gate.ts` — **C1 全局并发闸门（AC⑤ ≤3，D-C1-1）**。`acquireSlot(...)` 起 worker 前**等待**
+  到活跃会话数 < limit 才放行（轮询，默认 60s 超时兜底防饿死，超时抛「活跃会话已达上限 N，请关闭部分
+  会话后重试」由 orchestrator 判该 worker 失败）。计数源默认 `globalThis.__piSessions.size`（含前端聊天
+  会话 + 派发 worker），可注入桩计数器便于测。TOCTOU 窗口（gate 通过→会话真正注册间的 async 间隙）在
+  串行+单用户下可接受，仅注释不引并发池。
 
 ## 约定 / 红线
 - **只封装不 fork 内核**：所有持久注入走内核原生钩子

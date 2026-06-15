@@ -12,7 +12,11 @@
 - `useAgentStore.ts` — 当前项目下 Agent 档案的 CRUD（refresh / create / update / remove），
   带 `loadedProjectId` 维度（切项目重拉、不跨项目缓存脏数据）；导出 model 拆/拼、tools
   集合等纯函数与 `selectAgentsForProject` selector 便于单测。
-- （后续）`useDispatchStore` / `useArtifactStore`
+- `useDispatchStore.ts` — 多 Agent 派发任务的数据层（dispatch / pollOnce / reset），同样带
+  `loadedProjectId` 维度（切项目不串显）；只做数据，**轮询定时器放组件**（便于 unmount 清理、
+  单一职责）；导出 `selectTaskForProject` / `selectIsActive`（终态判定）纯函数与 `DispatchTask`/
+  `Assignment` 类型（按 `docs/03` 定义，C1 后端导出共享 domain 类型后可平替）。
+- （后续）`useArtifactStore`
 
 ## 约定 / 红线
 - 命名 `useXxxStore`，单一职责。
