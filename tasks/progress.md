@@ -12,7 +12,7 @@
 | Iter A | [project-workspace.md](project-workspace.md) | 项目即工作区（A1/A2/A3） | ✅ 完成（A1 ✅ A2 ✅ A3 ✅） |
 | Iter B | [agent-profiles.md](agent-profiles.md) | 多 Agent 可定义（B1/B2/B3/B4） | ✅ 完成（B1 ✅ B2 ✅ B3 ✅ B4 ✅） |
 | Iter C | [dispatch.md](dispatch.md) | 多 Agent 协作派发（C1/C2） | ✅ 完成（C1 ✅ C2 ✅；真实端到端待凭证） |
-| Iter D | [artifacts-diff-hitl.md](artifacts-diff-hitl.md) | 产物 Diff/版本/HITL（D1–D5，v2） | ⬜ 未开始（D2 机制已预验证） |
+| Iter D | [artifacts-diff-hitl.md](artifacts-diff-hitl.md) | 产物 Diff/版本/HITL（D1–D5，v2） | 🔄 进行中（D1 ✅；D2–D5 ⬜） |
 
 ## 依赖图
 
@@ -56,3 +56,8 @@ C → D        （D 依赖 A 与 C）
   - **C2**（`components/DispatchPanel.tsx` 模态 + `lib/stores/useDispatchStore.ts` + AppShell surgical 接线 +24/-0）：发起表单(goal+选 2–3 agent+子任务)⇄汇总视图(状态徽章+产物链接复用 `handleOpenFile`)，2s 轮询。**真浏览器 E2E 全过**（开模态/发起/状态/产物链接打开/刷新不卡死 hydration）。
   - 决策 D-C-1~3（方向）+ D-C1-1/2/3 + D-C2-1/2。
   - ✅ **真实端到端验收通过**（D-C-2，2026-06-16 配 DeepSeek deepseek-v4-flash 凭证后）：API 链路 2 worker 串行真跑 → 产物落盘 → 上游喂下游 → 状态机 done；真浏览器 E2E 全流程可用（开模态/选 agent/填子任务/发起/状态徽章/产物链接打开/刷新不卡死 hydration）。真实跑暴露并修复中文 agentName 文件名 bug（D-C1-4，faux 测不到）。最终 test 118、lint、build(13 页) 全绿。截图 `e2e-screenshots/iterc-*.png`。
+- ✅ **D1 受管 artifact 读写后端完成**（agent team `ns-impl`：d1-impl 实现 + verifier 独立验收，lead 协调）。test 135、lint、build(11 页) 全绿。
+  - `lib/domain/artifact-service.ts`：受管 artifact 落 `.pi/artifacts/managed/<id>/`（`artifact.json` + `versions/<n>.json` 单版快照），与 Iter C 派发产物 `<dispatchId>/` 同根**物理隔离**(D-D1-1)；`currentVersion`(最高版号)/`version`(乐观锁)**双计数同步 +1**；`submitVersion`/`rollback` 写盘前 `assertVersionMatch`(If-Match≠当前 version→VERSION_CONFLICT/409)、新版独立文件名永不覆盖旧版(D-D1-3)；`rollback` 复制目标版成新版(不删历史)；`findArtifact` 跨项目仅扫 `managed/` 定位(契约无 projectId)。
+  - **5 路由**：`GET /api/artifacts/[id]`(+`/versions`)、`POST .../submit-version`、`POST .../rollback`、`POST /api/projects/[id]/artifacts`(创建，D-D1-5)；`lib/api/if-match.ts` 解析 If-Match，抛带 `code:"INVALID"` 普通错误**鸭子类型解耦、不依赖 domain**(D-D1-7，与 errors.ts 一致)。
+  - **17 个 service 领域单测**穷尽覆盖路由暴露语义（409/422/404、rollback 复制/双计数、原子写无残留、跨项目定位）；路由不单测(D-D1-6，遵循 D-23 薄壳约定)。**verifier 独立复跑 135 绿 + 落盘 19 断言 + 红线全守 PASS**。
+  - 决策 D-D1-1~7。docs/02(两类布局澄清)+docs/03(managed 落盘)+docs/04(契约补 2 行)回写。
