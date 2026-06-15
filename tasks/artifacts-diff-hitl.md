@@ -37,6 +37,13 @@
 - 涉及：`components/ArtifactPanel`（扩展 FileViewer）
 - 完成定义：行内高亮 + 并排 Diff + TOC + 划选；块 >25 降级
 - 验证：5.4 AC
+- **▶ 开工锚点（给新窗口 lead）**：
+  - **D2 衔接（数据源）**：渲染数据 = `PendingChange.diffBlocks`（`lib/domain/pending-change-service.ts` 的 `DiffBlock`：`kind:add|del|mod` / `lines` / `state:pending|confirmed|rejected`）；PendingChange 已落 `managed/<id>/pending/<pendingId>.json`（`PendingChangeStore`），artifact 当前内容读 `artifact-service.getArtifact`。**op 恒为 `replace`**（D-D2-5：C 路线 edit 也走 replace），渲染只消费 diffBlocks、不依赖 op。
+  - **state 驱动渲染**：`state≠pending` 的块渲染层过滤、高亮消失（docs/03 纯数据驱动）——这是与 D4 按块确认的接缝，D3 先按 state 过滤即可。
+  - **参考**：扩展 pi-web `FileViewer`（非重写）；sf-mini 前端 `next-step/archive/sf-mini-frontend-*.md`：`InlineHighlightView`（行内高亮、子序列匹配锚定）/`DiffBlockView`/`DiffView`（并排）。
+  - **待 D3 lead 拍板点**：① **前端怎么拿 pending——D2 只落盘没建读 API**（头号待拍板：需新增 GET 取某 artifact 的 pending）；② 扩展 FileViewer 还是新建 ArtifactPanel 包裹；③ 划选引用到对话框（`quoteText`）怎么接 ChatWindow；④ 块>25（`INLINE_HL_LIMIT`）降级并排的判定位置。
+  - **红线/约定**：UI 卡**验收必走真浏览器 E2E**（[[next-step-browser-e2e]]，SSR/hydration bug 单测抓不到、B3 教训）；新增 `components/ArtifactPanel` 区配薄 README（[[next-step-area-readme-convention]]）；diffBlocks 是 D2 既定契约**别改**（要改回 D2）。
+  - **不在 D3**：D2 留的 2 个接线 gap（接真实会话 / agent 读 artifact 文件接口）、按块确认写盘（D4）、版本切换（D5）。
 
 ## D4 · PendingChangeCard + 按块确认 — ⬜ 未开始
 - 依赖：D2、D3
