@@ -24,6 +24,12 @@
 - 完成定义：对 artifact 的编辑不写盘、转 diff_blocks、暂存 PendingChange（标 source_actor）
 - 验证：5.4/5.5 AC（不写盘）
 - 实现：`createAgentSession({ noTools:"builtin", customTools:[替身] })`；details 复刻内置（write→undefined，edit→{diff,patch,firstChangedLine}）
+- **▶ 开工锚点（给新窗口 lead，省得到处翻）**：
+  - **D1 衔接**：受管 artifact 识别走 `lib/domain/artifact-service.ts`——替身 write/edit 在 execute 里拿到目标写盘路径，判断是否落在某项目 `.pi/artifacts/managed/<id>/`（受管）；是则转 PendingChange 暂存、**不写盘**，否则放行正常写。`realpath→artifactId` 索引 D1 按 **D-D1-4 故意没预埋**，由 D2 按替身实际拿到的路径形态（相对/realpath/含 `..`）现建——这是 D2 头号待拍板点。
+  - **数据模型**：`PendingChange` / `DiffBlock`（docs/03 已定义，含 `sourceActor`/`diffBlocks`/`state`）；落盘建议 `managed/<id>/pending/`（D1 目录已留空间），待 D2 拍板。
+  - **机制（已验证，照搬别重证）**：`noTools:"builtin"` + 替身；`details` 必填且复刻内置形状；**严禁 `excludeTools`**；`Type` 从 `@earendil-works/pi-ai` import。详见 [[next-step-v2-diff-blocker]] + `../spike/d2-intercept/{README.md,harness.ts}`。
+  - **待 D2 lead 拍板点**：① realpath→artifactId 索引形态与落盘；② PendingChange 落盘位置；③ 替身如何取当前 `sourceActor`（哪个 agent 发起）；④ diff_blocks 生成（复用内置 edit 的 diff/patch 还是自切块，参考 sf-mini §5.4 `DiffBlockView`）。
+  - **参考**：D1 `artifact-service.ts`（`findArtifact`/`managed/` 布局）、spike、sf-mini；取产物/挂监听等内核命门见 [[next-step-c1-dispatch-runner]]。
 
 ## D3 · ArtifactPanel 渲染（行内高亮/并排）— ⬜ 未开始
 - 依赖：D2
