@@ -10,7 +10,7 @@
 |---|---|---|---|
 | 前置 | `spike/d2-intercept/` | D2 拦截可行性验证 | ✅ 已完成（11/11 PASS） |
 | Iter A | [project-workspace.md](project-workspace.md) | 项目即工作区（A1/A2/A3） | ✅ 完成（A1 ✅ A2 ✅ A3 ✅） |
-| Iter B | [agent-profiles.md](agent-profiles.md) | 多 Agent 可定义（B1/B2/B3） | 🔄 进行中（B1 ✅ B2 ✅，下一张 B3） |
+| Iter B | [agent-profiles.md](agent-profiles.md) | 多 Agent 可定义（B1/B2/B3/B4） | ✅ 完成（B1 ✅ B2 ✅ B3 ✅ B4 ✅） |
 | Iter C | [dispatch.md](dispatch.md) | 多 Agent 协作派发（C1/C2） | ⬜ 未开始 |
 | Iter D | [artifacts-diff-hitl.md](artifacts-diff-hitl.md) | 产物 Diff/版本/HITL（D1–D5，v2） | ⬜ 未开始（D2 机制已预验证） |
 
@@ -49,4 +49,5 @@ C → D        （D 依赖 A 与 C）
   表单 model 下拉(/api/models)、skills 多选(/api/skills)、tools 勾选内置集、删除文案强调删整个目录（D-30/31）。
   **真浏览器 E2E 验收**（Playwright + 缓存 chromium）：建→改→删全程跑通、三件套真落盘、删除真清目录、中文正常。
   E2E 发现并修复 SSR hydration 真 bug（useProjectStore 以 localStorage 作初始 state → Agents 按钮刷新后卡死禁用；改 init null + 挂载后 hydrate）。决策 D-29~D-33。
-- 🔄 下一张：B4 按档案起会话接线（wiring：新会话端点 + 起会话入口；首步 spike E1 rpc-manager 注册）。之后 Iter C / Iter D。
+- ✅ **B4 按档案起会话接线（wiring）**（test 84/84、build 11/11 页）：新端点 `POST /api/projects/[id]/agents/[agentId]/session` + `lib/pi/profile-session-wiring.ts` 组合层 + `rpc-manager.registerInnerSession`（提取注册段、绕开旧 toolNames 段，D-B4-1）；端点带首条 message 一步建会话+发首条避内核懒落盘幻影会话（D-B4-3）；`renderAgentMd` create/update 共用、update 仅 name/role 变更才重写 agent.md（D-B4-6/D-B4-8，agent.md 定为可手编资产）。**真浏览器 E2E** 实测 AC②③④ 全 PASS（live systemPrompt 含 role/memory 特征、改 role 后只注入新 role、仅改 model 保留手编）。决策 D-B4-1~8。
+- 🔄 **Iter B 完成**；下一张 Iter C（多 Agent 协作派发）或 Iter D（产物 Diff/HITL，D2 已预验）。

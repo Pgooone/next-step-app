@@ -266,6 +266,34 @@ export function getRpcSession(sessionId: string): AgentSessionWrapper | undefine
 }
 
 /**
+ * 把一个**已建好**的内核会话（`createAgentSession` 返回的 `inner`）登记进进程级
+ * registry 并接上事件流，返回包装器与真实 sessionId。是 startRpcSession 末段「会话
+ * 注册」逻辑的提取（D-B4-1），供按档案起会话的端点复用——它自行调 createAgentSession
+ * （注入档案 options）后再调本函数，从而绕开 startRpcSession 那段会与档案 tools 冲突的
+ * toolNames 处理。
+ *
+ * 与 startRpcSession 末段保持同款语义：构造 wrapper → start() 订阅事件 → 缓存会话文件
+ * 路径 → onDestroy 时从 registry 摘除 → 以真实 sessionId 入表。
+ */
+export function registerInnerSession(inner: AgentSessionLike): {
+  session: AgentSessionWrapper;
+  realSessionId: string;
+} {
+  const registry = getRegistry();
+  const wrapper = new AgentSessionWrapper(inner);
+  wrapper.start();
+
+  const realSessionId = inner.sessionId;
+  const realSessionFile = inner.sessionFile;
+  if (realSessionFile) cacheSessionPath(realSessionId, realSessionFile);
+
+  wrapper.onDestroy(() => registry.delete(realSessionId));
+  registry.set(realSessionId, wrapper);
+
+  return { session: wrapper, realSessionId };
+}
+
+/**
  * Get or create an AgentSession for the given session.
  * For new sessions (sessionFile === ""), pi generates its own id.
  * Pass toolNames to pre-configure active tools (empty array = all tools disabled).
@@ -321,17 +349,7 @@ export async function startRpcSession(
       inner.agent.state.systemPrompt = "";
     }
 
-    const wrapper = new AgentSessionWrapper(inner);
-    wrapper.start();
-
-    const realSessionId = inner.sessionId as string;
-    const realSessionFile = inner.sessionFile as string | undefined;
-    if (realSessionFile) cacheSessionPath(realSessionId, realSessionFile);
-
-    wrapper.onDestroy(() => registry.delete(realSessionId));
-    registry.set(realSessionId, wrapper);
-
-    return { session: wrapper, realSessionId };
+    return registerInnerSession(inner);
   })().finally(() => locks.delete(sessionId));
 
   locks.set(sessionId, starting);

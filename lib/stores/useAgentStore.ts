@@ -67,7 +67,22 @@ interface AgentState {
   ) => Promise<AgentProfile>;
   /** 删除档案：DELETE(204)，404 容忍（仿 useProjectStore）；成功后 refresh。 */
   remove: (projectId: string, agentId: string) => Promise<void>;
+  /**
+   * 按档案起会话：POST 端点（服务端注入起会话 + 发首条 message），返回真实 sessionId。
+   * 诊断（modelFallback / missingSkills）仅 console.warn（D-B4-5：toast 后置）。失败抛出（含后端 error）。
+   */
+  startSession: (
+    projectId: string,
+    agentId: string,
+    message: string,
+  ) => Promise<{ sessionId: string }>;
 }
+
+/** 起会话端点回报的诊断（与 lib/pi/profile-session-wiring.ts 的 ProfileSessionDiagnostics 对齐）。 */
+export type ProfileSessionDiagnostics = {
+  modelFallback: boolean;
+  missingSkills: string[];
+};
 
 const base = (projectId: string) => `/api/projects/${encodeURIComponent(projectId)}/agents`;
 
@@ -120,6 +135,31 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       throw new Error(data.error ?? `HTTP ${res.status}`);
     }
     await get().refresh(projectId);
+  },
+
+  startSession: async (projectId, agentId, message) => {
+    const res = await fetch(`${base(projectId)}/${encodeURIComponent(agentId)}/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      sessionId?: string;
+      diagnostics?: ProfileSessionDiagnostics;
+      error?: string;
+    };
+    if (!res.ok || !data.sessionId) {
+      throw new Error(data.error ?? `HTTP ${res.status}`);
+    }
+    // D-B4-5：诊断仅 console.warn（toast 后置）。
+    const diag = data.diagnostics;
+    if (diag?.modelFallback) {
+      console.warn(`[agent ${agentId}] 档案模型不可用，已回退内核默认模型`);
+    }
+    if (diag?.missingSkills?.length) {
+      console.warn(`[agent ${agentId}] 档案声明的技能未找到：${diag.missingSkills.join(", ")}`);
+    }
+    return { sessionId: data.sessionId };
   },
 }));
 

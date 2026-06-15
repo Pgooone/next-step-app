@@ -28,3 +28,6 @@ spike/**/_tmp/
 
 # 系统
 .DS_Store
+
+# E2E 验证产物（截图/驱动脚本，不入库）
+e2e-screenshots/

@@ -55,6 +55,15 @@ type AgentProfileInput = {
 };
 
 /**
+ * 由 name + role 渲染 agent.md 正文（create / update 共用，D-B4-6）。
+ * 注入链路读的是 agent.md 文件，故凡改动 name/role 都必须按最新值重写 agent.md，
+ * 否则编辑档案后起会话仍注入旧角色（AC④ bug 根因）。
+ */
+export function renderAgentMd(name: string, role: string): string {
+  return `# ${name}\n\n${role}\n`;
+}
+
+/**
  * Agent 档案存储：档案随项目落盘到 `<projectRoot>/.pi/agents/<id>/`，
  * 每个 agent 三件套 = agent.json（结构化真相源，D-21）+ agent.md + memory.md。
  * projectRoot 经注入的 ProjectRegistry 反查（project 不存在时 registry 抛 NOT_FOUND）。
@@ -120,7 +129,7 @@ export class AgentProfileStore {
     mkdirSync(agentDir, { recursive: true });
     this.atomicWrite(join(agentDir, "agent.json"), `${JSON.stringify(profile, null, 2)}\n`);
     // agent.md 骨架 + 空 memory.md（内容不内联进 agent.json，D-21）
-    writeFileSync(join(agentDir, "agent.md"), `# ${name}\n\n${profile.role}\n`, "utf-8");
+    writeFileSync(join(agentDir, "agent.md"), renderAgentMd(name, profile.role), "utf-8");
     writeFileSync(join(agentDir, "memory.md"), "", "utf-8");
     return profile;
   }
@@ -148,8 +157,14 @@ export class AgentProfileStore {
       next.thinkingLevel = patch.thinkingLevel;
     }
 
-    const jsonPath = join(this.agentsDir(projectId), agentId, "agent.json");
-    this.atomicWrite(jsonPath, `${JSON.stringify(next, null, 2)}\n`);
+    const agentDir = join(this.agentsDir(projectId), agentId);
+    this.atomicWrite(join(agentDir, "agent.json"), `${JSON.stringify(next, null, 2)}\n`);
+    // 注入读 agent.md 而非 agent.json，故 name/role 变更须同步重写 agent.md（D-B4-6 / AC④）。
+    // 但 agent.md 是可手工编辑的资产（D-B4-8）：仅当 name/role 实际变化才重渲染骨架，
+    // model/skills/tools/thinking 变化时保留用户手写内容。
+    if (next.name !== current.name || next.role !== current.role) {
+      writeFileSync(join(agentDir, "agent.md"), renderAgentMd(next.name, next.role), "utf-8");
+    }
     return next;
   }
 

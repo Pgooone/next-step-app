@@ -1,9 +1,9 @@
-import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ProjectRegistry } from "./project-registry";
-import { AgentProfileStore, type AgentProfile } from "./agent-profile-store";
+import { AgentProfileStore, renderAgentMd, type AgentProfile } from "./agent-profile-store";
 
 let dir: string;
 let registry: ProjectRegistry;
@@ -134,5 +134,69 @@ describe("AgentProfileStore", () => {
   it("同 project 内 name 唯一（重名抛 INVALID）", () => {
     store.create(projectId, { name: "dup" });
     expectCode(() => store.create(projectId, { name: "dup" }), "INVALID");
+  });
+
+  // D-B4-6（AC④ bug 根因）：注入读 agent.md 而非 agent.json，故 update 改 name/role
+  // 必须同步重写 agent.md，否则编辑后起会话仍注入旧角色。
+  describe("renderAgentMd / update 重写 agent.md（D-B4-6）", () => {
+    it("renderAgentMd 由 name+role 渲染骨架（# name + 空行 + role）", () => {
+      expect(renderAgentMd("coder", "写代码")).toBe("# coder\n\n写代码\n");
+      expect(renderAgentMd("空角色", "")).toBe("# 空角色\n\n\n");
+    });
+
+    it("create 写的 agent.md 与 renderAgentMd 一致", () => {
+      const p = store.create(projectId, { name: "coder", role: "写代码" });
+      const onDisk = readFileSync(join(dir, ".pi", "agents", p.id, "agent.md"), "utf-8");
+      expect(onDisk).toBe(renderAgentMd("coder", "写代码"));
+    });
+
+    it("update 改 role → agent.md 反映新 role（不再停留旧内容）", () => {
+      const p = store.create(projectId, { name: "coder", role: "旧角色 OLD" });
+      const mdPath = join(dir, ".pi", "agents", p.id, "agent.md");
+      expect(readFileSync(mdPath, "utf-8")).toContain("旧角色 OLD");
+
+      store.update(projectId, p.id, { role: "新角色 NEW" });
+      const after = readFileSync(mdPath, "utf-8");
+      expect(after).toContain("新角色 NEW");
+      expect(after).not.toContain("旧角色 OLD");
+      expect(after).toBe(renderAgentMd("coder", "新角色 NEW"));
+    });
+
+    it("update 改 name → agent.md 标题反映新 name", () => {
+      const p = store.create(projectId, { name: "old-name", role: "r" });
+      store.update(projectId, p.id, { name: "new-name" });
+      const after = readFileSync(join(dir, ".pi", "agents", p.id, "agent.md"), "utf-8");
+      expect(after).toBe(renderAgentMd("new-name", "r"));
+    });
+
+    it("update 仅改 model（name/role 不变）→ agent.md 不被重写、内容保留（D-B4-8）", () => {
+      const p = store.create(projectId, { name: "coder", role: "写代码" });
+      const mdPath = join(dir, ".pi", "agents", p.id, "agent.md");
+      // 模拟用户手工往 agent.md 追加内容，再仅改 model
+      const handwritten = `${renderAgentMd("coder", "写代码")}\n## 手写补充\n额外说明 HANDWRITTEN\n`;
+      writeFileSync(mdPath, handwritten, "utf-8");
+
+      store.update(projectId, p.id, { model: "faux/faux-1" });
+      // agent.md 未被骨架覆盖，手写内容仍在
+      expect(readFileSync(mdPath, "utf-8")).toBe(handwritten);
+    });
+
+    it("手写 agent.md 后：仅改 model 保留手写，再改 role 重渲染为骨架（D-B4-8 / AC④）", () => {
+      const p = store.create(projectId, { name: "coder", role: "旧角色 OLD" });
+      const mdPath = join(dir, ".pi", "agents", p.id, "agent.md");
+      const handwritten = `${renderAgentMd("coder", "旧角色 OLD")}\n额外说明 HANDWRITTEN\n`;
+      writeFileSync(mdPath, handwritten, "utf-8");
+
+      // 仅改 model：手写内容保留
+      store.update(projectId, p.id, { model: "faux/faux-1" });
+      expect(readFileSync(mdPath, "utf-8")).toBe(handwritten);
+
+      // 改 role：agent.md 重渲染为骨架，手写内容被覆盖、含新 role（守 AC④）
+      store.update(projectId, p.id, { role: "新角色 NEW" });
+      const after = readFileSync(mdPath, "utf-8");
+      expect(after).toBe(renderAgentMd("coder", "新角色 NEW"));
+      expect(after).not.toContain("HANDWRITTEN");
+      expect(after).toContain("新角色 NEW");
+    });
   });
 });

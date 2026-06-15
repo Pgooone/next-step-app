@@ -1,14 +1,15 @@
 # lib/pi（pi 内核封装区）
 
 > 归属：Next-Step 新增。　规格：`../../next-step/docs/05-features-功能清单.md` §5.2（B2）
-> 决策：`../tasks/decisions.md` D-24~D-28　任务卡：`../tasks/agent-profiles.md`
+> 决策：`../tasks/decisions.md` D-24~D-28（B2）、D-B4-1~8（B4）　任务卡：`../tasks/agent-profiles.md`
 
 ## 作用
 对 `@earendil-works/pi-coding-agent` / `pi-ai` 内核做**封装**（只封装、**不 fork 内核源码**，红线）。
 把 Next-Step 的领域概念（Agent 档案）翻译成内核 `createAgentSession` 能消费的装配与运行时调整。
 
 > 注意：本目录是「逻辑封装区」。既有的内核交互债 `lib/rpc-manager.ts`、`lib/pi-types.ts`
-> 等当前落在 `lib/` 根下（基座沿用）；本区只新增 B2 起会话封装，不迁移、不重构它们。
+> 等当前落在 `lib/` 根下（基座沿用）；本区新增 B2 起会话封装与 B4 起会话接线（`profile-session-wiring.ts`），
+> 不迁移、不重构它们（B4 仅给 `rpc-manager.ts` 加 `registerInnerSession` 这一最小 export，D-B4-1）。
 
 ## 关键模块
 - `agent-profile-session.ts` — **B2 按档案注入起会话**。对外函数：
@@ -19,6 +20,10 @@
     设 thinkingLevel，返回 `{ modelFallback }`。
   - 纯 helpers：`readProfileDocs` / `buildInjectionBlock` / `resolveModelSelector` /
     `buildProfileResourceLoader`。
+- `profile-session-wiring.ts` — **B4 按档案起会话接线**。`startProfileSession(...)` 组合
+  `assembleProfileSessionOptions` → `createAgentSession` → `applyProfileRuntime` →
+  `registerInnerSession` → 发首条 message，返回 `{ sessionId, diagnostics }`。逻辑放此（而非
+  `app/` 的 route）以便 faux 集成测（vitest 仅覆盖 lib/**，D-B4-7）；三个依赖注入口生产省略，route 退薄壳。
 
 ## 约定 / 红线
 - **只封装不 fork 内核**：所有持久注入走内核原生钩子

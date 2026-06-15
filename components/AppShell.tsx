@@ -183,6 +183,23 @@ export function AppShell() {
     router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
   }, [router]);
 
+  // Called by AgentManager after starting a profile-injected session (B4 wiring).
+  // The endpoint already created the session AND sent the first message, so we just
+  // converge onto the existing session-selected flow — ChatWindow reconnects SSE on mount.
+  const handleAgentSessionStarted = useCallback((sessionId: string, cwd: string) => {
+    setAgentManagerOpen(false);
+    handleSessionCreated({
+      id: sessionId,
+      path: "",
+      cwd,
+      name: undefined,
+      created: new Date().toISOString(),
+      modified: new Date().toISOString(),
+      messageCount: 1,
+      firstMessage: "",
+    });
+  }, [handleSessionCreated]);
+
   const handleAgentEnd = useCallback(() => {
     setRefreshKey((k) => k + 1);
     setExplorerRefreshKey((k) => k + 1);
@@ -782,6 +799,7 @@ export function AppShell() {
         projectId={currentProjectId}
         projectRoot={currentRoot}
         onClose={() => setAgentManagerOpen(false)}
+        onSessionStarted={handleAgentSessionStarted}
       />
     )}
     </>

@@ -211,3 +211,60 @@ describe("store 动作（mock fetch）", () => {
     expect(selectAgentsForProject(useAgentStore.getState(), "proj")).toEqual(projAgents);
   });
 });
+
+describe("startSession 动作（B4，mock fetch）", () => {
+  it("POST 到 .../<id>/session 携带 {message}，返回 sessionId", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ sessionId: "sess-1", diagnostics: { modelFallback: false, missingSkills: [] } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const r = await useAgentStore.getState().startSession("proj", "a", "你好");
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/projects/proj/agents/a/session");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ message: "你好" });
+    expect(r).toEqual({ sessionId: "sess-1" });
+  });
+
+  it("诊断 modelFallback / missingSkills → console.warn（D-B4-5，仅告警不抛）", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          sessionId: "sess-2",
+          diagnostics: { modelFallback: true, missingSkills: ["ghost", "phantom"] },
+        }),
+      }),
+    );
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const r = await useAgentStore.getState().startSession("proj", "a", "hi");
+
+    expect(r.sessionId).toBe("sess-2");
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn.mock.calls.some((c) => String(c[0]).includes("回退内核默认模型"))).toBe(true);
+    expect(warn.mock.calls.some((c) => String(c[0]).includes("ghost, phantom"))).toBe(true);
+    warn.mockRestore();
+  });
+
+  it("后端非 2xx → 抛出 error 文本", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 422, json: async () => ({ error: "message 不能为空" }) }),
+    );
+    await expect(useAgentStore.getState().startSession("proj", "a", "")).rejects.toThrow(
+      "message 不能为空",
+    );
+  });
+
+  it("2xx 但缺 sessionId → 抛出（防御异常响应）", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) }));
+    await expect(useAgentStore.getState().startSession("proj", "a", "hi")).rejects.toThrow();
+  });
+});

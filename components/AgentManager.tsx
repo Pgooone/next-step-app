@@ -16,6 +16,8 @@ interface Props {
   /** 项目根目录（= cwd），用于拉技能列表；无则技能多选禁用。 */
   projectRoot: string | null;
   onClose: () => void;
+  /** B4：用某档案起会话成功后回调（sessionId + cwd），由 AppShell 接管会话切换/SSE。 */
+  onSessionStarted: (sessionId: string, cwd: string) => void;
 }
 
 type ModelOption = { id: string; name: string; provider: string };
@@ -58,8 +60,8 @@ function fromProfile(p: AgentProfile): FormState {
   };
 }
 
-export function AgentManager({ projectId, projectRoot, onClose }: Props) {
-  const { agents, loadedProjectId, refresh, create, update, remove } = useAgentStore(
+export function AgentManager({ projectId, projectRoot, onClose, onSessionStarted }: Props) {
+  const { agents, loadedProjectId, refresh, create, update, remove, startSession } = useAgentStore(
     useShallow((s) => ({
       agents: s.agents,
       loadedProjectId: s.loadedProjectId,
@@ -67,6 +69,7 @@ export function AgentManager({ projectId, projectRoot, onClose }: Props) {
       create: s.create,
       update: s.update,
       remove: s.remove,
+      startSession: s.startSession,
     })),
   );
   // loadedProjectId 不匹配时（切项目瞬间）视为空，避免串显
@@ -85,6 +88,12 @@ export function AgentManager({ projectId, projectRoot, onClose }: Props) {
 
   // 待确认删除的档案 id（内联确认条）
   const [confirmId, setConfirmId] = useState<string | null>(null);
+
+  // B4：正在「用此档案起会话」的 id（展开行内首条 message 输入条）；提交中的 id；错误文本
+  const [startId, setStartId] = useState<string | null>(null);
+  const [startMessage, setStartMessage] = useState("");
+  const [startingId, setStartingId] = useState<string | null>(null);
+  const [startError, setStartError] = useState<string | null>(null);
 
   useEffect(() => {
     refresh(projectId).catch(() => {});
@@ -168,6 +177,39 @@ export function AgentManager({ projectId, projectRoot, onClose }: Props) {
       }
     },
     [remove, projectId],
+  );
+
+  // B4：展开某档案的「起会话」输入条（同时关掉删除确认，避免两条并存）
+  const openStart = useCallback((id: string) => {
+    setConfirmId(null);
+    setStartError(null);
+    setStartMessage("");
+    setStartId(id);
+  }, []);
+
+  const cancelStart = useCallback(() => {
+    setStartId(null);
+    setStartError(null);
+    setStartMessage("");
+  }, []);
+
+  // B4：提交首条 message → 调端点起会话 → 成功后交给 AppShell 切换会话（关闭整个管理器）
+  const handleStartSubmit = useCallback(
+    async (id: string) => {
+      const message = startMessage.trim();
+      if (!message || startingId) return;
+      setStartingId(id);
+      setStartError(null);
+      try {
+        const { sessionId } = await startSession(projectId, id, message);
+        onSessionStarted(sessionId, projectRoot ?? "");
+      } catch (e) {
+        setStartError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setStartingId(null);
+      }
+    },
+    [startMessage, startingId, startSession, projectId, onSessionStarted, projectRoot],
   );
 
   // model 单 string → 下拉选中值（拼回 provider/modelId）
@@ -254,11 +296,19 @@ export function AgentManager({ projectId, projectRoot, onClose }: Props) {
             <AgentList
               agents={visibleAgents}
               confirmId={confirmId}
+              startId={startId}
+              startMessage={startMessage}
+              startingId={startingId}
+              startError={startError}
               onCreate={openCreate}
               onEdit={openEdit}
               onAskDelete={setConfirmId}
               onCancelDelete={() => setConfirmId(null)}
               onConfirmDelete={handleRemoveConfirm}
+              onAskStart={openStart}
+              onCancelStart={cancelStart}
+              onChangeStartMessage={setStartMessage}
+              onSubmitStart={handleStartSubmit}
             />
           )}
         </div>
@@ -272,19 +322,35 @@ export function AgentManager({ projectId, projectRoot, onClose }: Props) {
 function AgentList({
   agents,
   confirmId,
+  startId,
+  startMessage,
+  startingId,
+  startError,
   onCreate,
   onEdit,
   onAskDelete,
   onCancelDelete,
   onConfirmDelete,
+  onAskStart,
+  onCancelStart,
+  onChangeStartMessage,
+  onSubmitStart,
 }: {
   agents: AgentProfile[];
   confirmId: string | null;
+  startId: string | null;
+  startMessage: string;
+  startingId: string | null;
+  startError: string | null;
   onCreate: () => void;
   onEdit: (p: AgentProfile) => void;
   onAskDelete: (id: string) => void;
   onCancelDelete: () => void;
   onConfirmDelete: (id: string) => void;
+  onAskStart: (id: string) => void;
+  onCancelStart: () => void;
+  onChangeStartMessage: (v: string) => void;
+  onSubmitStart: (id: string) => void;
 }) {
   return (
     <div>
@@ -349,7 +415,81 @@ function AgentList({
                 overflow: "hidden",
               }}
             >
-              {confirmId === p.id ? (
+              {startId === p.id ? (
+                /* B4：内联「用此档案起会话」输入条——收首条 message（禁用 window.prompt，D-B4-3） */
+                <div style={{ padding: "10px 12px" }}>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text)",
+                      lineHeight: 1.5,
+                      marginBottom: 8,
+                    }}
+                  >
+                    用 <span style={{ fontWeight: 600 }}>{p.name}</span> 起会话，输入首条消息：
+                  </div>
+                  <textarea
+                    data-testid="agent-start-input"
+                    autoFocus
+                    value={startMessage}
+                    onChange={(e) => onChangeStartMessage(e.target.value)}
+                    onKeyDown={(e) => {
+                      // Enter 提交、Shift+Enter 换行（与对话框输入习惯一致）
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        onSubmitStart(p.id);
+                      }
+                    }}
+                    placeholder="给这个 Agent 的第一条消息…"
+                    rows={2}
+                    style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit", marginBottom: 8 }}
+                  />
+                  {startError && (
+                    <div
+                      data-testid="agent-start-error"
+                      style={{ color: "#dc2626", fontSize: 11, lineHeight: 1.4, marginBottom: 8, overflowWrap: "anywhere" }}
+                    >
+                      {startError}
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button
+                      data-testid="agent-start-submit"
+                      onClick={() => onSubmitStart(p.id)}
+                      disabled={startingId === p.id || !startMessage.trim()}
+                      style={{
+                        flex: 1,
+                        padding: "5px 0",
+                        background: "var(--accent)",
+                        border: "none",
+                        borderRadius: 6,
+                        color: "#fff",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: startingId === p.id || !startMessage.trim() ? "not-allowed" : "pointer",
+                        opacity: startingId === p.id || !startMessage.trim() ? 0.65 : 1,
+                      }}
+                    >
+                      {startingId === p.id ? "起会话中…" : "起会话"}
+                    </button>
+                    <button
+                      onClick={onCancelStart}
+                      style={{
+                        flex: 1,
+                        padding: "5px 0",
+                        background: "var(--bg)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 6,
+                        color: "var(--text-muted)",
+                        fontSize: 12,
+                        cursor: "pointer",
+                      }}
+                    >
+                      取消
+                    </button>
+                  </div>
+                </div>
+              ) : confirmId === p.id ? (
                 /* 内联删除确认条：强调删除整个 .pi/agents/<id>/ 目录（D-31/D-19） */
                 <div style={{ padding: "10px 12px" }}>
                   <div
@@ -459,6 +599,24 @@ function AgentList({
                       </span>
                     </div>
                   </div>
+                  <button
+                    data-testid="agent-start-btn"
+                    onClick={() => onAskStart(p.id)}
+                    title="用此档案起会话"
+                    style={{
+                      padding: "4px 10px",
+                      background: "var(--accent)",
+                      border: "1px solid var(--accent)",
+                      borderRadius: 6,
+                      color: "#fff",
+                      fontSize: 11,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      flexShrink: 0,
+                    }}
+                  >
+                    起会话
+                  </button>
                   <button
                     data-testid="agent-edit-btn"
                     onClick={() => onEdit(p)}
