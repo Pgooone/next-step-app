@@ -12,7 +12,7 @@
 | Iter A | [project-workspace.md](project-workspace.md) | 项目即工作区（A1/A2/A3） | ✅ 完成（A1 ✅ A2 ✅ A3 ✅） |
 | Iter B | [agent-profiles.md](agent-profiles.md) | 多 Agent 可定义（B1/B2/B3/B4） | ✅ 完成（B1 ✅ B2 ✅ B3 ✅ B4 ✅） |
 | Iter C | [dispatch.md](dispatch.md) | 多 Agent 协作派发（C1/C2） | ✅ 完成（C1 ✅ C2 ✅；真实端到端待凭证） |
-| Iter D | [artifacts-diff-hitl.md](artifacts-diff-hitl.md) | 产物 Diff/版本/HITL（D1–D5，v2） | 🔄 进行中（D1 ✅；D2–D5 ⬜） |
+| Iter D | [artifacts-diff-hitl.md](artifacts-diff-hitl.md) | 产物 Diff/版本/HITL（D1–D5，v2） | 🔄 进行中（D1 ✅ D2 ✅；D3–D5 ⬜） |
 
 ## 依赖图
 
@@ -61,3 +61,8 @@ C → D        （D 依赖 A 与 C）
   - **5 路由**：`GET /api/artifacts/[id]`(+`/versions`)、`POST .../submit-version`、`POST .../rollback`、`POST /api/projects/[id]/artifacts`(创建，D-D1-5)；`lib/api/if-match.ts` 解析 If-Match，抛带 `code:"INVALID"` 普通错误**鸭子类型解耦、不依赖 domain**(D-D1-7，与 errors.ts 一致)。
   - **17 个 service 领域单测**穷尽覆盖路由暴露语义（409/422/404、rollback 复制/双计数、原子写无残留、跨项目定位）；路由不单测(D-D1-6，遵循 D-23 薄壳约定)。**verifier 独立复跑 135 绿 + 落盘 19 断言 + 红线全守 PASS**。
   - 决策 D-D1-1~7。docs/02(两类布局澄清)+docs/03(managed 落盘)+docs/04(契约补 2 行)回写。
+- ✅ **D2 拦截编辑工具 → PendingChange 完成**（agent team `ns-impl`：d2-impl 实现 + d2-verifier 独立验收，lead 协调）。test 164（新增 29：pending-change 17 + intercept 8 + guard faux 4）、lint、build(11 页) 全绿。
+  - 装配选 **C**（D-D2-1）：保留内置工具集 + 内核 `createWriteToolDefinition/createEditToolDefinition` 注入 operations **自分流**（受管→拦截转 PendingChange 不写盘；非受管→委托真实 fs），零工具漂移、edit 语义归内核、details 内核自动生成；注入 readFile 顺带喂受管当前版内容给内核算 diff（同时解掉 agent 读 artifact 内容契约 gap 在 edit 路径上的阻塞）。
+  - `lib/domain/pending-change-service.ts`（PendingChange/DiffBlock + 手写 LCS 切块 computeReplaceDiffBlocks + 落盘 managed/<id>/pending/）+ `lib/pi/artifact-intercept.ts`（resolveManagedTarget 运行时识别、不建索引 D-D2-2）+ `lib/pi/artifact-guard.ts`（自分流 + assembleArtifactGuardOptions + faux 端到端）。
+  - **范围方案甲（D-D2-6）**：仅拦截层+封装+faux 验证，**未改** profile-session-wiring/dispatch-runner/orchestrator（接进真实会话 + agent 读 artifact 文件接口留接线卡）。
+  - **verifier 自写独立 fixture 交叉验证不变量 2**（受管编辑不写盘→PendingChange 落盘）3/3 PASS；10/10 验收项全过。决策 D-D2-1~6。

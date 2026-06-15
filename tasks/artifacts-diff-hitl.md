@@ -18,7 +18,7 @@
 - 未决设计：受管 Artifact 识别用显式注册表 + `realpath→artifactId` 索引；纯文件乐观锁原子性（临时文件 + rename）
 - ✅ **交付**：`artifact-service.ts`（`managed/<id>/` 隔离落盘 + currentVersion/version 双计数 + 写盘前 `assertVersionMatch` 乐观锁 + rollback 复制 + 跨项目 `findArtifact`）+ 5 路由 + `lib/api/if-match.ts`（鸭子类型解耦）；17 service 单测，test 135 / lint / build(11 页) 全绿；verifier 独立 PASS。决策 D-D1-1~7。`realpath→artifactId` 索引按 D-D1-4 留到 D2（避免赌 D2 接口）。
 
-## D2 · 拦截编辑工具 → PendingChange — ⬜ 未开始（机制已预验证）
+## D2 · 拦截编辑工具 → PendingChange — ✅ 已完成
 - 依赖：D1
 - 涉及：`lib/pi/*` 工具拦截层
 - 完成定义：对 artifact 的编辑不写盘、转 diff_blocks、暂存 PendingChange（标 source_actor）
@@ -30,6 +30,7 @@
   - **机制（已验证，照搬别重证）**：`noTools:"builtin"` + 替身；`details` 必填且复刻内置形状；**严禁 `excludeTools`**；`Type` 从 `@earendil-works/pi-ai` import。详见 [[next-step-v2-diff-blocker]] + `../spike/d2-intercept/{README.md,harness.ts}`。
   - **待 D2 lead 拍板点**：① realpath→artifactId 索引形态与落盘；② PendingChange 落盘位置；③ 替身如何取当前 `sourceActor`（哪个 agent 发起）；④ diff_blocks 生成（复用内置 edit 的 diff/patch 还是自切块，参考 sf-mini §5.4 `DiffBlockView`）。
   - **参考**：D1 `artifact-service.ts`（`findArtifact`/`managed/` 布局）、spike、sf-mini；取产物/挂监听等内核命门见 [[next-step-c1-dispatch-runner]]。
+- ✅ **交付**（方案甲 D-D2-6：仅拦截层+注入封装+faux 验证，未改业务端点）：装配最终选 **C**（D-D2-1，保留内置工具 + 内核 `createWriteToolDefinition/createEditToolDefinition` 注入 operations 自分流，零工具漂移）；新增 `lib/domain/pending-change-service.ts`（PendingChange/DiffBlock + 手写 LCS 行级切块 + 落盘 `managed/<id>/pending/`）+ `lib/pi/artifact-intercept.ts`（`resolveManagedTarget` 运行时识别、不建索引 D-D2-2）+ `lib/pi/artifact-guard.ts`（operations 自分流 + `assembleArtifactGuardOptions`）。用 agent team `ns-impl`（d2-impl 实现 + d2-verifier 独立验收）；test 164（新增 29）/lint/build(11 页) 全绿，**verifier 自写独立 fixture 交叉验证「受管编辑不写盘→PendingChange 落盘」3/3 PASS、10/10 验收项全过**。决策 D-D2-1~6。**已知 gap（留接线卡）**：接进 B4/C1 真实会话 + agent 读 artifact 当前内容的文件接口（内容存 versions/&lt;n&gt;.json 非裸文件、内置 read 读不到）。
 
 ## D3 · ArtifactPanel 渲染（行内高亮/并排）— ⬜ 未开始
 - 依赖：D2

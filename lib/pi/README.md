@@ -37,6 +37,15 @@
   会话后重试」由 orchestrator 判该 worker 失败）。计数源默认 `globalThis.__piSessions.size`（含前端聊天
   会话 + 派发 worker），可注入桩计数器便于测。TOCTOU 窗口（gate 通过→会话真正注册间的 async 间隙）在
   串行+单用户下可接受，仅注释不引并发池。
+- `artifact-intercept.ts` — **D2 受管 artifact 写盘路径识别（D-D2-2）**。`resolveManagedTarget(absPath, registry)`
+  运行时反查（不建索引）：词法归一 `resolve`（**不** realpath，目标文件可能尚不存在）→ 命中某项目
+  `<root>/.pi/artifacts/managed/<id>/` 前缀且 `<id>/artifact.json` 存在 → 返回 `{projectId,artifactId}`，
+  否则 `null`（放行正常写）。Iter C 派发产物在 managed 父级，`relative` 以 `..` 开头自然不误命中。
+- `artifact-guard.ts` — **D2 拦截编辑工具 → PendingChange（D-D2-1 选 C / D-D2-4/5）**。`assembleArtifactGuardOptions(deps)`
+  产出可展开进 `createAgentSession` 的 options（`noTools:"builtin"` + 注入了守卫 operations 的内核 write/edit
+  + 重建 read/bash/grep/find/ls，零工具漂移）。守卫 operations「自分流」：受管路径→读 `readCurrentContent`
+  当旧内容、`buildReplacePendingChange` 切块、落 PendingChange、**不写盘**；非受管→委托真实 fs 正常写。
+  `sourceActor` 由 deps 闭包注入（execute 的 ctx 不带 agent 身份）。沿用 B2「只产 options、调用方 new 会话」边界。
 
 ## 约定 / 红线
 - **只封装不 fork 内核**：所有持久注入走内核原生钩子
