@@ -58,8 +58,21 @@
   - **D 键聚焦面板**（D-D4-3 选 **B** 最小信号版）：卡片 D 键调 `requestDiffFocus()`（切 viewMode='diff' + `diffFocusNonce`+1）；AppShell +1 useEffect 监听 nonce(>0)→`setRightPanelOpen(true)`——解决「面板收起后按 D 静默无反馈」，卡片不直接碰 AppShell 本地 state。**R 键降级**（D-D4-2）：保留键位、按下提示「需会话接线(D-D2-6)」，D4 不接真实重生。
   - 决策 D-D4-1~5（decisions.md）。
 
-## D5 · 版本切换/回退/撤销重做 + SSE — ⬜ 未开始
-- 依赖：D1、D3
-- 涉及：ArtifactPanel、SSE 事件扩展
-- 完成定义：版本下拉/rollback/双栈撤销；`artifact.created` 推送刷新
-- 验证：5.6 AC
+## D5 · 版本管理（下拉切换/查看历史/rollback + SSE）— ⬜ 未开始
+- 依赖：D1（版本表+乐观锁后端已就位）、D3（ArtifactPanel 只读渲染）
+- 涉及：`components/ArtifactPanel`（加版本下拉/rollback、仍只读）、`lib/stores/useArtifactStore`、SSE 事件扩展、1 个新只读路由
+- 完成定义：版本下拉查看任意历史版本 + rollback + `version.created`/`artifact.created` SSE 推送刷新
+- 验证：5.6 AC（②③④⑥ 为主；①由 D4 pending 态满足；⑤ 编辑器撤销重做不做、见 D-D5-1）
+- **▶ 开工锚点（给新窗口 lead，省得到处翻）**：
+  - **范围已定（D-D5-1，用户拍板）**：D5 **只做版本管理、ArtifactPanel 保持只读、不引入手动编辑器**。§5.6 AC①⑤ 的「整篇文本草稿编辑器 + undo/redo 双栈」源自 sf-mini 单文档模型，与 Next-Step「所有修改必经 PendingChange→按块确认」红线有张力——**不在 D5 引入用户直接编辑整篇 artifact 的新写路径**。AC①「修改不自动落库」已由 D4 的 pending 态满足；AC⑤ 撤销重做因无编辑器而**不做/留独立后续卡**（要做须先拍它与 PendingChange 红线的关系）。artifact 修改仍只走 D4 的 agent→PendingChange→物化。
+  - **D1/D3 已就位（复用别重造）**：
+    - 后端（D1，`lib/domain/artifact-service.ts`）：`submitVersion`(AC②⑥，version=currentVersion+1+If-Match)、`rollback`(AC④⑥，复制目标版成新版不删历史)、`listVersions`(AC③ 元数据列表)、`getArtifact`(AC① 当前版内容)、`assertVersionMatch`(If-Match≠当前→VERSION_CONFLICT/409)。路由：`GET [id]`、`GET .../versions`、`POST .../submit-version`、`POST .../rollback` 全有。
+    - 前端（D3）：`ArtifactPanel`(只读、viewMode inline/diff)、`useArtifactStore`(open/refresh/close/setViewMode/setEditTarget/requestDiffFocus，**无版本 action**)；SSE 现有机制 `GET /api/agent/[id]/events`(按会话 text/event-stream)、`hooks/useAgentSession.ts` 订阅(事件 switch 无 artifact/version 分支)。
+  - **D5 真正要做的（缺口，Explore 已核 file:line）**：
+    1. **后端缺口①**：AC③「查看任意历史版本内容」缺公开 API——`readVersionContent` 现为**私有**(artifact-service.ts:306)，须加 `GET /api/artifacts/[id]/versions/[version]` 取某版完整内容（版本下拉展示历史版必需）。
+    2. **后端缺口②**：SSE `artifact.created`/`version.created` **契约定义了(docs/04:33-38)但未实现**——submitVersion/rollback 成功后推事件。artifact-service 纯业务无 SSE 感知，**用回调注入**（`lib/pi/artifact-guard.ts` 已有「回调用于推 SSE」先例）；现有 SSE 按会话(sessionId)，artifact 事件接入点待拍（见拍板点①）。
+    3. **前端**：useArtifactStore 加版本 action（selectVersion/列版本/rollback）；ArtifactPanel 头部加**版本下拉**(selVer==null 跟随最新、选历史版拉该版内容只读展示) + **rollback 按钮**；useAgentSession 的 SSE switch 加 artifact/version 分支→`useArtifactStore.refresh()`（防高频刷新）。
+  - **待 D5 lead 拍板点**：① **SSE artifact 事件怎么接**（现有按会话 sessionId、artifact 变更可能不在某会话语境；service 回调注入的具体落点）——头号；② 取某版本内容 API 形态（返回 `{content}` 还是 full ArtifactVersion）；③ 版本下拉 UI 形态 + 看历史版本时与 pending 高亮的关系（历史版应无 pending 高亮、纯只读）；④ rollback 是否二次确认（危险操作、追加式回滚不删历史）。
+  - **红线/约定**：D5 **不新增 artifact 写路径**（submitVersion/rollback 是 D1 已实现的版本操作、本就是版本管理正路，非「绕过 PendingChange 的内容编辑」）；UI 卡**验收必走真浏览器 E2E**（版本下拉/rollback/SSE 刷新都是 UI，[[next-step-browser-e2e]]，E2E 须用 repo-vendored `run-e2e.sh`、见 [[next-step-d4-verified]]）；zustand 派生 selector 引用稳定性用 `useShallow`（D-D3-10）；新增逻辑区配薄 README；拍板记 decisions（D-D5-N）。
+  - **不在 D5**：手动编辑器/草稿 dirty/undo-redo 双栈（D-D5-1 降级、留独立卡）；D-D2-6 真实会话接线 gap（与 D5 正交）；D4 R 重生降级（D-D4-2）；D3 UX gap D-D3-11。
+  - **参考**：sf-mini `next-step/archive/sf-mini-frontend-2-前端二.md:12-15`（版本/草稿分离——**只取版本下拉 selVer==null 跟随最新 + rollback 形态，草稿编辑器部分 D5 不取**）；Explore 接缝报告 file:line（artifact-service:191-266/306、events/route.ts:29-71、useAgentSession.ts:215-330、ArtifactPanel.tsx、useArtifactStore.ts:30-69）。
