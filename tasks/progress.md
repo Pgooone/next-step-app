@@ -12,7 +12,7 @@
 | Iter A | [project-workspace.md](project-workspace.md) | 项目即工作区（A1/A2/A3） | ✅ 完成（A1 ✅ A2 ✅ A3 ✅） |
 | Iter B | [agent-profiles.md](agent-profiles.md) | 多 Agent 可定义（B1/B2/B3/B4） | ✅ 完成（B1 ✅ B2 ✅ B3 ✅ B4 ✅） |
 | Iter C | [dispatch.md](dispatch.md) | 多 Agent 协作派发（C1/C2） | ✅ 完成（C1 ✅ C2 ✅；真实端到端待凭证） |
-| Iter D | [artifacts-diff-hitl.md](artifacts-diff-hitl.md) | 产物 Diff/版本/HITL（D1–D5，v2） | 🔄 进行中（D1 ✅ D2 ✅；D3–D5 ⬜） |
+| Iter D | [artifacts-diff-hitl.md](artifacts-diff-hitl.md) | 产物 Diff/版本/HITL（D1–D5，v2） | 🔄 进行中（D1 ✅ D2 ✅ D3 ✅；D4–D5 ⬜） |
 
 ## 依赖图
 
@@ -66,3 +66,11 @@ C → D        （D 依赖 A 与 C）
   - `lib/domain/pending-change-service.ts`（PendingChange/DiffBlock + 手写 LCS 切块 computeReplaceDiffBlocks + 落盘 managed/<id>/pending/）+ `lib/pi/artifact-intercept.ts`（resolveManagedTarget 运行时识别、不建索引 D-D2-2）+ `lib/pi/artifact-guard.ts`（自分流 + assembleArtifactGuardOptions + faux 端到端）。
   - **范围方案甲（D-D2-6）**：仅拦截层+封装+faux 验证，**未改** profile-session-wiring/dispatch-runner/orchestrator（接进真实会话 + agent 读 artifact 文件接口留接线卡）。
   - **verifier 自写独立 fixture 交叉验证不变量 2**（受管编辑不写盘→PendingChange 落盘）3/3 PASS；10/10 验收项全过。决策 D-D2-1~6。
+- ✅ **D3 ArtifactPanel 产物渲染完成**（commit `9081134`；agent team `ns-impl`：d3-impl 实现/接力 + d3-verifier 逻辑层验收 + d3-e2e 真浏览器验收，lead 协调）。test **201**、lint clean、build(11 页) 全绿；**真浏览器 E2E 6 AC + SSR 全 PASS**。
+  - 纯渲染层（§5.4，D-D3-1）：**只读**，不含 resolve/确认/版本切换（留 D4/§5.5、§5.6）。
+  - 后端只读数据源：`listPendingChanges` + `GET /api/artifacts/[id]/pending`（对齐 docs/04，D-D3-2）、`listArtifacts` + `GET /api/projects/[id]/artifacts`（D-D3-6）。
+  - 纯函数区 `lib/artifact-view/`（可单测，D-D3-5）：`toc`(解析) / `anchor`(连续子串锚定) / `degrade`(块>25 降级，INLINE_HL_LIMIT=25)；28 单测。
+  - 前端：`useArtifactStore`（不持久化、天然无 SSR mismatch，D-D3-8）+ `ArtifactPanel`(内容+TOC、三态高亮 add绿/del红/mod黄、并排 Diff 逐块 D-D3-9、划选引用) + `ArtifactPicker`(打开入口) + AppShell 产物/文件视图互斥切换(D-D3-7) + ChatWindow QuoteBar 引用条。
+  - **两处 bug 修复**：① 交接的 artifact-service JSDoc `*/` 提前闭合致 build 崩（接力发现，前 teammate「后端 done」从未跑过 build）；② `selectPendingBlocks` 派生 selector 返回新数组引用 → zustand 无限重渲染、ArtifactPanel 一开即崩 → `useShallow`（D-D3-10，**真浏览器 E2E 暴露、单测/逻辑层抓不到**，同 B3 旨趣）。
+  - 已知 UX gap（D-D3-11，留后续）：空欢迎态下划选引用无可见反馈（有活跃会话时 AC⑥ 正常）。决策 D-D3-1~11。E2E 复验脚本 gitignore 不入库。
+  - **过程**：team 运行时一度整体丢失（疑上下文压缩，落盘成果保留），靠 git status 核进度 + 重建 team + 精确交接接力恢复（[[next-step-agent-team-recovery]]）。
