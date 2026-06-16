@@ -1,9 +1,16 @@
 # next-step-app
 
+> 🔗 **本仓库是 Next-Step —— 基于开源项目 pi-web 打造的「多 Agent 软件工厂」本地工具。** 在 pi-web 的「真 Agent 内核 + Web UI」之上叠加「项目 / 多 Agent / 派发 / 产物 Diff·版本·HITL」领域层；**pi 内核不 fork**，只做封装与 surgical 改造。便于溯源。
+
 Next-Step 的**实现仓库**：在 pi-web 基座之上叠加「项目 / 多 Agent / 派发 / 产物 Diff·版本·HITL」领域层。
 
-- 规格 / 文档（真相源）：`../next-step/docs/`（先读 `00-overview-总览.md`）
+- 规格 / 文档（真相源）：`../docs/`（V1 规格 00–09；先读 `00-overview-总览.md`）
 - 仓库**以 pi-web 基座为起点**（已整体复制进来），在其上做 surgical 改造；pi 内核不 fork。
+
+## 版本
+
+- **V1 = `v1.0.0`**（本 release）：Iter A / B / C / D 全部里程碑完成（项目工作区 / 多 Agent 档案 / 派发协作 / 产物 Diff·版本·HITL）。全部 40 个提交见 `COMMIT-HISTORY.md`。
+- **V1.1（迭代中）**：在 `v1.1` 分支上继续，将出 `v1.1.0` release。
 
 ## 怎么跑
 
@@ -52,16 +59,16 @@ npm run lint
 - **`app/api/**` 各路由目录不单独加 README**（API 路由是领域层的薄 HTTP 包装，契约在 `docs/04` + 对应领域区 README）。见决策 D-23。
 - **DoD**：每张任务卡改 / 建某区代码，顺手更新该区 README。
 
-## 进度
+## 进度（V1 收官）
 
-详见 `tasks/progress.md`（看板）+ `tasks/decisions.md`（决策表 D-01~D-23）。D2 拦截可行性见 `spike/d2-intercept/`。
+V1 全部里程碑完成，详见 `tasks/`（看板 + 决策表 D-01~D-23）、`COMMIT-HISTORY.md`（全部提交）。D2 拦截可行性见 `spike/d2-intercept/`。
 
 | 里程碑 | 状态 |
 |---|---|
 | 前置 · D2 拦截验证 | ✅ 可行（`noTools:builtin` 替换 write/edit，spike 11/11） |
-| Iter A · 项目即工作区（A1/A2/A3） | ✅ 完成 |
-| Iter B · 多 Agent 可定义（B1/B2/B3） | 🔄 B1 ✅，下一张 B2 |
-| Iter C · 多 Agent 协作（C1/C2） | ⬜ 未开始 |
-| Iter D · 产物 Diff/版本/HITL（D1–D5） | ⬜ 未开始（D2 机制已预验证） |
+| Iter A · 项目即工作区 | ✅ 完成 |
+| Iter B · 多 Agent 可定义 | ✅ 完成 |
+| Iter C · 多 Agent 协作派发 | ✅ 完成 |
+| Iter D · 产物 Diff/版本/HITL（D1–D5） | ✅ 完成（收官 commit `52313d2`） |
 
-实测：Iter A 已在真实运行的 dev server 上验证 API 链路（建/切/删项目、错误码契约、删除不删盘、`/api/health`）。本环境无浏览器/模型凭证，GUI 点击层未驱动。
+> V1.1 迭代在 `v1.1` 分支进行（见 `../next-step-V1.1/`）。
