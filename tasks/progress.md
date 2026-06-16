@@ -14,6 +14,29 @@
 | Iter C | [dispatch.md](dispatch.md) | 多 Agent 协作派发（C1/C2） | ✅ 完成（C1 ✅ C2 ✅；真实端到端待凭证） |
 | Iter D | [artifacts-diff-hitl.md](artifacts-diff-hitl.md) | 产物 Diff/版本/HITL（D1–D5，v2） | ✅ 完成（D1 ✅ D2 ✅ D3 ✅ D4 ✅ D5 ✅） |
 
+## 主线收官 · 未了清单 · 下一阶段（2026-06-16）
+
+**四大支柱主线（Iter A/B/C/D）全部完成** ✅——项目即工作区 / 多 Agent 可定义 /
+多 Agent 协作派发 / 产物 Diff·版本·HITL（v2 灵魂支柱）。机制层全部落地并双层验收。
+
+**未了清单**（已知缺口，进入迭代阶段前的待办；均与「卡已完成」不矛盾——属当初按
+范围有意延后的接线/边角）：
+
+1. **D-D2-6 拦截接真实会话 ⭐ 最关键**：D2 只交付「拦截层 + 注入封装 + faux 验证」
+   （方案甲，有意未改业务端点）。缺 ① 装配（`assembleArtifactGuardOptions` 接进
+   `profile-session-wiring` / `dispatch-runner`）② agent 读 artifact 当前内容的文件
+   接口（内容存 `versions/<n>.json` 非裸文件、内置 read 读不到）。**后果**：D3/D4/D5
+   的 Diff/确认/版本机制全建好且双层验过，但都用 E2E fixture 直接造 PendingChange
+   验的；**真实 agent 编辑受管 artifact → 自动转 PendingChange 的活路径尚未通电**——
+   让灵魂支柱真正可用的临门一脚。
+2. **docs/04 SSE `artifact.created`/`version.created`**：契约已定义，按 D-D5-2 暂缓，
+   待 D-D2-6 接 agent→版本后再补。
+3. **D4 R（重新生成）键**（D-D4-2）：保留键位 + 降级提示，依赖 D-D2-6。
+4. **D3 UX gap**（D-D3-11）：空欢迎态划选引用无可见反馈（有活跃会话时正常）。
+
+**下一阶段：迭代新增功能**。具体方向（先补 D-D2-6 让支柱 live / 愿景的同窗口实时
+agent team / 其他新功能）属产品级决策，待用户拍板（见根 `README.md` 与北极星愿景方向）。
+
 ## 依赖图
 
 ```
