@@ -9,6 +9,7 @@ import { useAgentSession, type AgentPhase } from "@/hooks/useAgentSession";
 import { useAudio } from "@/hooks/useAudio";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { useArtifactStore } from "@/lib/stores/useArtifactStore";
+import { PendingChangeCard } from "./PendingChangeCard";
 
 /**
  * 引用条（AC⑥ 读侧）：显示 ArtifactPanel 划选写入的 editTarget.quoteText，可清除。
@@ -435,6 +436,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       </div>
 
       <div className="relative">
+        <PendingChangeCard />
         <QuoteBar />
         {chatInputElement}
       </div>

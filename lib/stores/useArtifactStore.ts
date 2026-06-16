@@ -42,18 +42,33 @@ interface ArtifactState {
   error: string | null;
   /** 划选引用目标（AC⑥）；无引用为 null。 */
   editTarget: EditTarget | null;
+  /**
+   * 「请求聚焦并排 Diff」单调递增信号（AC④，D-D4-3 选 B）。PendingChangeCard 按 D 键时 +1；
+   * AppShell 监听其变化 → 展开右侧面板（卡片在 ChatWindow 内、够不到 AppShell 的 rightPanelOpen 本地 state，
+   * 故经此信号解耦：卡片只发信号、AppShell 只消费，nonce 单调无需清理）。
+   */
+  diffFocusNonce: number;
 
   /** 打开一个 artifact：拉取其当前内容 + pending 变更，重置视图为 inline。 */
   open: (artifactId: string) => Promise<void>;
+  /**
+   * 重拉当前 artifact 的内容 + pending 变更（D4：逐块 resolve 后刷新）。
+   * 与 open 区别：**不重置 viewMode、不亮 loading 骨架**——resolve 后仅静默更新数据，
+   * 让面板里行内高亮按新 state 自然消失（D3 已 state 过滤）、并排 Diff 视图保持不跳变。
+   * 无打开的 artifact 时为空操作。
+   */
+  refresh: () => Promise<void>;
   /** 关闭当前 artifact（清空内容与 pending；保留 editTarget——引用可跨关闭存活）。 */
   close: () => void;
   /** 手动切换视图模式（AC⑤「查看 Diff」按钮）。 */
   setViewMode: (mode: "inline" | "diff") => void;
   /** 写入划选引用（AC⑥「引用到对话框」）。 */
   setEditTarget: (target: EditTarget | null) => void;
+  /** 请求聚焦并排 Diff（D 键）：切 viewMode='diff' 并 +1 diffFocusNonce 触发 AppShell 展开面板。 */
+  requestDiffFocus: () => void;
 }
 
-export const useArtifactStore = create<ArtifactState>((set) => ({
+export const useArtifactStore = create<ArtifactState>((set, get) => ({
   selectedArtifactId: null,
   artifact: null,
   pendingChanges: [],
@@ -61,6 +76,7 @@ export const useArtifactStore = create<ArtifactState>((set) => ({
   loading: false,
   error: null,
   editTarget: null,
+  diffFocusNonce: 0,
 
   open: async (artifactId) => {
     set({ selectedArtifactId: artifactId, loading: true, error: null, viewMode: "inline" });
@@ -83,6 +99,23 @@ export const useArtifactStore = create<ArtifactState>((set) => ({
     }
   },
 
+  refresh: async () => {
+    const artifactId = get().selectedArtifactId;
+    if (!artifactId) return;
+    try {
+      const [artRes, pendRes] = await Promise.all([
+        fetch(`/api/artifacts/${encodeURIComponent(artifactId)}`),
+        fetch(`/api/artifacts/${encodeURIComponent(artifactId)}/pending`),
+      ]);
+      if (!artRes.ok) return; // 静默：刷新失败不破坏当前视图（resolve 本身的成败由卡片提示）
+      const artifact = (await artRes.json()) as Artifact & { content: string };
+      const pendingChanges = pendRes.ok ? ((await pendRes.json()) as PendingChange[]) : [];
+      set({ artifact, pendingChanges });
+    } catch {
+      // 静默：保留现状
+    }
+  },
+
   close: () =>
     set({
       selectedArtifactId: null,
@@ -95,6 +128,8 @@ export const useArtifactStore = create<ArtifactState>((set) => ({
   setViewMode: (mode) => set({ viewMode: mode }),
 
   setEditTarget: (target) => set({ editTarget: target }),
+
+  requestDiffFocus: () => set((s) => ({ viewMode: "diff", diffFocusNonce: s.diffFocusNonce + 1 })),
 }));
 
 /**

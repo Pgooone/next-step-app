@@ -12,7 +12,7 @@
 | Iter A | [project-workspace.md](project-workspace.md) | 项目即工作区（A1/A2/A3） | ✅ 完成（A1 ✅ A2 ✅ A3 ✅） |
 | Iter B | [agent-profiles.md](agent-profiles.md) | 多 Agent 可定义（B1/B2/B3/B4） | ✅ 完成（B1 ✅ B2 ✅ B3 ✅ B4 ✅） |
 | Iter C | [dispatch.md](dispatch.md) | 多 Agent 协作派发（C1/C2） | ✅ 完成（C1 ✅ C2 ✅；真实端到端待凭证） |
-| Iter D | [artifacts-diff-hitl.md](artifacts-diff-hitl.md) | 产物 Diff/版本/HITL（D1–D5，v2） | 🔄 进行中（D1 ✅ D2 ✅ D3 ✅；D4–D5 ⬜） |
+| Iter D | [artifacts-diff-hitl.md](artifacts-diff-hitl.md) | 产物 Diff/版本/HITL（D1–D5，v2） | 🔄 进行中（D1 ✅ D2 ✅ D3 ✅；D4 🔄 待验收；D5 ⬜） |
 
 ## 依赖图
 

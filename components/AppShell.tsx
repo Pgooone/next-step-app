@@ -120,6 +120,14 @@ export function AppShell() {
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
 
+  // PendingChangeCard 的 D 键经 requestDiffFocus +1 此 nonce → 展开右侧面板（聚焦并排 Diff，AC④/D-D4-3）。
+  // 卡片在 ChatWindow 内够不到此处 rightPanelOpen 本地 state，故经 store 单调信号解耦；nonce 初值 0、
+  // >0 才响应（跳过挂载首跑），单调递增无需消费后清理。
+  const diffFocusNonce = useArtifactStore((s) => s.diffFocusNonce);
+  useEffect(() => {
+    if (diffFocusNonce > 0) setRightPanelOpen(true);
+  }, [diffFocusNonce]);
+
   const handleAtMention = useCallback((relativePath: string) => {
     chatInputRef.current?.insertText("`" + relativePath + "`");
   }, []);

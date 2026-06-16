@@ -45,11 +45,18 @@
   - **红线/约定**：UI 卡**验收必走真浏览器 E2E**（[[next-step-browser-e2e]]，SSR/hydration bug 单测抓不到、B3 教训）；新增 `components/ArtifactPanel` 区配薄 README（[[next-step-area-readme-convention]]）；diffBlocks 是 D2 既定契约**别改**（要改回 D2）。
   - **不在 D3**：D2 留的 2 个接线 gap（接真实会话 / agent 读 artifact 文件接口）、按块确认写盘（D4）、版本切换（D5）。
 
-## D4 · PendingChangeCard + 按块确认 — ⬜ 未开始
+## D4 · PendingChangeCard + 按块确认 — 🔄 实现完成待验收（lint/test/build 绿）
 - 依赖：D2、D3
-- 涉及：`components/PendingChangeCard`、ChatWindow
-- 完成定义：YNRD + resolveBlock；全 resolve 后写盘 + 新版本
-- 验证：5.5 AC
+- 涉及：`lib/domain/pending-change-service.ts`(新增 `applyResolvedBlocks`/`resolveBlock`/`resolveAndMaterialize`/`remove`、构造注入 ArtifactService)、`POST /api/artifacts/[id]/pending/[changeId]/resolve`(薄路由)、`lib/stores/useArtifactStore.ts`(新增 `refresh`/`diffFocusNonce`/`requestDiffFocus`)、`components/PendingChangeCard.tsx`(新建)、`components/ChatWindow.tsx`(挂载)、`components/AppShell.tsx`(+1 useEffect 监听 diffFocusNonce 展开右面板)
+- 完成定义：YNRD + resolveBlock；全 resolve 后写盘 + 新版本 ✅
+- 验证：5.5 AC（逻辑层 + 真浏览器两层待跑）
+- 实现要点：
+  - **内容重建**（D-D4-1）：`applyResolvedBlocks(change)` 纯函数重放 lcsDiff+聚块、按块 state 取舍（confirmed 取新行 / rejected·pending 留旧行）；不变量「全 confirmed=newContent / 全 rejected=oldContent」+ 三块混合行序均已单测；仅 op=replace、失配/patch 抛 INVALID。
+  - **逐块 resolve**（service）：`resolveBlock(...,{blockId?,action:'confirm'|'reject'})` 纯翻块 state 原子落盘（省 blockId=全 pending 块统一置态、幂等不回退已决）。
+  - **写盘红线落 service**（D-D4-4/5）：「一组」=单条 PendingChange；写盘逻辑在 service `resolveAndMaterialize`——翻块后「全块非 pending」则 `applyResolvedBlocks`+注入的 `ArtifactService.submitVersion`(当前 version If-Match)+`remove`，返回 `{change, materialized, artifact?}`；resolve **路由退成薄调用**。6 条 service 级单测覆盖全决/未全决/逐块/全 reject/artifact 不存在。
+  - **前端**：`PendingChangeCard`（仿 QuoteBar 挂 ChatWindow 底部、读 `useArtifactStore.pendingChanges` useShallow）逐块 ✓/✗ + YNRD（Y确认/N拒绝/R重生降级提示/D跳并排Diff、↑↓ 切聚焦块）；每次 resolve 后 `store.refresh()` 静默重拉（不重置 viewMode/不亮 loading）→ 行内高亮按新 state 消失（AC③）、全决时面板内容更新到新版（AC⑤）。
+  - **D 键聚焦面板**（D-D4-3 选 **B** 最小信号版）：卡片 D 键调 `requestDiffFocus()`（切 viewMode='diff' + `diffFocusNonce`+1）；AppShell +1 useEffect 监听 nonce(>0)→`setRightPanelOpen(true)`——解决「面板收起后按 D 静默无反馈」，卡片不直接碰 AppShell 本地 state。**R 键降级**（D-D4-2）：保留键位、按下提示「需会话接线(D-D2-6)」，D4 不接真实重生。
+  - 决策 D-D4-1~5（decisions.md）。
 
 ## D5 · 版本切换/回退/撤销重做 + SSE — ⬜ 未开始
 - 依赖：D1、D3
