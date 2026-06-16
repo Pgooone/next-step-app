@@ -133,6 +133,32 @@ describe("ArtifactService.listVersions", () => {
   });
 });
 
+describe("ArtifactService.getVersion（D5 取某版完整快照）", () => {
+  it("取历史版返回完整 ArtifactVersion（content + version + meta）", () => {
+    const a = service.createArtifact(projectId, { kind: "k", title: "t", content: "首版" });
+    service.submitVersion(projectId, a.id, { content: "二版", note: "改了点" });
+
+    const v1 = service.getVersion(projectId, a.id, 1);
+    expect(v1.version).toBe(1);
+    expect(v1.content).toBe("首版");
+    expect(v1.artifactId).toBe(a.id);
+
+    const v2 = service.getVersion(projectId, a.id, 2);
+    expect(v2.version).toBe(2);
+    expect(v2.content).toBe("二版");
+    expect(v2.note).toBe("改了点");
+  });
+
+  it("artifact 不存在 → NOT_FOUND", () => {
+    expectCode(() => service.getVersion(projectId, "ghost", 1), "NOT_FOUND");
+  });
+
+  it("版本不存在 → NOT_FOUND（区别于 readVersionContent 的 INVALID）", () => {
+    const a = service.createArtifact(projectId, { kind: "k", title: "t", content: "v1" });
+    expectCode(() => service.getVersion(projectId, a.id, 99), "NOT_FOUND");
+  });
+});
+
 describe("ArtifactService.rollback", () => {
   it("回滚到 v1 生成 v4（不删 v1-3）、v4.content==v1.content、note 含 rollback to v1、currentVersion=4", () => {
     const a = service.createArtifact(projectId, { kind: "k", title: "t", content: "内容1" });

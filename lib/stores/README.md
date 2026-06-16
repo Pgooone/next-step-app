@@ -20,8 +20,12 @@
   当前版本 content）+ 其 pending 变更 + 视图模式（inline / diff）+ `editTarget`（划选引用到对话框，
   AC⑥）；`open(id)` 并行拉 `GET /api/artifacts/[id]` 与 `.../pending`、`setViewMode` / `setEditTarget`；
   导出 `selectPendingBlocks`（扁平化并过滤 state==="pending" 的 DiffBlock）便于组件订阅。
+  **D5 版本管理**（§5.6）：`versions`（版本元数据列表）+ `selectedVersion`（null=跟随最新 / 非 null=只读看历史快照）
+  + `historyContent`；`listVersions()` 拉 `GET .../versions`、`selectVersion(v|null)`（选历史版拉 `.../versions/[v]`、
+  null 或选回当前版回到跟随最新）、`rollback(toVersion)`（带 `If-Match`=当前 version 乐观锁、成功后 `refresh()` 并复位
+  selectedVersion=null、409 写 `rollbackError`）。无 SSE（D-D5-2 选 A：自己触发的操作后直接 refresh）。
   **刻意不持久化**（全是会话内瞬态、刷新归零合理），故无 `hydrate`、天然无 SSR hydration 问题。
-  纯渲染层：不做 resolve / 版本切换（D4 / §5.6）。
+  渲染仍只读：不引入手动编辑器 / 绕过 PendingChange 的写路径（D-D5-1）。
 
 ## 约定 / 红线
 - 命名 `useXxxStore`，单一职责。

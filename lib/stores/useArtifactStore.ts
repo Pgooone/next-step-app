@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import type { Artifact } from "@/lib/domain/artifact-service";
+import type { Artifact, ArtifactVersion } from "@/lib/domain/artifact-service";
 import type { PendingChange } from "@/lib/domain/pending-change-service";
 
 /**
@@ -18,7 +18,10 @@ import type { PendingChange } from "@/lib/domain/pending-change-service";
  * 直接 `useArtifactStore(selector)` 会让 useSyncExternalStore 快照恒不等 → 无限重渲染。
  * 此类派生 selector 订阅侧必须用 `useShallow` 包裹（D-D3-10，真浏览器 E2E 暴露、单测/逻辑层抓不到）。
  *
- * 纯渲染层（D-D3-1）：**不做** resolve / 逐块确认 / 版本切换；那些是 D4 / §5.5 / §5.6。
+ * 渲染仍只读（D-D5-1：D5 不引入手动编辑器、不新增绕过 PendingChange 的写路径）。
+ * **D5 版本管理**（§5.6）：versions 列表 + selectVersion（null=跟随最新 / 选历史版只读看快照）+
+ * rollback（带 If-Match 乐观锁、成功后 refresh 并复位到最新）。无 SSE（D-D5-2 选 A：自己触发的
+ * 操作后直接 refresh），不动 useAgentSession 的 SSE switch。
  */
 
 /** 划选引用目标：哪个 artifact 的哪段文本被引用到对话框（AC⑥）。 */
@@ -49,6 +52,18 @@ interface ArtifactState {
    */
   diffFocusNonce: number;
 
+  // ---- D5 版本管理（§5.6）----
+  /** 当前 artifact 的版本元数据列表（含 content，按 version 升序）；未拉取/未打开为空数组。 */
+  versions: ArtifactVersion[];
+  /** 选中查看的版本号：null = 跟随最新（currentVersion，叠 pending 高亮/Diff）；非 null = 只读看该历史版。 */
+  selectedVersion: number | null;
+  /** 选中历史版时的只读内容（selectedVersion 为 null 时为 null）。 */
+  historyContent: string | null;
+  /** rollback 进行中（禁用按钮防重复点）。 */
+  rollbackBusy: boolean;
+  /** rollback 错误（如 409 冲突）；null 为无错。 */
+  rollbackError: string | null;
+
   /** 打开一个 artifact：拉取其当前内容 + pending 变更，重置视图为 inline。 */
   open: (artifactId: string) => Promise<void>;
   /**
@@ -66,6 +81,19 @@ interface ArtifactState {
   setEditTarget: (target: EditTarget | null) => void;
   /** 请求聚焦并排 Diff（D 键）：切 viewMode='diff' 并 +1 diffFocusNonce 触发 AppShell 展开面板。 */
   requestDiffFocus: () => void;
+
+  /** 拉当前 artifact 的版本列表（GET .../versions）。无打开的 artifact 时为空操作。 */
+  listVersions: () => Promise<void>;
+  /**
+   * 选择查看的版本（D5）：null 或选中 currentVersion → 回到跟随最新（清历史内容）；
+   * 否则拉 GET .../versions/[v] 取该版完整内容只读展示（D-D5-4：历史版无 pending 高亮/Diff）。
+   */
+  selectVersion: (version: number | null) => Promise<void>;
+  /**
+   * 回滚到目标版（D5 §5.6 AC④⑥）：带 If-Match=当前 artifact.version（乐观锁），
+   * 成功后 refresh() 拉新内容/pending + 复位 selectedVersion=null（回到最新）；409 等失败写 rollbackError。
+   */
+  rollback: (toVersion: number) => Promise<void>;
 }
 
 export const useArtifactStore = create<ArtifactState>((set, get) => ({
@@ -77,9 +105,24 @@ export const useArtifactStore = create<ArtifactState>((set, get) => ({
   error: null,
   editTarget: null,
   diffFocusNonce: 0,
+  versions: [],
+  selectedVersion: null,
+  historyContent: null,
+  rollbackBusy: false,
+  rollbackError: null,
 
   open: async (artifactId) => {
-    set({ selectedArtifactId: artifactId, loading: true, error: null, viewMode: "inline" });
+    // 打开新 artifact：版本态全部归零（不跨 artifact 留旧版本/历史内容）。
+    set({
+      selectedArtifactId: artifactId,
+      loading: true,
+      error: null,
+      viewMode: "inline",
+      versions: [],
+      selectedVersion: null,
+      historyContent: null,
+      rollbackError: null,
+    });
     try {
       // artifact 内容与 pending 变更两个只读端点并行拉取（D-D3-2）。
       const [artRes, pendRes] = await Promise.all([
@@ -123,6 +166,10 @@ export const useArtifactStore = create<ArtifactState>((set, get) => ({
       pendingChanges: [],
       viewMode: "inline",
       error: null,
+      versions: [],
+      selectedVersion: null,
+      historyContent: null,
+      rollbackError: null,
     }),
 
   setViewMode: (mode) => set({ viewMode: mode }),
@@ -130,6 +177,73 @@ export const useArtifactStore = create<ArtifactState>((set, get) => ({
   setEditTarget: (target) => set({ editTarget: target }),
 
   requestDiffFocus: () => set((s) => ({ viewMode: "diff", diffFocusNonce: s.diffFocusNonce + 1 })),
+
+  listVersions: async () => {
+    const artifactId = get().selectedArtifactId;
+    if (!artifactId) return;
+    try {
+      const res = await fetch(`/api/artifacts/${encodeURIComponent(artifactId)}/versions`);
+      if (!res.ok) return; // 静默：版本列表拉不到不破坏当前视图
+      const versions = (await res.json()) as ArtifactVersion[];
+      set({ versions });
+    } catch {
+      // 静默：保留现状
+    }
+  },
+
+  selectVersion: async (version) => {
+    const { selectedArtifactId, artifact } = get();
+    if (!selectedArtifactId) return;
+    // null 或选回当前版 → 跟随最新（清历史内容、恢复 pending 高亮/Diff，D-D5-4）。
+    if (version == null || (artifact && version === artifact.currentVersion)) {
+      set({ selectedVersion: null, historyContent: null });
+      return;
+    }
+    try {
+      const res = await fetch(
+        `/api/artifacts/${encodeURIComponent(selectedArtifactId)}/versions/${version}`,
+      );
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        set({ rollbackError: `加载历史版失败：${data.error ?? `HTTP ${res.status}`}` });
+        return;
+      }
+      const ver = (await res.json()) as ArtifactVersion;
+      set({ selectedVersion: version, historyContent: ver.content, rollbackError: null });
+    } catch (e) {
+      set({ rollbackError: `加载历史版失败：${String(e)}` });
+    }
+  },
+
+  rollback: async (toVersion) => {
+    const { selectedArtifactId, artifact, rollbackBusy } = get();
+    if (!selectedArtifactId || !artifact || rollbackBusy) return;
+    set({ rollbackBusy: true, rollbackError: null });
+    try {
+      const res = await fetch(`/api/artifacts/${encodeURIComponent(selectedArtifactId)}/rollback`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          // 乐观锁（AC⑥）：If-Match = 当前读到的 version；服务端 ≠ 则 409。
+          "If-Match": String(artifact.version),
+        },
+        body: JSON.stringify({ version: toVersion }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        set({ rollbackError: `回滚失败：${data.error ?? `HTTP ${res.status}`}` });
+        return;
+      }
+      // 成功：复位到跟随最新 + refresh() 拉新内容/pending（D-D5-2 选 A，前端自刷新、无 SSE）。
+      // 版本列表由 ArtifactPanel 监听 currentVersion 变化统一重拉（rollback 使 currentVersion+1）。
+      set({ selectedVersion: null, historyContent: null });
+      await get().refresh();
+    } catch (e) {
+      set({ rollbackError: `回滚失败：${String(e)}` });
+    } finally {
+      set({ rollbackBusy: false });
+    }
+  },
 }));
 
 /**

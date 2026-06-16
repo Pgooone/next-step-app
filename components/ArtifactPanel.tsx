@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -66,6 +66,15 @@ export function ArtifactPanel() {
   const viewMode = useArtifactStore((s) => s.viewMode);
   const setViewMode = useArtifactStore((s) => s.setViewMode);
   const setEditTarget = useArtifactStore((s) => s.setEditTarget);
+  // D5 版本管理态。
+  const versions = useArtifactStore(useShallow((s) => s.versions));
+  const selectedVersion = useArtifactStore((s) => s.selectedVersion);
+  const historyContent = useArtifactStore((s) => s.historyContent);
+  const rollbackBusy = useArtifactStore((s) => s.rollbackBusy);
+  const rollbackError = useArtifactStore((s) => s.rollbackError);
+  const listVersions = useArtifactStore((s) => s.listVersions);
+  const selectVersion = useArtifactStore((s) => s.selectVersion);
+  const rollback = useArtifactStore((s) => s.rollback);
   // selectPendingBlocks 每次 flatMap+filter 返回新数组引用，直接订阅会让 zustand 的
   // useSyncExternalStore 快照恒不等（Object.is）→ 无限重渲染（getSnapshot should be cached /
   // Maximum update depth）。用 useShallow 逐元素浅比较：DiffBlock 元素来自稳定的
@@ -74,10 +83,25 @@ export function ArtifactPanel() {
   const pendingBlocks = useArtifactStore(useShallow(selectPendingBlocks));
 
   const contentRef = useRef<HTMLDivElement>(null);
+  // rollback 二次确认（D-D5-5 两步按钮，非原生 confirm）。
+  const [confirmRollback, setConfirmRollback] = useState(false);
 
-  const toc = useMemo(() => (artifact ? parseToc(artifact.content) : []), [artifact]);
+  // 版本列表随 artifact 打开 / currentVersion 变化（rollback、D4 物化新版）统一重拉。
+  const currentVersion = artifact?.currentVersion;
+  useEffect(() => {
+    if (currentVersion != null) void listVersions();
+  }, [currentVersion, listVersions]);
+
+  // D-D5-4：看历史版（selectedVersion 非 null 且 ≠ 当前版）= 只读快照、无 pending 高亮、无 Diff。
+  const viewingHistory =
+    selectedVersion != null && artifact != null && selectedVersion !== artifact.currentVersion;
+  // 渲染用内容：看历史版用 historyContent 快照，否则用当前版 content。
+  const displayContent = viewingHistory ? (historyContent ?? "") : (artifact?.content ?? "");
+
+  const toc = useMemo(() => parseToc(displayContent), [displayContent]);
 
   // AC④：pending 块数 > INLINE_HL_LIMIT 自动降级为并排 Diff（即使用户没点切换）。
+  // 看历史版时不叠 pending（viewingHistory 直接走只读渲染分支）。
   const pendingCount = countPendingBlocks(pendingBlocks);
   const degraded = shouldDegradeToDiff(pendingCount);
   const effectiveMode: "inline" | "diff" = degraded ? "diff" : viewMode;
@@ -121,8 +145,62 @@ export function ArtifactPanel() {
         <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-muted)" }} title={artifact.title}>
           {artifact.title}
         </span>
-        <span>v{artifact.currentVersion}</span>
-        {pendingCount > 0 && (
+        {/* 版本下拉（D5 §5.6 AC③）：「最新 (v{n})」跟随最新，选历史版只读看快照（D-D5-4）。 */}
+        <select
+          value={viewingHistory ? String(selectedVersion) : ""}
+          onChange={(e) => {
+            setConfirmRollback(false);
+            const val = e.target.value;
+            void selectVersion(val === "" ? null : Number(val));
+          }}
+          title="切换查看的版本"
+          style={selectStyle}
+        >
+          <option value="">最新 (v{artifact.currentVersion})</option>
+          {versions
+            .filter((v) => v.version !== artifact.currentVersion)
+            .sort((a, b) => b.version - a.version)
+            .map((v) => (
+              <option key={v.version} value={v.version}>
+                v{v.version}
+                {v.note ? ` · ${v.note}` : ""}
+              </option>
+            ))}
+        </select>
+        {/* 看历史版时给出只读 + rollback 二次确认（D-D5-5）。 */}
+        {viewingHistory && (
+          <>
+            <span style={{ color: "var(--text-dim)" }}>历史版本（只读）</span>
+            {confirmRollback ? (
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ color: "#ca8a04" }}>回滚到 v{selectedVersion}？将生成新版</span>
+                <button
+                  onClick={() => {
+                    setConfirmRollback(false);
+                    if (selectedVersion != null) void rollback(selectedVersion);
+                  }}
+                  disabled={rollbackBusy}
+                  style={solidBtn("#dc2626")}
+                >
+                  确认回滚
+                </button>
+                <button onClick={() => setConfirmRollback(false)} style={btnStyle(false)}>
+                  取消
+                </button>
+              </span>
+            ) : (
+              <button
+                onClick={() => setConfirmRollback(true)}
+                disabled={rollbackBusy}
+                title="把此历史版本复制为新版本（不删除历史）"
+                style={btnStyle(false)}
+              >
+                {rollbackBusy ? "回滚中…" : `回滚到 v${selectedVersion}`}
+              </button>
+            )}
+          </>
+        )}
+        {!viewingHistory && pendingCount > 0 && (
           <span style={{ color: "#eab308" }}>{pendingCount} 处待确认</span>
         )}
         <span style={{ marginLeft: "auto" }} />
@@ -134,47 +212,72 @@ export function ArtifactPanel() {
         >
           引用到对话框
         </button>
-        {/* 视图切换（AC⑤）；降级时锁定 diff 并提示 */}
-        <div style={{ display: "flex", borderRadius: 5, overflow: "hidden", border: "1px solid var(--border)" }}>
-          <button
-            onClick={() => setViewMode("inline")}
-            disabled={degraded}
-            title={degraded ? `变更超过 ${INLINE_HL_LIMIT} 块，已自动降级为并排 Diff` : "行内高亮视图"}
-            style={segBtnStyle(effectiveMode === "inline", degraded)}
-          >
-            行内
-          </button>
-          <button
-            onClick={() => setViewMode("diff")}
-            title="并排 Diff 视图，逐块可见"
-            style={segBtnStyle(effectiveMode === "diff", false)}
-          >
-            查看 Diff
-          </button>
-        </div>
+        {/* 视图切换（AC⑤）；降级时锁定 diff 并提示。看历史版时纯只读、无 Diff（D-D5-4），故隐藏。 */}
+        {!viewingHistory && (
+          <div style={{ display: "flex", borderRadius: 5, overflow: "hidden", border: "1px solid var(--border)" }}>
+            <button
+              onClick={() => setViewMode("inline")}
+              disabled={degraded}
+              title={degraded ? `变更超过 ${INLINE_HL_LIMIT} 块，已自动降级为并排 Diff` : "行内高亮视图"}
+              style={segBtnStyle(effectiveMode === "inline", degraded)}
+            >
+              行内
+            </button>
+            <button
+              onClick={() => setViewMode("diff")}
+              title="并排 Diff 视图，逐块可见"
+              style={segBtnStyle(effectiveMode === "diff", false)}
+            >
+              查看 Diff
+            </button>
+          </div>
+        )}
       </div>
+      {rollbackError && (
+        <div
+          style={{
+            padding: "4px 16px",
+            fontSize: 11,
+            color: "#f87171",
+            background: "rgba(240,60,60,0.1)",
+            borderBottom: "1px solid var(--border)",
+            flexShrink: 0,
+          }}
+        >
+          {rollbackError}
+        </div>
+      )}
 
       {/* 主体：左 TOC + 右内容（AC①） */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
         {toc.length > 0 && <TocSidebar items={toc} contentRef={contentRef} />}
         <div ref={contentRef} style={{ flex: 1, overflow: "auto", background: "var(--bg)" }}>
-          {degraded && (
-            <div
-              style={{
-                padding: "8px 16px",
-                fontSize: 12,
-                color: "#ca8a04",
-                background: "rgba(234,179,8,0.1)",
-                borderBottom: "1px solid var(--border)",
-              }}
-            >
-              变更块数（{pendingCount}）超过 {INLINE_HL_LIMIT}，已自动切换为并排 Diff。
+          {viewingHistory ? (
+            // D-D5-4：历史版纯只读渲染（无 pending 高亮、无 Diff、无降级）。
+            <div style={{ padding: "16px 24px", maxWidth: 900 }}>
+              <Markdown>{displayContent}</Markdown>
             </div>
-          )}
-          {effectiveMode === "diff" ? (
-            <DiffBlocksView blocks={pendingBlocks} />
           ) : (
-            <InlineHighlightView content={artifact.content} pendingBlocks={pendingBlocks} />
+            <>
+              {degraded && (
+                <div
+                  style={{
+                    padding: "8px 16px",
+                    fontSize: 12,
+                    color: "#ca8a04",
+                    background: "rgba(234,179,8,0.1)",
+                    borderBottom: "1px solid var(--border)",
+                  }}
+                >
+                  变更块数（{pendingCount}）超过 {INLINE_HL_LIMIT}，已自动切换为并排 Diff。
+                </div>
+              )}
+              {effectiveMode === "diff" ? (
+                <DiffBlocksView blocks={pendingBlocks} />
+              ) : (
+                <InlineHighlightView content={artifact.content} pendingBlocks={pendingBlocks} />
+              )}
+            </>
           )}
         </div>
       </div>
@@ -420,6 +523,29 @@ function btnStyle(active: boolean): React.CSSProperties {
     background: active ? "var(--bg-selected)" : "var(--bg-hover)",
     color: active ? "var(--text)" : "var(--text-muted)",
     border: "1px solid var(--border)",
+    borderRadius: 5,
+  };
+}
+
+const selectStyle: React.CSSProperties = {
+  padding: "2px 6px",
+  fontSize: 11,
+  cursor: "pointer",
+  background: "var(--bg-hover)",
+  color: "var(--text-muted)",
+  border: "1px solid var(--border)",
+  borderRadius: 5,
+};
+
+/** rollback 确认按钮（实心边框，红色高危）。复用 PendingChangeCard 同款实心样式语义。 */
+function solidBtn(color: string): React.CSSProperties {
+  return {
+    padding: "2px 8px",
+    fontSize: 11,
+    cursor: "pointer",
+    background: "transparent",
+    color,
+    border: `1px solid ${color}`,
     borderRadius: 5,
   };
 }

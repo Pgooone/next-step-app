@@ -166,6 +166,20 @@ export class ArtifactService {
     return this.readVersionContent(projectId, id, artifact.currentVersion);
   }
 
+  /**
+   * 取某个版本的完整快照（content + version + meta）。供版本下拉「查看任意历史版本」（D5 §5.6 AC③）。
+   * artifact 不存在抛 NOT_FOUND；目标版本文件不存在抛 NOT_FOUND（公开方法故按「资源不存在」语义，
+   * 区别于 readVersionContent 的 INVALID——后者是「当前版文件缺失」的内部一致性错误）。
+   */
+  getVersion(projectId: string, id: string, version: number): ArtifactVersion {
+    this.readMeta(projectId, id); // artifact 不存在则抛 NOT_FOUND
+    const path = this.versionPath(projectId, id, version);
+    if (!existsSync(path)) {
+      throw new ArtifactError("NOT_FOUND", `版本不存在: v${version}`);
+    }
+    return this.readVersion(path);
+  }
+
   /** 列 versions/*.json，按 version 升序。artifact 不存在抛 NOT_FOUND。 */
   listVersions(projectId: string, id: string): ArtifactVersion[] {
     this.readMeta(projectId, id); // 不存在则抛 NOT_FOUND
