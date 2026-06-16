@@ -1,6 +1,6 @@
 # lib/api（Next-Step API 辅助）
 
-> 归属：Next-Step 新增。　规格：`../../next-step/docs/04`（接口契约）
+> 归属：Next-Step 新增。　规格：`../../next-step-V1/docs/04`（接口契约）
 
 ## 作用
 `app/api` 领域路由共用的 HTTP 辅助，把领域层与 HTTP 解耦。

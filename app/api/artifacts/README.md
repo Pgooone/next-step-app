@@ -1,6 +1,6 @@
 # app/api/artifacts（受管 artifact 读写路由）
 
-> 归属：Next-Step 新增。　规格：`../../../next-step/docs/05-features-功能清单.md` §5.6（版本管理）、`../../../next-step/docs/04-api-contracts-接口契约.md`（接口契约）
+> 归属：Next-Step 新增。　规格：`../../../next-step-V1/docs/05-features-功能清单.md` §5.6（版本管理）、`../../../next-step-V1/docs/04-api-contracts-接口契约.md`（接口契约）
 
 ## 作用
 受管 artifact 的 HTTP 入口（D1），是 `lib/domain/artifact-service.ts` 的薄 HTTP 包装：

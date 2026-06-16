@@ -1,6 +1,6 @@
 # lib/pi（pi 内核封装区）
 
-> 归属：Next-Step 新增。　规格：`../../next-step/docs/05-features-功能清单.md` §5.2（B2）
+> 归属：Next-Step 新增。　规格：`../../next-step-V1/docs/05-features-功能清单.md` §5.2（B2）
 > 决策：`../tasks/decisions.md` D-24~D-28（B2）、D-B4-1~8（B4）　任务卡：`../tasks/agent-profiles.md`
 
 ## 作用

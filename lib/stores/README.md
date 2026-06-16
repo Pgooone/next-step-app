@@ -1,6 +1,6 @@
 # lib/stores（Next-Step 状态层 · Zustand）
 
-> 归属：Next-Step 新增。　规格：`../../next-step/docs/07`（开发约定）
+> 归属：Next-Step 新增。　规格：`../../next-step-V1/docs/07`（开发约定）
 
 ## 作用
 前端全局状态，用 **Zustand**。每个 store 单一职责、命名 `useXxxStore`；

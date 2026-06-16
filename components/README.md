@@ -1,6 +1,6 @@
 # components（前端组件）
 
-> 归属：基座（pi-web）继承 + Next-Step 新增。　规格：`../../next-step/docs/05-features-功能清单.md`
+> 归属：基座（pi-web）继承 + Next-Step 新增。　规格：`../../next-step-V1/docs/05-features-功能清单.md`
 
 ## 作用
 React 函数式组件（全部 `"use client"` + hooks）。基座组件（`ChatWindow` / `FileViewer` /

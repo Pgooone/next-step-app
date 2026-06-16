@@ -1,6 +1,6 @@
 # lib/domain（Next-Step 领域层）
 
-> 归属：Next-Step 新增。　规格：`../../next-step/docs/03`（数据模型）、`04`（API 契约）
+> 归属：Next-Step 新增。　规格：`../../next-step-V1/docs/03`（数据模型）、`04`（API 契约）
 > 任务卡：`../tasks/`
 
 ## 作用

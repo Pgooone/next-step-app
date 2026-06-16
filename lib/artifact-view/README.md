@@ -1,6 +1,6 @@
 # lib/artifact-view（产物面板渲染纯函数 · D3）
 
-> 归属：Next-Step 新增（Iter D·D3）。　规格：`../../next-step/docs/05-features-功能清单.md` §5.4
+> 归属：Next-Step 新增（Iter D·D3）。　规格：`../../next-step-V1/docs/05-features-功能清单.md` §5.4
 
 ## 作用
 ArtifactPanel（`components/ArtifactPanel.tsx`）渲染所依赖的**纯函数**：TOC 解析、
