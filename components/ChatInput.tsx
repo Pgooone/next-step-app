@@ -1,6 +1,13 @@
 "use client";
 
 import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, forwardRef, KeyboardEvent } from "react";
+import {
+  classifyFile,
+  isLargeFile,
+  composeMessageWithFiles,
+  FILE_INPUT_ACCEPT,
+  type TextAttachment,
+} from "@/lib/chat-file-attach";
 
 export interface AttachedImage {
   data: string;   // base64, no prefix
@@ -73,6 +80,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [toolDropdownOpen, setToolDropdownOpen] = useState(false);
   const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
+  const [attachedTexts, setAttachedTexts] = useState<TextAttachment[]>([]);
+  const [fileNotice, setFileNotice] = useState<string | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -145,6 +154,53 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     setAttachedImages((prev) => [...prev, ...newImages]);
   }, []);
 
+  const readTextFile = useCallback(
+    (file: File) =>
+      new Promise<TextAttachment>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ name: file.name, content: reader.result as string });
+        reader.onerror = reject;
+        reader.readAsText(file);
+      }),
+    []
+  );
+
+  // 文件选择器分流：图片走多模态通道（不动），文本类读成 <file>，其余给软提示不静默失败。
+  const processPickedFiles = useCallback(
+    async (files: File[]) => {
+      const images: File[] = [];
+      const texts: File[] = [];
+      const unsupported: string[] = [];
+      for (const f of files) {
+        const kind = classifyFile(f.name, f.type);
+        if (kind === "image") images.push(f);
+        else if (kind === "text") texts.push(f);
+        else unsupported.push(f.name);
+      }
+
+      if (images.length) processImageFiles(images);
+
+      if (texts.length) {
+        const read = await Promise.all(texts.map(readTextFile));
+        setAttachedTexts((prev) => [...prev, ...read]);
+      }
+
+      const oversized = texts.filter((f) => isLargeFile(f.size)).map((f) => f.name);
+      if (unsupported.length) {
+        setFileNotice(`暂不支持：${unsupported.join("、")}，建议转成文本`);
+      } else if (oversized.length) {
+        setFileNotice(`大文件会消耗大量 token：${oversized.join("、")}`);
+      } else {
+        setFileNotice(null);
+      }
+    },
+    [processImageFiles, readTextFile]
+  );
+
+  const removeText = useCallback((index: number) => {
+    setAttachedTexts((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
   const removeImage = useCallback((index: number) => {
     setAttachedImages((prev) => {
       const next = [...prev];
@@ -161,30 +217,37 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     });
   }, []);
 
+  const clearAttachments = useCallback(() => {
+    clearImages();
+    setAttachedTexts([]);
+    setFileNotice(null);
+  }, [clearImages]);
+
   const handleSend = useCallback(() => {
     const msg = value.trim();
-    if (!msg && !attachedImages.length) return;
+    if (!msg && !attachedImages.length && !attachedTexts.length) return;
     if (isStreaming) return;
-    onSend(msg, attachedImages.length ? attachedImages : undefined);
+    onSend(composeMessageWithFiles(msg, attachedTexts), attachedImages.length ? attachedImages : undefined);
     setValue("");
-    clearImages();
+    clearAttachments();
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [value, attachedImages, isStreaming, onSend, clearImages]);
+  }, [value, attachedImages, attachedTexts, isStreaming, onSend, clearAttachments]);
 
   const sendQueued = useCallback((mode: "steer" | "followup") => {
     const msg = value.trim();
-    if (!msg && !attachedImages.length) return;
+    if (!msg && !attachedImages.length && !attachedTexts.length) return;
+    const composed = composeMessageWithFiles(msg, attachedTexts);
     if (mode === "steer" && onSteer) {
-      onSteer(msg, attachedImages.length ? attachedImages : undefined);
+      onSteer(composed, attachedImages.length ? attachedImages : undefined);
     } else if (mode === "followup" && onFollowUp) {
-      onFollowUp(msg, attachedImages.length ? attachedImages : undefined);
+      onFollowUp(composed, attachedImages.length ? attachedImages : undefined);
     }
     setValue("");
-    clearImages();
+    clearAttachments();
     if (textareaRef.current) textareaRef.current.style.height = "auto";
-  }, [value, attachedImages, onSteer, onFollowUp, clearImages]);
+  }, [value, attachedImages, attachedTexts, onSteer, onFollowUp, clearAttachments]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -275,7 +338,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-
+  // 有正文 / 图片 / 文本附件任一即可发送。
+  const hasContent = Boolean(value.trim()) || attachedImages.length > 0 || attachedTexts.length > 0;
+  const hasAttachment = attachedImages.length > 0 || attachedTexts.length > 0;
 
   return (
     <div
@@ -290,12 +355,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept={FILE_INPUT_ACCEPT}
         multiple
         style={{ display: "none" }}
         onChange={(e) => {
           const files = Array.from(e.target.files ?? []);
-          processImageFiles(files);
+          processPickedFiles(files);
           e.target.value = "";
         }}
       />
@@ -342,6 +407,65 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 </button>
               </div>
             ))}
+          </div>
+        )}
+        {/* Attached text files */}
+        {attachedTexts.length > 0 && (
+          <div data-testid="attached-text-files" style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+            {attachedTexts.map((t, i) => (
+              <div
+                key={i}
+                style={{
+                  display: "flex", alignItems: "center", gap: 5,
+                  padding: "4px 6px 4px 8px",
+                  background: "var(--bg-panel)", border: "1px solid var(--border)",
+                  borderRadius: 6, fontSize: 12, color: "var(--text-muted)", maxWidth: 220,
+                }}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                </svg>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
+                <button
+                  onClick={() => removeText(i)}
+                  title="移除"
+                  style={{
+                    flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                    width: 14, height: 14, borderRadius: "50%", padding: 0,
+                    background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)",
+                  }}
+                >
+                  <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                    <line x1="1" y1="1" x2="7" y2="7" /><line x1="7" y1="1" x2="1" y2="7" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {/* File soft notice (unsupported / large file) */}
+        {fileNotice && (
+          <div style={{
+            marginBottom: 6, padding: "5px 10px",
+            background: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.25)",
+            borderRadius: 6, fontSize: 12, color: "rgba(180,130,0,0.9)",
+            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+          }}>
+            <span>{fileNotice}</span>
+            <button
+              onClick={() => setFileNotice(null)}
+              title="忽略"
+              style={{
+                flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                width: 14, height: 14, padding: 0,
+                background: "none", border: "none", cursor: "pointer", color: "inherit",
+              }}
+            >
+              <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <line x1="1" y1="1" x2="7" y2="7" /><line x1="7" y1="1" x2="1" y2="7" />
+              </svg>
+            </button>
           </div>
         )}
 
@@ -403,16 +527,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               {onSteer && (
                 <button
                   onClick={() => sendQueued("steer")}
-                  disabled={!value.trim() && !attachedImages.length}
+                  disabled={!hasContent}
                   title="打断 Agent 当前运行，立即注入消息"
                   style={{
                     display: "flex", alignItems: "center", gap: 5,
                     padding: "7px 12px",
-                    background: (value.trim() || attachedImages.length) ? "rgba(234,179,8,0.12)" : "none",
+                    background: hasContent ? "rgba(234,179,8,0.12)" : "none",
                     border: "1px solid rgba(234,179,8,0.35)",
                     borderRadius: 8,
-                    color: (value.trim() || attachedImages.length) ? "rgba(180,130,0,1)" : "var(--text-dim)",
-                    cursor: (value.trim() || attachedImages.length) ? "pointer" : "not-allowed",
+                    color: hasContent ? "rgba(180,130,0,1)" : "var(--text-dim)",
+                    cursor: hasContent ? "pointer" : "not-allowed",
                     fontSize: 13, fontWeight: 600, letterSpacing: "-0.01em",
                     transition: "background 0.12s",
                   }}
@@ -426,16 +550,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               {onFollowUp && (
                 <button
                   onClick={() => sendQueued("followup")}
-                  disabled={!value.trim() && !attachedImages.length}
+                  disabled={!hasContent}
                   title="在 Agent 完成后排队发送"
                   style={{
                     display: "flex", alignItems: "center", gap: 5,
                     padding: "7px 12px",
-                    background: (value.trim() || attachedImages.length) ? "rgba(129,140,248,0.12)" : "none",
+                    background: hasContent ? "rgba(129,140,248,0.12)" : "none",
                     border: "1px solid rgba(129,140,248,0.35)",
                     borderRadius: 8,
-                    color: (value.trim() || attachedImages.length) ? "rgba(99,102,241,1)" : "var(--text-dim)",
-                    cursor: (value.trim() || attachedImages.length) ? "pointer" : "not-allowed",
+                    color: hasContent ? "rgba(99,102,241,1)" : "var(--text-dim)",
+                    cursor: hasContent ? "pointer" : "not-allowed",
                     fontSize: 13, fontWeight: 600, letterSpacing: "-0.01em",
                     transition: "background 0.12s",
                   }}
@@ -451,21 +575,21 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           ) : (
             <button
               onClick={handleSend}
-              disabled={!value.trim() && !attachedImages.length}
+              disabled={!hasContent}
               style={{
                 flexShrink: 0,
                 alignSelf: "flex-end",
                 display: "flex", alignItems: "center", gap: 6,
                 padding: "7px 14px",
-                background: (value.trim() || attachedImages.length) ? "var(--accent)" : "var(--bg-panel)",
+                background: hasContent ? "var(--accent)" : "var(--bg-panel)",
                 border: "none",
                 borderRadius: 8,
-                color: (value.trim() || attachedImages.length) ? "#fff" : "var(--text-dim)",
-                cursor: (value.trim() || attachedImages.length) ? "pointer" : "not-allowed",
+                color: hasContent ? "#fff" : "var(--text-dim)",
+                cursor: hasContent ? "pointer" : "not-allowed",
                 fontSize: 13,
                 fontWeight: 600,
                 letterSpacing: "-0.01em",
-                boxShadow: (value.trim() || attachedImages.length) ? "0 1px 3px rgba(37,99,235,0.25)" : "none",
+                boxShadow: hasContent ? "0 1px 3px rgba(37,99,235,0.25)" : "none",
                 transition: "background 0.15s, box-shadow 0.15s",
               }}
             >
@@ -486,13 +610,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isStreaming}
-              title="Attach image"
+              title="附加图片或文本文件"
               style={{
                 flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
                 width: 32, height: 32, padding: 0,
                 background: "none", border: "none",
                 borderRadius: 9,
-                color: attachedImages.length ? "var(--accent)" : "var(--text-muted)",
+                color: hasAttachment ? "var(--accent)" : "var(--text-muted)",
                 cursor: isStreaming ? "not-allowed" : "pointer",
                 opacity: isStreaming ? 0.5 : 1,
                 transition: "background 0.12s, color 0.12s",
@@ -500,11 +624,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               onMouseEnter={(e) => {
                 if (isStreaming) return;
                 e.currentTarget.style.background = "var(--bg-hover)";
-                e.currentTarget.style.color = attachedImages.length ? "var(--accent)" : "var(--text)";
+                e.currentTarget.style.color = hasAttachment ? "var(--accent)" : "var(--text)";
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = "none";
-                e.currentTarget.style.color = attachedImages.length ? "var(--accent)" : "var(--text-muted)";
+                e.currentTarget.style.color = hasAttachment ? "var(--accent)" : "var(--text-muted)";
               }}
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
