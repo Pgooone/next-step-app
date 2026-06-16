@@ -503,7 +503,7 @@ function AgentList({
                     删除 <span style={{ fontWeight: 600 }}>{p.name}</span>？
                     <span style={{ color: "var(--text-dim)" }}>
                       {" "}
-                      将删除整个 <code>.pi/agents/{p.id}/</code> 目录（含 agent.md / memory.md），
+                      将删除其档案目录（含 agent.md / memory.md），
                       不可恢复。
                     </span>
                   </div>
