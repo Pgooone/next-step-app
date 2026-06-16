@@ -45,11 +45,11 @@
   - **红线/约定**：UI 卡**验收必走真浏览器 E2E**（[[next-step-browser-e2e]]，SSR/hydration bug 单测抓不到、B3 教训）；新增 `components/ArtifactPanel` 区配薄 README（[[next-step-area-readme-convention]]）；diffBlocks 是 D2 既定契约**别改**（要改回 D2）。
   - **不在 D3**：D2 留的 2 个接线 gap（接真实会话 / agent 读 artifact 文件接口）、按块确认写盘（D4）、版本切换（D5）。
 
-## D4 · PendingChangeCard + 按块确认 — 🔄 实现完成待验收（lint/test/build 绿）
+## D4 · PendingChangeCard + 按块确认 — ✅ 已完成（commit `54503ec`，双层验收全 PASS）
 - 依赖：D2、D3
 - 涉及：`lib/domain/pending-change-service.ts`(新增 `applyResolvedBlocks`/`resolveBlock`/`resolveAndMaterialize`/`remove`、构造注入 ArtifactService)、`POST /api/artifacts/[id]/pending/[changeId]/resolve`(薄路由)、`lib/stores/useArtifactStore.ts`(新增 `refresh`/`diffFocusNonce`/`requestDiffFocus`)、`components/PendingChangeCard.tsx`(新建)、`components/ChatWindow.tsx`(挂载)、`components/AppShell.tsx`(+1 useEffect 监听 diffFocusNonce 展开右面板)
 - 完成定义：YNRD + resolveBlock；全 resolve 后写盘 + 新版本 ✅
-- 验证：5.5 AC（逻辑层 + 真浏览器两层待跑）
+- 验证：5.5 AC 两层**全 PASS**——verifier 逻辑层独立复跑 222 tests/lint/build + 自写 8/8 fixture（混合行序、resolveAndMaterialize 双计数+1/删 pending、If-Match 并发取即时 version+陈旧→409）+ 红线全守；真浏览器 E2E 12/12、pageErrors 空、AC④ B 方案实测（收起面板→D→可靠展开并排 Diff）
 - 实现要点：
   - **内容重建**（D-D4-1）：`applyResolvedBlocks(change)` 纯函数重放 lcsDiff+聚块、按块 state 取舍（confirmed 取新行 / rejected·pending 留旧行）；不变量「全 confirmed=newContent / 全 rejected=oldContent」+ 三块混合行序均已单测；仅 op=replace、失配/patch 抛 INVALID。
   - **逐块 resolve**（service）：`resolveBlock(...,{blockId?,action:'confirm'|'reject'})` 纯翻块 state 原子落盘（省 blockId=全 pending 块统一置态、幂等不回退已决）。

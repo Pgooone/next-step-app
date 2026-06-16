@@ -12,7 +12,7 @@
 | Iter A | [project-workspace.md](project-workspace.md) | 项目即工作区（A1/A2/A3） | ✅ 完成（A1 ✅ A2 ✅ A3 ✅） |
 | Iter B | [agent-profiles.md](agent-profiles.md) | 多 Agent 可定义（B1/B2/B3/B4） | ✅ 完成（B1 ✅ B2 ✅ B3 ✅ B4 ✅） |
 | Iter C | [dispatch.md](dispatch.md) | 多 Agent 协作派发（C1/C2） | ✅ 完成（C1 ✅ C2 ✅；真实端到端待凭证） |
-| Iter D | [artifacts-diff-hitl.md](artifacts-diff-hitl.md) | 产物 Diff/版本/HITL（D1–D5，v2） | 🔄 进行中（D1 ✅ D2 ✅ D3 ✅；D4 🔄 待验收；D5 ⬜） |
+| Iter D | [artifacts-diff-hitl.md](artifacts-diff-hitl.md) | 产物 Diff/版本/HITL（D1–D5，v2） | 🔄 进行中（D1 ✅ D2 ✅ D3 ✅ D4 ✅；D5 ⬜） |
 
 ## 依赖图
 
@@ -74,3 +74,11 @@ C → D        （D 依赖 A 与 C）
   - **两处 bug 修复**：① 交接的 artifact-service JSDoc `*/` 提前闭合致 build 崩（接力发现，前 teammate「后端 done」从未跑过 build）；② `selectPendingBlocks` 派生 selector 返回新数组引用 → zustand 无限重渲染、ArtifactPanel 一开即崩 → `useShallow`（D-D3-10，**真浏览器 E2E 暴露、单测/逻辑层抓不到**，同 B3 旨趣）。
   - 已知 UX gap（D-D3-11，留后续）：空欢迎态下划选引用无可见反馈（有活跃会话时 AC⑥ 正常）。决策 D-D3-1~11。E2E 复验脚本 gitignore 不入库。
   - **过程**：team 运行时一度整体丢失（疑上下文压缩，落盘成果保留），靠 git status 核进度 + 重建 team + 精确交接接力恢复（[[next-step-agent-team-recovery]]）。
+- ✅ **D4 PendingChangeCard + 按块确认完成**（commit `54503ec`；agent team `ns-impl`：d4-impl 实现 + d4-verifier 逻辑层验收 + d4-e2e 真浏览器验收，lead 协调拍板）。test **222**（pending-change-service 42，新增 16）、lint clean、build(11 页) 全绿；**双层验收全 PASS**（verifier 自写 8/8 fixture + 红线全守；真浏览器 E2E 12/12、pageErrors 空）。
+  - HITL 闭环最后一环（§5.5）：对话框卡片逐块确认/拒绝 → 一条 PendingChange 全块非 pending → 服务端重建内容 + 物化新版本，守「确认后才写盘」红线。
+  - **内容重建**（D-D4-1）：`applyResolvedBlocks` 纯函数重放 lcsDiff+同序聚块、按块 state 取舍；不变量「全 confirmed=newContent / 全 rejected=oldContent」+ 混合行序均单测；仅 op=replace、失配/patch 抛 INVALID（不在 DiffBlock 冗余行号）。
+  - **写盘落 service**（D-D4-4/5）：「一组」=单条 PendingChange；`resolveAndMaterialize`（注入 ArtifactService）翻块后「全块非 pending」则重建 + `submitVersion`(当前 version If-Match) + `remove`，路由薄壳；`resolveBlock` 纯翻 state 独立可测；写盘**唯一**在全决分支（verifier 核红线）。
+  - **D 键聚焦面板**（D-D4-3 选 **B**，lead 否决 impl 预拍 A）：`diffFocusNonce` + `requestDiffFocus()` 信号 + AppShell +1 useEffect（nonce>0 展开右面板），解决「面板收起后按 D 静默无反馈」（AC④「聚焦」语义，同 D-D3-11 类 gap 这次避掉）；真浏览器实测收起面板→D→可靠展开并排 Diff。
+  - **R 重生降级**（D-D4-2，接线卡）：后端 resolve 契约只 confirm/reject；R 依赖 agent 会话向受管路径再写（= D-D2-6 gap），D4 保留键位 + 按下提示「需会话接线」，留接线卡待 D-D2-6 一并接。
+  - 决策 D-D4-1~5。E2E 脚本 `scripts/d4-e2e-*` gitignore 不入库；新环境坑见 [[next-step-d4-verified]]（Skill 默认拉全局 `run-e2e.sh` APP_ROOT 推断错、须用 repo-vendored 那份）。
+  - **过程**：D 键方案 lead 三轮按住 B（消息交错 impl 一度按 A 后纠正），真浏览器验证 B 正确；impl 主动把写盘从路由下沉 service（更合 D-D4-5 本意）。
