@@ -2,7 +2,7 @@
 
 模块目标：Artifact 抽象 + 拦截编辑 + 面板渲染 + 按块确认 + 版本管理。
 规格：`../../next-step/docs/05-features-功能清单.md` §5.4/5.5/5.6；路线图 `docs/06` Iter D。
-状态：🔄 进行中（D1 ✅；D2–D5 ⬜）
+状态：✅ 完成（D1–D5 全 ✅，Iter D 收官）
 
 > ✅ **D2 的拦截机制已由 spike 预验证可行**，见 `../spike/d2-intercept/README.md`：
 > 用 `noTools:"builtin" + customTools:[替身 write/edit]`，替身 execute 不写盘、转 PendingChange。
@@ -58,7 +58,8 @@
   - **D 键聚焦面板**（D-D4-3 选 **B** 最小信号版）：卡片 D 键调 `requestDiffFocus()`（切 viewMode='diff' + `diffFocusNonce`+1）；AppShell +1 useEffect 监听 nonce(>0)→`setRightPanelOpen(true)`——解决「面板收起后按 D 静默无反馈」，卡片不直接碰 AppShell 本地 state。**R 键降级**（D-D4-2）：保留键位、按下提示「需会话接线(D-D2-6)」，D4 不接真实重生。
   - 决策 D-D4-1~5（decisions.md）。
 
-## D5 · 版本管理（下拉切换/查看历史/rollback + SSE）— ⬜ 未开始
+## D5 · 版本管理（下拉切换/查看历史/rollback；SSE 按 D-D5-2 暂缓）— ✅ 已完成（commit `89af26d`，双层独立验收全 PASS）
+- ✅ **交付**（scope B，D-D5-1）：只做版本管理、ArtifactPanel 保持只读、不引入手动编辑器。后端缺口①（D-D5-3）公开 `getVersion` + 新路由 `GET /api/artifacts/[id]/versions/[version]`（version 非整数→422、不存在→404、findArtifact 跨项目定位）；前端 `useArtifactStore` +版本 action（listVersions/selectVersion/rollback，rollback 带 If-Match=当前 version、成功后 refresh+复位跟随最新、409 处理）+ `ArtifactPanel` 头部版本下拉（selVer==null 跟随最新）+ rollback 两步二次确认（D-D5-5）+ 看历史版只读无 pending 高亮/Diff（D-D5-4）；版本列表刷新落 panel useEffect 监听 currentVersion（覆盖 rollback 与 D4 物化两条 +1 路径，surgical）。**SSE 缺口②按 D-D5-2（用户拍板 A）暂缓**：既有 SSE 按会话流、无通用事件总线，且无「agent 自动写版本」跨上下文生产者（D-D2-6 未接），前端直刷已覆盖今日全部版本变更；docs/04 SSE 契约留 D-D2-6 接 agent→版本后再补。AC① 由 D4 pending 满足、AC②⑥ 由 D1 满足、AC③④ 本卡新增、AC⑤（撤销重做）按 D-D5-1 留独立卡。用 **agent team `ns-impl`**（d5-impl 实现 + d5-verifier 逻辑层 + d5-e2e 真浏览器，两验收员各自**独立**自写 fixture/驱动复核、lead 不认 impl 自跑 E2E）。test 225（+3）/lint/build(11 页) 全绿；**双层独立验收全 PASS**：verifier 自写 7/7 fixture（getVersion 语义、rollback 乐观锁 If-Match 陈旧→409 状态零变化、历史不删）+ 真浏览器 7/7（下拉/历史版只读/rollback If-Match=3→200→currentVersion 4/刷新），pageErrors 仅 4 条与 D5 无关的 /tmp 文件树 403。决策 D-D5-1~5。详见 [[next-step-d5-verified]]。
 - 依赖：D1（版本表+乐观锁后端已就位）、D3（ArtifactPanel 只读渲染）
 - 涉及：`components/ArtifactPanel`（加版本下拉/rollback、仍只读）、`lib/stores/useArtifactStore`、SSE 事件扩展、1 个新只读路由
 - 完成定义：版本下拉查看任意历史版本 + rollback + `version.created`/`artifact.created` SSE 推送刷新

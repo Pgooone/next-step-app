@@ -12,7 +12,7 @@
 | Iter A | [project-workspace.md](project-workspace.md) | 项目即工作区（A1/A2/A3） | ✅ 完成（A1 ✅ A2 ✅ A3 ✅） |
 | Iter B | [agent-profiles.md](agent-profiles.md) | 多 Agent 可定义（B1/B2/B3/B4） | ✅ 完成（B1 ✅ B2 ✅ B3 ✅ B4 ✅） |
 | Iter C | [dispatch.md](dispatch.md) | 多 Agent 协作派发（C1/C2） | ✅ 完成（C1 ✅ C2 ✅；真实端到端待凭证） |
-| Iter D | [artifacts-diff-hitl.md](artifacts-diff-hitl.md) | 产物 Diff/版本/HITL（D1–D5，v2） | 🔄 进行中（D1 ✅ D2 ✅ D3 ✅ D4 ✅；D5 ⬜） |
+| Iter D | [artifacts-diff-hitl.md](artifacts-diff-hitl.md) | 产物 Diff/版本/HITL（D1–D5，v2） | ✅ 完成（D1 ✅ D2 ✅ D3 ✅ D4 ✅ D5 ✅） |
 
 ## 依赖图
 
@@ -82,3 +82,11 @@ C → D        （D 依赖 A 与 C）
   - **R 重生降级**（D-D4-2，接线卡）：后端 resolve 契约只 confirm/reject；R 依赖 agent 会话向受管路径再写（= D-D2-6 gap），D4 保留键位 + 按下提示「需会话接线」，留接线卡待 D-D2-6 一并接。
   - 决策 D-D4-1~5。E2E 脚本 `scripts/d4-e2e-*` gitignore 不入库；新环境坑见 [[next-step-d4-verified]]（Skill 默认拉全局 `run-e2e.sh` APP_ROOT 推断错、须用 repo-vendored 那份）。
   - **过程**：D 键方案 lead 三轮按住 B（消息交错 impl 一度按 A 后纠正），真浏览器验证 B 正确；impl 主动把写盘从路由下沉 service（更合 D-D4-5 本意）。
+- ✅ **D5 版本管理完成**（commit `89af26d`；agent team `ns-impl`：d5-impl 实现 + d5-verifier 逻辑层独立验收 + d5-e2e 真浏览器独立验收，lead 协调拍板）。test **225**（+3 getVersion）、lint clean、build(11 页) 全绿；**双层独立验收全 PASS**（verifier 自写 7/7 fixture + 红线全守；真浏览器 7/7、pageErrors 仅 4 条与 D5 无关的 /tmp 文件树 403）。
+  - **范围 scope B**（D-D5-1 用户拍板）：只做版本管理，ArtifactPanel 保持只读、**不引入手动编辑器**（§5.6 AC⑤ 撤销重做留独立后续卡，要做须先拍它与 PendingChange 红线关系）；AC① 由 D4 pending 态满足、AC②⑥ 由 D1 满足（本卡验收确认）、**AC③④ 本卡新增**。
+  - **D-D5-2 用户拍板 A：暂缓 SSE 设施、前端直刷**——精读接缝发现既有 SSE 是按会话流（events/route.ts 全由 `session.onEvent` 喂）、无通用事件总线，且当前无「agent 自动写版本」的跨上下文生产者（D-D2-6 未接线），为不存在的生产者提前造设施违 Simplicity First；同一 store/同浏览器下前端 `refresh()` 已覆盖今天所有版本变更（rollback/D4 resolve）。docs/04 SSE 契约保留为待办，留 D-D2-6 接 agent→版本后再补。**未建任何 SSE、未动 useAgentSession**。
+  - **后端缺口①**（D-D5-3）：公开 `getVersion` + 新路由 `GET /api/artifacts/[id]/versions/[version]`（取某版完整 ArtifactVersion，version 非整数→422、不存在→404、findArtifact 跨项目定位）。
+  - **前端**：`useArtifactStore` +版本 action（listVersions/selectVersion/rollback，rollback 带 If-Match=当前 version、成功后 refresh+复位跟随最新、409 处理）；`ArtifactPanel` 头部版本下拉（selVer==null 跟随最新）+ rollback 两步二次确认（D-D5-5）；**看历史版只读、无 pending 高亮/Diff/视图切换控件**（D-D5-4）。版本列表刷新落 panel useEffect 监听 currentVersion（一处覆盖 rollback 与 D4 物化两条 +1 路径、refresh 本身不动 surgical）。
+  - 决策 D-D5-1~5。E2E 脚本 `scripts/d5-e2e-*` gitignore 不入库。乐观锁字段是 `version`（非 currentVersion），前端发 `If-Match: String(artifact.version)`。
+  - **过程教训**：① impl 把实现+E2E+改记忆三件事全自干、并自标「双层验收全 PASS」——lead 不认自跑 E2E（同脚本同盲区≠独立验收，D3 教训），另派 d5-verifier/d5-e2e **独立**复核（各自自写 fixture/驱动），独立确认后才收口。② E2E 真凶常是冷编译延迟 vs 定长 wait（用 waitForResponse+轮询、非 waitForRequest+sleep），见 [[next-step-d5-verified]]。
+- ✅ **Iter D（产物 Diff/版本/HITL，v2 主线）收官**（D1–D5 全 ✅）。灵魂支柱「产物细粒度可控与可回溯」机制闭环：拦截编辑→PendingChange→面板渲染→按块确认→物化新版→版本切换/rollback。未了正交 gap（非 D5 范围）：D-D2-6 拦截接真实会话（① 装配 ② agent 读 artifact 文件接口）、D4 R 重生降级（D-D4-2）、D3 UX gap（D-D3-11）。
