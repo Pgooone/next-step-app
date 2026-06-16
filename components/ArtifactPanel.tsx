@@ -201,7 +201,11 @@ export function ArtifactPanel() {
           </>
         )}
         {!viewingHistory && pendingCount > 0 && (
-          <span style={{ color: "#eab308" }}>{pendingCount} 处待确认</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 4, color: "#eab308" }}>
+            {pendingCount} 处待确认
+            {/* M3 视觉提示：右看改动 / 左逐块确认（与 PendingChangeCard 同用 #eab308 呼应） */}
+            <span style={{ opacity: 0.85 }}>← 在左侧对话框逐块确认</span>
+          </span>
         )}
         <span style={{ marginLeft: "auto" }} />
         {/* 划选引用按钮（AC⑥） */}

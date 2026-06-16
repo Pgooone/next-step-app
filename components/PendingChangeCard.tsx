@@ -55,6 +55,10 @@ export function PendingChangeCard() {
         overflowY: "auto",
       }}
     >
+      {/* M3 视觉提示：左确认 / 右看全貌（与 ArtifactPanel「N 处待确认」同用 #eab308 呼应） */}
+      <div style={{ color: "#eab308", fontSize: 11, opacity: 0.85 }}>
+        改动全貌见右侧产物面板（按 D 看并排 Diff）
+      </div>
       {pendingChanges.map((pc) => (
         <ChangeCard
           key={pc.id}
