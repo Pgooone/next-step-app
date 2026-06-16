@@ -130,6 +130,29 @@ export class ArtifactService {
     return artifact;
   }
 
+  /**
+   * 列该项目下所有受管 artifact 的元数据（扫 `managed/<id>/artifact.json`，不含 content）。
+   * 供极简打开入口列出可渲染的 artifact。managed 目录不存在（项目尚无 artifact）→ 空数组。
+   * 解析失败的条目跳过（不因单个坏文件让整列表失败）。按 title 升序便于稳定展示。
+   */
+  listArtifacts(projectId: string): Artifact[] {
+    const dir = this.managedDir(projectId); // registry.get 在 project 不存在时抛 NOT_FOUND
+    if (!existsSync(dir)) return [];
+    const artifacts: Artifact[] = [];
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const metaPath = join(dir, entry.name, "artifact.json");
+      if (!existsSync(metaPath)) continue;
+      try {
+        artifacts.push(JSON.parse(readFileSync(metaPath, "utf-8")) as Artifact);
+      } catch {
+        // 跳过坏掉的 artifact.json，不让单个解析失败拖垮整列表
+      }
+    }
+    artifacts.sort((a, b) => a.title.localeCompare(b.title));
+    return artifacts;
+  }
+
   /** 读 artifact.json + 当前版本内容合并返回；artifact 不存在抛 NOT_FOUND。 */
   getArtifact(projectId: string, id: string): Artifact & { content: string } {
     const artifact = this.readMeta(projectId, id);

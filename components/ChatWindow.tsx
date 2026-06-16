@@ -8,6 +8,64 @@ import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { useAgentSession, type AgentPhase } from "@/hooks/useAgentSession";
 import { useAudio } from "@/hooks/useAudio";
 import { useDragDrop } from "@/hooks/useDragDrop";
+import { useArtifactStore } from "@/lib/stores/useArtifactStore";
+
+/**
+ * 引用条（AC⑥ 读侧）：显示 ArtifactPanel 划选写入的 editTarget.quoteText，可清除。
+ * D3 仅做「引用展示 + 清除」；把引用真正注入消息 / 发给 agent 属 HITL 流程（D4），不在此实现。
+ */
+function QuoteBar() {
+  const editTarget = useArtifactStore((s) => s.editTarget);
+  const setEditTarget = useArtifactStore((s) => s.setEditTarget);
+  if (!editTarget) return null;
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 8,
+        margin: "0 12px 6px",
+        padding: "6px 10px",
+        borderLeft: "3px solid var(--accent)",
+        borderRadius: 6,
+        background: "var(--bg-hover)",
+        fontSize: 12,
+        color: "var(--text-muted)",
+      }}
+    >
+      <span style={{ flexShrink: 0, color: "var(--text-dim)", fontWeight: 600 }}>引用</span>
+      <span
+        style={{
+          flex: 1,
+          whiteSpace: "pre-wrap",
+          overflow: "hidden",
+          display: "-webkit-box",
+          WebkitLineClamp: 3,
+          WebkitBoxOrient: "vertical",
+        }}
+      >
+        {editTarget.quoteText}
+      </span>
+      <button
+        onClick={() => setEditTarget(null)}
+        title="清除引用"
+        aria-label="清除引用"
+        style={{
+          flexShrink: 0,
+          background: "none",
+          border: "none",
+          color: "var(--text-dim)",
+          cursor: "pointer",
+          fontSize: 14,
+          lineHeight: 1,
+          padding: "0 2px",
+        }}
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
 
 interface Props {
   session: SessionInfo | null;
@@ -377,6 +435,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       </div>
 
       <div className="relative">
+        <QuoteBar />
         {chatInputElement}
       </div>
       </>

@@ -16,7 +16,12 @@
   `loadedProjectId` 维度（切项目不串显）；只做数据，**轮询定时器放组件**（便于 unmount 清理、
   单一职责）；导出 `selectTaskForProject` / `selectIsActive`（终态判定）纯函数与 `DispatchTask`/
   `Assignment` 类型（按 `docs/03` 定义，C1 后端导出共享 domain 类型后可平替）。
-- （后续）`useArtifactStore`
+- `useArtifactStore.ts` — ArtifactPanel 的前端状态（D3，§5.4）：当前打开的 artifact（元数据 +
+  当前版本 content）+ 其 pending 变更 + 视图模式（inline / diff）+ `editTarget`（划选引用到对话框，
+  AC⑥）；`open(id)` 并行拉 `GET /api/artifacts/[id]` 与 `.../pending`、`setViewMode` / `setEditTarget`；
+  导出 `selectPendingBlocks`（扁平化并过滤 state==="pending" 的 DiffBlock）便于组件订阅。
+  **刻意不持久化**（全是会话内瞬态、刷新归零合理），故无 `hydrate`、天然无 SSR hydration 问题。
+  纯渲染层：不做 resolve / 版本切换（D4 / §5.6）。
 
 ## 约定 / 红线
 - 命名 `useXxxStore`，单一职责。

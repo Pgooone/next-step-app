@@ -2,7 +2,7 @@
  * artifact-service 领域单测：落盘布局、版本自增（两计数语义）、listVersions 升序、
  * rollback 复制语义、乐观锁 409、原子写无残留、NOT_FOUND（含 findArtifact 跨项目定位）。
  */
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -253,5 +253,54 @@ describe("ArtifactService 原子写 / 跨项目定位 / NOT_FOUND", () => {
     mkdirSync(fakeDir, { recursive: true });
     // 用与 artifactId 同名的 dispatchId 也不该被 findArtifact 当成 managed artifact
     expectCode(() => service.findArtifact(fakeDispatchId), "NOT_FOUND");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// listArtifacts（供 ArtifactPanel 极简打开入口，D3）
+// ---------------------------------------------------------------------------
+describe("ArtifactService.listArtifacts", () => {
+  it("managed 目录不存在（项目无 artifact）→ 空数组", () => {
+    expect(service.listArtifacts(projectId)).toEqual([]);
+  });
+
+  it("列出该项目所有 artifact 元数据，按 title 升序", () => {
+    // 用 ASCII 前缀让 localeCompare 排序与环境 locale 无关、断言确定
+    service.createArtifact(projectId, { kind: "k", title: "B-乙文档", content: "" });
+    service.createArtifact(projectId, { kind: "k", title: "A-甲文档", content: "" });
+    const list = service.listArtifacts(projectId);
+    expect(list.map((a) => a.title)).toEqual(["A-甲文档", "B-乙文档"]);
+  });
+
+  it("不含 content，但带 currentVersion / version / status", () => {
+    service.createArtifact(projectId, { kind: "crd", title: "t", content: "正文" });
+    const [a] = service.listArtifacts(projectId);
+    expect(a).not.toHaveProperty("content");
+    expect(a.currentVersion).toBe(1);
+    expect(a.version).toBe(1);
+    expect(a.status).toBe("draft");
+  });
+
+  it("跳过坏掉的 artifact.json，不拖垮整列表", () => {
+    const good = service.createArtifact(projectId, { kind: "k", title: "好", content: "" });
+    const badDir = join(dir, ".pi", "artifacts", "managed", "broken-artifact");
+    mkdirSync(badDir, { recursive: true });
+    writeFileSync(join(badDir, "artifact.json"), "{ not json", "utf-8");
+
+    const list = service.listArtifacts(projectId);
+    expect(list.map((a) => a.id)).toEqual([good.id]);
+  });
+
+  it("不串其它项目的 artifact", () => {
+    const dir2 = mkdtempSync(join(tmpdir(), "ns-d3-list2-"));
+    try {
+      const p2 = registry.create({ name: "proj2", root: dir2 }).id;
+      service.createArtifact(projectId, { kind: "k", title: "属 p1", content: "" });
+      service.createArtifact(p2, { kind: "k", title: "属 p2", content: "" });
+      expect(service.listArtifacts(projectId).map((a) => a.title)).toEqual(["属 p1"]);
+      expect(service.listArtifacts(p2).map((a) => a.title)).toEqual(["属 p2"]);
+    } finally {
+      rmSync(dir2, { recursive: true, force: true });
+    }
   });
 });

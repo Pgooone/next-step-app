@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { ProjectRegistry } from "./project-registry";
 
@@ -264,6 +271,27 @@ export class PendingChangeStore {
       `${JSON.stringify(change, null, 2)}\n`,
     );
     return change;
+  }
+
+  /**
+   * 列某 artifact 下所有 PendingChange（扫 `pending/*.json`），供 ArtifactPanel 只读渲染。
+   * pending 目录不存在（无任何待确认变更）→ 空数组（无变更是正常态，不抛错）。
+   * 解析失败的条目跳过（不因单个坏文件拖垮整列表）；按 createdAt 升序便于稳定展示。
+   */
+  listPendingChanges(projectId: string, artifactId: string): PendingChange[] {
+    const dir = this.pendingDir(projectId, artifactId); // registry.get 不存在 → ProjectError NOT_FOUND
+    if (!existsSync(dir)) return [];
+    const changes: PendingChange[] = [];
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+      try {
+        changes.push(JSON.parse(readFileSync(join(dir, entry.name), "utf-8")) as PendingChange);
+      } catch {
+        // 跳过坏掉的 pending json，不让单个解析失败拖垮整列表
+      }
+    }
+    changes.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    return changes;
   }
 
   /** 精确读一条 PendingChange；不存在抛 NOT_FOUND。 */

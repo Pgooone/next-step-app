@@ -11,7 +11,10 @@ import { ModelsConfig } from "./ModelsConfig";
 import { SkillsConfig } from "./SkillsConfig";
 import { AgentManager } from "./AgentManager";
 import { DispatchPanel } from "./DispatchPanel";
+import { ArtifactPanel } from "./ArtifactPanel";
+import { ArtifactPicker } from "./ArtifactPicker";
 import { BranchNavigator } from "./BranchNavigator";
+import { useArtifactStore } from "@/lib/stores/useArtifactStore";
 import { useTheme } from "@/hooks/useTheme";
 import {
   useProjectStore,
@@ -38,7 +41,10 @@ export function AppShell() {
   const [skillsConfigOpen, setSkillsConfigOpen] = useState(false);
   const [agentManagerOpen, setAgentManagerOpen] = useState(false);
   const [dispatchPanelOpen, setDispatchPanelOpen] = useState(false);
+  const [artifactPickerOpen, setArtifactPickerOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // 右侧面板是否处于「产物视图」（artifact 打开时盖过文件视图，D-D3-7）
+  const selectedArtifactId = useArtifactStore((s) => s.selectedArtifactId);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
 
@@ -237,6 +243,13 @@ export function AppShell() {
     }
   }, [selectedSession, router]);
 
+  // 选中产物 → store 打开（拉内容 + pending）+ 打开右侧面板进入产物视图（D-D3-7）
+  const handlePickArtifact = useCallback((artifactId: string) => {
+    setArtifactPickerOpen(false);
+    void useArtifactStore.getState().open(artifactId);
+    setRightPanelOpen(true);
+  }, []);
+
   const handleOpenFile = useCallback((filePath: string, fileName: string) => {
     const tabId = `file:${filePath}`;
     setFileTabs((prev) => {
@@ -342,6 +355,19 @@ export function AppShell() {
                 <circle cx="18" cy="19" r="3" />
                 <line x1="8.6" y1="10.5" x2="15.4" y2="6.5" />
                 <line x1="8.6" y1="13.5" x2="15.4" y2="17.5" />
+              </svg>
+            ),
+          },
+          {
+            label: "Artifacts",
+            onClick: () => setArtifactPickerOpen(true),
+            disabled: !currentProjectId,
+            icon: (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
               </svg>
             ),
           },
@@ -762,22 +788,44 @@ export function AppShell() {
           background: "var(--bg)",
         }}
       >
-        {/* Right panel tab bar */}
+        {/* Right panel tab bar — 产物视图打开时显示单个产物 tab，否则文件 tabs（D-D3-7） */}
         <div style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", height: 36 }}>
           <div style={{ flex: 1, overflow: "hidden" }}>
-            <TabBar
-              tabs={fileTabs}
-              activeTabId={activeFileTabId ?? ""}
-              onSelectTab={setActiveFileTabId}
-              onCloseTab={handleCloseFileTab}
-            />
+            {selectedArtifactId ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, height: 36, paddingLeft: 12, paddingRight: 6, fontSize: 12, color: "var(--text)" }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.8 }}>
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+                </svg>
+                <span style={{ fontWeight: 500 }}>产物</span>
+                <button
+                  onClick={() => useArtifactStore.getState().close()}
+                  title="关闭产物"
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 16, height: 16, marginLeft: 4, background: "transparent", border: "none", borderRadius: 3, color: "var(--text-dim)", cursor: "pointer", padding: 0 }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.background = "transparent"; }}
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                    <line x1="2" y1="2" x2="8" y2="8" /><line x1="8" y1="2" x2="2" y2="8" />
+                  </svg>
+                </button>
+              </div>
+            ) : (
+              <TabBar
+                tabs={fileTabs}
+                activeTabId={activeFileTabId ?? ""}
+                onSelectTab={setActiveFileTabId}
+                onCloseTab={handleCloseFileTab}
+              />
+            )}
           </div>
 
         </div>
 
-        {/* File content */}
+        {/* Content — 产物视图优先（D-D3-7），否则文件视图 */}
         <div style={{ flex: 1, overflow: "hidden" }}>
-          {activeFileTab?.filePath ? (
+          {selectedArtifactId ? (
+            <ArtifactPanel />
+          ) : activeFileTab?.filePath ? (
             <FileViewer filePath={activeFileTab.filePath} cwd={activeCwd ?? undefined} />
           ) : (
             <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
@@ -824,6 +872,13 @@ export function AppShell() {
         projectRoot={currentRoot}
         onClose={() => setDispatchPanelOpen(false)}
         onOpenFile={handleOpenFile}
+      />
+    )}
+    {artifactPickerOpen && currentProjectId && (
+      <ArtifactPicker
+        projectId={currentProjectId}
+        onPick={handlePickArtifact}
+        onClose={() => setArtifactPickerOpen(false)}
       />
     )}
     </>

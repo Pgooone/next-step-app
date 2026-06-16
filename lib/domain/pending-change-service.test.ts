@@ -4,7 +4,7 @@
  * - DiffBlock 形状：id/state=pending、mod 带 oldLines、add/del 无 oldLines。
  * - 落盘：managed/<id>/pending/<id>.json 原子写 + get 读回 + NOT_FOUND。
  */
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -202,5 +202,44 @@ describe("PendingChangeStore", () => {
       return;
     }
     throw new Error("期望抛 PendingChangeError(NOT_FOUND)，但没抛");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// listPendingChanges（供 ArtifactPanel 只读渲染，D3 AC②③）
+// ---------------------------------------------------------------------------
+describe("PendingChangeStore.listPendingChanges", () => {
+  it("pending 目录不存在（无变更）→ 空数组（不抛错）", () => {
+    expect(store.listPendingChanges(projectId, "no-such-artifact")).toEqual([]);
+  });
+
+  it("列出该 artifact 全部 pending 变更，按 createdAt 升序", () => {
+    const a = buildReplacePendingChange({ artifactId: "art-1", sourceActor: "x", oldContent: "a", newContent: "b" });
+    a.createdAt = "2026-01-01T00:00:00.000Z";
+    const b = buildReplacePendingChange({ artifactId: "art-1", sourceActor: "x", oldContent: "b", newContent: "c" });
+    b.createdAt = "2026-01-02T00:00:00.000Z";
+    // 先存较晚的，验证排序按 createdAt 而非落盘顺序
+    store.save(projectId, b);
+    store.save(projectId, a);
+
+    const list = store.listPendingChanges(projectId, "art-1");
+    expect(list.map((p) => p.id)).toEqual([a.id, b.id]);
+  });
+
+  it("只返回该 artifact 自己的变更，不串其它 artifact", () => {
+    store.save(projectId, buildReplacePendingChange({ artifactId: "art-A", sourceActor: "x", oldContent: "", newContent: "1" }));
+    store.save(projectId, buildReplacePendingChange({ artifactId: "art-B", sourceActor: "x", oldContent: "", newContent: "2" }));
+    expect(store.listPendingChanges(projectId, "art-A").length).toBe(1);
+    expect(store.listPendingChanges(projectId, "art-B").length).toBe(1);
+  });
+
+  it("跳过解析失败的坏 json，不拖垮整列表", () => {
+    const ok = buildReplacePendingChange({ artifactId: "art-9", sourceActor: "x", oldContent: "", newContent: "ok" });
+    store.save(projectId, ok);
+    const pendingDir = join(dir, ".pi", "artifacts", "managed", "art-9", "pending");
+    writeFileSync(join(pendingDir, "broken.json"), "{ not json", "utf-8");
+
+    const list = store.listPendingChanges(projectId, "art-9");
+    expect(list.map((p) => p.id)).toEqual([ok.id]);
   });
 });
