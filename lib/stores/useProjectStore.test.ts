@@ -3,6 +3,7 @@ import type { Project } from "@/lib/domain/project-registry";
 import {
   loadPersistedId,
   persistId,
+  pickRootView,
   resolveCurrentProject,
   useProjectStore,
 } from "./useProjectStore";
@@ -82,6 +83,22 @@ describe("纯逻辑：按 id 解析当前项目 + 回退", () => {
 
   it("id 查不到回退 null", () => {
     expect(resolveCurrentProject(projects, "missing")).toBeNull();
+  });
+});
+
+describe("纯逻辑：入口分流 pickRootView（M6 / D-V1.1-02）", () => {
+  it("未 hydrate 完成先渲染占位 loading（避免首屏闪项目墙）", () => {
+    // 即使持久化里已有项目，hydrate 完成前也只能是 loading
+    expect(pickRootView("a", false)).toBe("loading");
+    expect(pickRootView(null, false)).toBe("loading");
+  });
+
+  it("hydrate 后无选中 → 项目墙 home", () => {
+    expect(pickRootView(null, true)).toBe("home");
+  });
+
+  it("hydrate 后有选中 → 工作台 shell", () => {
+    expect(pickRootView("a", true)).toBe("shell");
   });
 });
 

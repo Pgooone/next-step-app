@@ -30,6 +30,19 @@ export function resolveCurrentProject(
   return projects.find((p) => p.id === currentProjectId) ?? null;
 }
 
+/** 入口要渲染的三种视图（M6 单页分流，D-V1.1-02）。 */
+export type RootView = "loading" | "home" | "shell";
+
+/**
+ * 入口分流：未 hydrate 完成前先渲染稳定占位（避免首屏闪 ProjectHome，
+ * 破坏「刷新后停在工作台」）；hydrate 后无选中 → 项目墙，有选中 → 工作台。
+ * 纯函数，是 M6 入口分流逻辑的单测锚点。
+ */
+export function pickRootView(currentProjectId: string | null, hydrated: boolean): RootView {
+  if (!hydrated) return "loading";
+  return currentProjectId === null ? "home" : "shell";
+}
+
 interface ProjectState {
   projects: Project[];
   currentProjectId: string | null;

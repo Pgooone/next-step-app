@@ -161,6 +161,13 @@ export function AppShell() {
     router.replace("/", { scroll: false });
   }, [router]);
 
+  // 回到项目墙：清当前项目 → 入口分流卸载 AppShell（本地会话 state 随卸载重置）。
+  // 同时清掉 URL 上残留的 ?session=，避免下次进项目时误恢复旧会话。
+  const handleBackToHome = useCallback(() => {
+    router.replace("/", { scroll: false });
+    useProjectStore.getState().select(null);
+  }, [router]);
+
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false) => {
     setNewSessionCwd(null);
     setSelectedSession(session);
@@ -309,7 +316,29 @@ export function AppShell() {
         onOpenFile={handleOpenFile}
         explorerRefreshKey={explorerRefreshKey}
         onAtMention={handleAtMention}
-        headerSlot={<ProjectSwitcher onProjectSelected={handleCwdChange} />}
+        headerSlot={
+          <>
+            <button
+              onClick={handleBackToHome}
+              title="回到项目墙"
+              style={{
+                display: "flex", alignItems: "center", gap: 7,
+                width: "100%", padding: "5px 10px", marginBottom: 6,
+                background: "none", border: "1px solid var(--border)", borderRadius: 7,
+                color: "var(--text-muted)", cursor: "pointer", fontSize: 11,
+                textAlign: "left", transition: "color 0.12s, background 0.12s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.background = "none"; }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" />
+              </svg>
+              <span>回到项目墙</span>
+            </button>
+            <ProjectSwitcher onProjectSelected={handleCwdChange} />
+          </>
+        }
       />
       <div style={{ padding: "8px", flexShrink: 0, display: "flex", justifyContent: "space-between", gap: 4 }}>
         {([
