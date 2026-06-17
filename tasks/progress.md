@@ -41,6 +41,20 @@
 2. M6 项目首页 = 单页内按 `currentProjectId` 二选一渲染（D-V1.1-02）
 3. M8 转交载荷 = `<context>` + `<file>` 内联、作目标会话首条消息（D-V1.1-03）
 
+## Bug-Fix 轮次 1（session: v1.1-bug-fix）
+
+> 缺陷台账 + 五段分析 + 「说人话」学习专章：`../BUG修复记录-v1.1.md`。
+> 复核：ultracode agent team 对抗式（证伪根因 + 穷举边界/回归）+ lead 亲验关键项。
+> 顺序按风险/依赖：03→01→02→04→05（§C 触核心发送链路、最后做）。决策见台账 §一 + `../docs/设计决策记录.md`（D-V1.1-11 起）。
+
+- [ ] **BF·BUG-03 · 文案/空状态** — [bf-copy.md](bf-copy.md)：纯文案零风险（序 1）
+- [ ] **BF·BUG-01 · 进项目 cwd（选 A 补强）** — [bf-cwd.md](bf-cwd.md)：空 / 串项目 / 切项目三缺陷（序 2）
+- [ ] **BF·BUG-02 · 全局 toast** — [bf-toast.md](bf-toast.md)：基建 + 16 处接线，防刷屏（序 3）
+- [ ] **BF·BUG-04 · 二次确认** — [bf-confirm.md](bf-confirm.md)：复用 confirmId 范式（序 4）
+- [ ] **BF·BUG-05 · §C 引用注入** — [bf-quote-inject.md](bf-quote-inject.md)：⚠️ 核心发送链路、最后做（序 5）
+
+搁置登记（不丢）：BUG-00 P0 承重墙（单独立项）、§F/§H、§D/§E（分期）、杂项小 UX——详见台账 §四。
+
 ## 历史
 
 V1 历史任务在 `tasks/v1-history/`（含 `decisions.md` 决策表）。
