@@ -4,6 +4,7 @@ import { ProjectRegistry } from "@/lib/domain/project-registry";
 import { domainErrorResponse } from "@/lib/api/errors";
 import { registerInnerSession } from "@/lib/rpc-manager";
 import { startProfileSession } from "@/lib/pi/profile-session-wiring";
+import { setOwner } from "@/lib/domain/session-agent-map";
 
 // POST /api/projects/[id]/agents/[agentId]/session
 // body: { message: string }
@@ -34,6 +35,10 @@ export async function POST(
       firstMessage: message,
       registerInnerSession,
     });
+
+    // M7·5.3：会话创建成功后立即写「会话→agent」归属，供左栏分组（功能#5.4）。
+    // cwd 与建会话同取 projectRoot（D-B4-2）；映射存于 <root>/.pi/ns-session-map.json。
+    setOwner(projectRoot, result.sessionId, agentId);
 
     // 与 /api/agent/new 同款：让新 cwd 立即可经 /api/files 读取，避免 403 直到缓存过期。
     globalThis.__piAllowedRootsCache?.roots.add(projectRoot);

@@ -15,12 +15,14 @@ import { ArtifactPanel } from "./ArtifactPanel";
 import { ArtifactPicker } from "./ArtifactPicker";
 import { BranchNavigator } from "./BranchNavigator";
 import { useArtifactStore } from "@/lib/stores/useArtifactStore";
+import { useSessionMapStore } from "@/lib/stores/useSessionMapStore";
 import { useTheme } from "@/hooks/useTheme";
 import {
   useProjectStore,
   selectCurrentRoot,
   selectCurrentProjectId,
 } from "@/lib/stores/useProjectStore";
+import { pickMainOnSessionCreated } from "@/lib/main-session";
 import type { SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { ChatInputHandle } from "./ChatInput";
 
@@ -60,6 +62,16 @@ export function AppShell() {
   useEffect(() => { refreshHealth(); }, [refreshHealth]);
   // 挂载后从 localStorage 恢复当前项目（store 初始为 null 以避免 SSR hydration mismatch）
   useEffect(() => { useProjectStore.getState().hydrate(); }, []);
+
+  // M7·5.4：当前项目变化时拉一次会话归属映射，使左栏一进项目即可分组；
+  // 切回项目墙（null）则清空，避免跨项目串显（仿 store 既有 loadedProjectId 把关）。
+  useEffect(() => {
+    if (currentProjectId) {
+      void useSessionMapStore.getState().refresh(currentProjectId).catch(() => {});
+    } else {
+      useSessionMapStore.getState().reset();
+    }
+  }, [currentProjectId]);
 
   // Branch navigator state — populated by ChatWindow via onBranchDataChange
   const [branchTree, setBranchTree] = useState<SessionTreeNode[]>([]);
@@ -198,19 +210,37 @@ export function AppShell() {
     router.replace("/", { scroll: false });
   }, [router]);
 
-  // Called by ChatWindow when a new session gets its real id from pi
-  const handleSessionCreated = useCallback((session: SessionInfo) => {
+  // Called by ChatWindow when a new session gets its real id from pi.
+  // claimMainIfEmpty：仅「普通会话」路径传 true（5.2 懒认定主对话）；agent 起的会话已有
+  // 归属、不得抢占主对话，故 handleAgentSessionStarted 传 false。
+  const handleSessionCreated = useCallback((session: SessionInfo, claimMainIfEmpty = true) => {
     setNewSessionCwd(null);
     setSelectedSession(session);
     setRefreshKey((k) => k + 1);
     router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
-  }, [router]);
+    // M7·5.2/5.3：刷新左栏分组归属态。先 refresh 拿盘上最新映射（防刚切项目时 store 仍是旧项目
+    // map 而误判），再据 claimMainIfEmpty 决定是否懒认定主对话（D-V1.1-09）：
+    //  - 普通会话(true)：项目尚无主对话 → setMain（其内部已含 refresh，故不再手动刷）；不预建空会话。
+    //  - agent 会话(false)：服务端已 setOwner 写归属，这次 refresh 即让左栏拿到 bySession 分组（5.3）。
+    if (currentProjectId) {
+      const store = useSessionMapStore.getState();
+      void store
+        .refresh(currentProjectId)
+        .then((map) => {
+          const picked = claimMainIfEmpty ? pickMainOnSessionCreated(map, session.id) : null;
+          if (picked) void store.setMain(currentProjectId, picked);
+        })
+        .catch(() => {});
+    }
+  }, [router, currentProjectId]);
 
   // Called by AgentManager after starting a profile-injected session (B4 wiring).
   // The endpoint already created the session AND sent the first message, so we just
   // converge onto the existing session-selected flow — ChatWindow reconnects SSE on mount.
   const handleAgentSessionStarted = useCallback((sessionId: string, cwd: string) => {
     setAgentManagerOpen(false);
+    // M7·5.3：agent 会话已由服务端 setOwner 写归属，这里 claimMainIfEmpty=false 防其抢占主对话；
+    // handleSessionCreated 内的 refresh 会让左栏分组拉到该 agent 归属。
     handleSessionCreated({
       id: sessionId,
       path: "",
@@ -220,7 +250,7 @@ export function AppShell() {
       modified: new Date().toISOString(),
       messageCount: 1,
       firstMessage: "",
-    });
+    }, false);
   }, [handleSessionCreated]);
 
   const handleAgentEnd = useCallback(() => {

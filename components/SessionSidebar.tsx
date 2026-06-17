@@ -1,8 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { useShallow } from "zustand/react/shallow";
 import type { SessionInfo } from "@/lib/types";
 import { FileExplorer } from "./FileExplorer";
+import { useSessionMapStore, selectMapForProject } from "@/lib/stores/useSessionMapStore";
+import { useAgentStore, selectAgentsForProject, agentColor } from "@/lib/stores/useAgentStore";
+import { useProjectStore, selectCurrentProjectId } from "@/lib/stores/useProjectStore";
+import { groupSessionsByOwner, makeAgentResolver, type AgentSessionGroup } from "@/lib/session-grouping";
 
 interface Props {
   selectedSessionId: string | null;
@@ -355,8 +360,25 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     ? allSessions.filter((s) => s.cwd === selectedCwd)
     : allSessions;
 
-  // Build parent-child tree within the filtered set
-  const sessionTree = buildSessionTree(filteredSessions);
+  // M7·5.4：按「会话→agent / 主对话」归属把当前列表切三区。store 在 sidebar 内订阅（方案 A）。
+  // selectMapForProject/selectAgentsForProject 不匹配项目时回退空，避免切项目串显。
+  const currentProjectId = useProjectStore(selectCurrentProjectId);
+  const { map, loadedProjectId } = useSessionMapStore(
+    useShallow((s) => ({ map: s.map, loadedProjectId: s.loadedProjectId })),
+  );
+  const agents = useAgentStore(useShallow((s) => selectAgentsForProject(s, currentProjectId)));
+  const grouped = useMemo(() => {
+    const effectiveMap = selectMapForProject(map, loadedProjectId, currentProjectId);
+    const resolver = makeAgentResolver(agents, agentColor);
+    return groupSessionsByOwner(filteredSessions, effectiveMap, resolver);
+  }, [filteredSessions, map, loadedProjectId, currentProjectId, agents]);
+
+  // 三区各自建父子树（fork 缩进/折叠在区内保留）。主对话只 0/1 条，单独成区。
+  const mainTree = useMemo(
+    () => (grouped.main ? buildSessionTree([grouped.main]) : []),
+    [grouped.main],
+  );
+  const otherTree = useMemo(() => buildSessionTree(grouped.others), [grouped.others]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -702,20 +724,60 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             No sessions found
           </div>
         )}
-        {sessionTree.map((node) => (
-          <SessionTreeItem
-            key={node.session.id}
-            node={node}
-            selectedSessionId={selectedSessionId}
-            onSelectSession={onSelectSession}
-            onRenamed={loadSessions}
-            onSessionDeleted={(id) => {
-              onSessionDeleted?.(id);
-              loadSessions();
-            }}
-            depth={0}
-          />
-        ))}
+        {!loading && !error && filteredSessions.length > 0 && (() => {
+          // 单棵树 → SessionTreeItem 列表（三区共用，避免样板重复）
+          const renderTree = (nodes: SessionTreeNode[]) =>
+            nodes.map((node) => (
+              <SessionTreeItem
+                key={node.session.id}
+                node={node}
+                selectedSessionId={selectedSessionId}
+                onSelectSession={onSelectSession}
+                onRenamed={loadSessions}
+                onSessionDeleted={(id) => {
+                  onSessionDeleted?.(id);
+                  loadSessions();
+                }}
+                depth={0}
+              />
+            ));
+          return (
+            <>
+              {/* ① 主对话区：仅在存在主对话时显示标题 */}
+              {grouped.main && (
+                <>
+                  <SessionGroupHeader label="主对话" />
+                  {renderTree(mainTree)}
+                </>
+              )}
+
+              {/* ② 各 Agent 分组：每组带 agent 名 + 色点 */}
+              {grouped.agentGroups.map((g) => (
+                <AgentSessionSection
+                  key={g.agentId}
+                  group={g}
+                  selectedSessionId={selectedSessionId}
+                  onSelectSession={onSelectSession}
+                  onRenamed={loadSessions}
+                  onSessionDeleted={(id) => {
+                    onSessionDeleted?.(id);
+                    loadSessions();
+                  }}
+                />
+              ))}
+
+              {/* ③ 其它会话区：无归属、非主对话。仅在另有分组时才加标题，纯扁平列表则省略 */}
+              {grouped.others.length > 0 && (
+                <>
+                  {(grouped.main || grouped.agentGroups.length > 0) && (
+                    <SessionGroupHeader label="其它会话" />
+                  )}
+                  {renderTree(otherTree)}
+                </>
+              )}
+            </>
+          );
+        })()}
       </div>
 
       {/* File Explorer section */}
@@ -805,6 +867,103 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/** 区标题（主对话 / 其它会话）：小字大写灰标签，与 Explorer 标题同风格。 */
+function SessionGroupHeader({ label }: { label: string }) {
+  return (
+    <div
+      style={{
+        padding: "8px 14px 4px",
+        fontSize: 11,
+        fontWeight: 600,
+        letterSpacing: "0.05em",
+        textTransform: "uppercase",
+        color: "var(--text-dim)",
+      }}
+    >
+      {label}
+    </div>
+  );
+}
+
+/** 一个 agent 分组：可折叠标题（色点 + 名 + 计数）+ 组内会话父子树。 */
+function AgentSessionSection({
+  group,
+  selectedSessionId,
+  onSelectSession,
+  onRenamed,
+  onSessionDeleted,
+}: {
+  group: AgentSessionGroup;
+  selectedSessionId: string | null;
+  onSelectSession: (s: SessionInfo, isRestore?: boolean) => void;
+  onRenamed?: () => void;
+  onSessionDeleted?: (id: string) => void;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const tree = useMemo(() => buildSessionTree(group.sessions), [group.sessions]);
+
+  return (
+    <div>
+      <button
+        onClick={() => setCollapsed((v) => !v)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          width: "100%",
+          padding: "8px 14px 4px",
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          textAlign: "left",
+        }}
+      >
+        <svg
+          width="9" height="9" viewBox="0 0 10 10" fill="none"
+          stroke="var(--text-dim)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+          style={{ transform: collapsed ? "none" : "rotate(90deg)", transition: "transform 0.15s", flexShrink: 0 }}
+        >
+          <polyline points="3 2 7 5 3 8" />
+        </svg>
+        <span
+          style={{
+            width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
+            background: group.color ?? "var(--text-dim)",
+          }}
+        />
+        <span
+          style={{
+            flex: 1,
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: "0.03em",
+            color: "var(--text-muted)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+          title={group.agentName}
+        >
+          {group.agentName}
+        </span>
+        <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0 }}>{group.sessions.length}</span>
+      </button>
+      {!collapsed &&
+        tree.map((node) => (
+          <SessionTreeItem
+            key={node.session.id}
+            node={node}
+            selectedSessionId={selectedSessionId}
+            onSelectSession={onSelectSession}
+            onRenamed={onRenamed}
+            onSessionDeleted={onSessionDeleted}
+            depth={0}
+          />
+        ))}
     </div>
   );
 }
