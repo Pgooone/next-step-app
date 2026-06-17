@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentProfile } from "@/lib/domain/agent-profile-store";
 import {
+  agentColor,
+  agentInitial,
   CODING_TOOL_NAMES,
   joinModel,
   selectAgentsForProject,
@@ -68,6 +70,32 @@ describe("纯逻辑：tools 勾选集合", () => {
 
   it("CODING_TOOL_NAMES 即内置编码工具固定集", () => {
     expect(CODING_TOOL_NAMES).toEqual(["read", "bash", "edit", "write", "grep", "find", "ls"]);
+  });
+});
+
+describe("纯逻辑：卡片标识（首字母 / 色块）", () => {
+  it("agentInitial 取首个非空白字符并大写，空 / 全空白回退 ?", () => {
+    expect(agentInitial("方案设计员")).toBe("方");
+    expect(agentInitial("planner")).toBe("P");
+    expect(agentInitial("  bob")).toBe("B"); // 跳过前导空白
+    expect(agentInitial("")).toBe("?");
+    expect(agentInitial("   ")).toBe("?");
+  });
+
+  it("agentColor 同名恒同色且取自候选集", () => {
+    const palette = [
+      "#6366f1",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#ec4899",
+      "#8b5cf6",
+      "#14b8a6",
+    ];
+    expect(agentColor("方案设计员")).toBe(agentColor("方案设计员")); // 稳定
+    expect(palette).toContain(agentColor("planner"));
+    expect(palette).toContain(agentColor(""));
   });
 });
 

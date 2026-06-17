@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { AgentProfile } from "@/lib/domain/agent-profile-store";
 import {
+  agentColor,
+  agentInitial,
   CODING_TOOL_NAMES,
   joinModel,
   splitModel,
@@ -236,7 +238,8 @@ export function AgentManager({ projectId, projectRoot, onClose, onSessionStarted
     >
       <div
         style={{
-          width: "min(560px, 92vw)",
+          // 编辑表单单列窄，卡片网格需更宽
+          width: editing ? "min(560px, 92vw)" : "min(820px, 94vw)",
           maxHeight: "86vh",
           display: "flex",
           flexDirection: "column",
@@ -353,338 +356,357 @@ function AgentList({
   onSubmitStart: (id: string) => void;
 }) {
   return (
-    <div>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+        gap: 12,
+      }}
+    >
+      {/* 新建入口：带「+」的空卡片 */}
       <button
         data-testid="agent-new-btn"
         onClick={onCreate}
+        className="glass-card"
         style={{
+          aspectRatio: "1",
           display: "flex",
+          flexDirection: "column",
           alignItems: "center",
-          gap: 6,
-          width: "100%",
           justifyContent: "center",
-          padding: "9px 0",
-          marginBottom: 12,
-          background: "var(--accent)",
-          border: "none",
-          borderRadius: 8,
-          color: "#fff",
-          fontSize: 13,
-          fontWeight: 600,
+          gap: 8,
+          borderRadius: 12,
+          borderStyle: "dashed",
+          color: "var(--text-muted)",
           cursor: "pointer",
+          font: "inherit",
         }}
       >
         <svg
-          width="12"
-          height="12"
+          width="22"
+          height="22"
           viewBox="0 0 10 10"
           fill="none"
           stroke="currentColor"
-          strokeWidth="1.4"
+          strokeWidth="1.2"
           strokeLinecap="round"
         >
           <line x1="5" y1="1" x2="5" y2="9" />
           <line x1="1" y1="5" x2="9" y2="5" />
         </svg>
-        新建 Agent
+        <span style={{ fontSize: 12, fontWeight: 600 }}>新建 Agent</span>
       </button>
 
-      {agents.length === 0 ? (
-        <div
+      {agents.map((p) => (
+        <AgentCard
+          key={p.id}
+          p={p}
+          confirming={confirmId === p.id}
+          starting={startId === p.id}
+          startMessage={startMessage}
+          startSubmitting={startingId === p.id}
+          startError={startId === p.id ? startError : null}
+          onEdit={onEdit}
+          onAskDelete={onAskDelete}
+          onCancelDelete={onCancelDelete}
+          onConfirmDelete={onConfirmDelete}
+          onAskStart={onAskStart}
+          onCancelStart={onCancelStart}
+          onChangeStartMessage={onChangeStartMessage}
+          onSubmitStart={onSubmitStart}
+        />
+      ))}
+    </div>
+  );
+}
+
+/* ── 单张正方形玻璃卡片（一级菜单：真名 + 首字母色块 + 操作） ─────────── */
+
+function AgentCard({
+  p,
+  confirming,
+  starting,
+  startMessage,
+  startSubmitting,
+  startError,
+  onEdit,
+  onAskDelete,
+  onCancelDelete,
+  onConfirmDelete,
+  onAskStart,
+  onCancelStart,
+  onChangeStartMessage,
+  onSubmitStart,
+}: {
+  p: AgentProfile;
+  confirming: boolean;
+  starting: boolean;
+  startMessage: string;
+  startSubmitting: boolean;
+  startError: string | null;
+  onEdit: (p: AgentProfile) => void;
+  onAskDelete: (id: string) => void;
+  onCancelDelete: () => void;
+  onConfirmDelete: (id: string) => void;
+  onAskStart: (id: string) => void;
+  onCancelStart: () => void;
+  onChangeStartMessage: (v: string) => void;
+  onSubmitStart: (id: string) => void;
+}) {
+  return (
+    <div
+      data-testid="agent-item"
+      data-agent-name={p.name}
+      className="glass-card"
+      style={{
+        position: "relative",
+        aspectRatio: "1",
+        borderRadius: 12,
+        padding: 12,
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
+      {/* 首字母色块 + 真名（一级展示，始终在底层） */}
+      <div
+        style={{
+          width: 40,
+          height: 40,
+          borderRadius: 10,
+          background: agentColor(p.name),
+          color: "#fff",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 18,
+          fontWeight: 700,
+          flexShrink: 0,
+        }}
+      >
+        {agentInitial(p.name)}
+      </div>
+      <div
+        style={{
+          marginTop: 10,
+          fontSize: 13,
+          fontWeight: 600,
+          color: "var(--text)",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+        title={p.name}
+      >
+        {p.name}
+      </div>
+
+      {/* 操作按钮区（卡片底部，常规态显示；确认/起会话态被覆盖层遮住） */}
+      <div style={{ marginTop: "auto", display: "flex", gap: 6 }}>
+        <button
+          data-testid="agent-start-btn"
+          onClick={() => onAskStart(p.id)}
+          title="用此档案起会话"
           style={{
-            padding: "28px 12px",
-            textAlign: "center",
-            fontSize: 12,
-            color: "var(--text-muted)",
+            flex: 1,
+            padding: "5px 0",
+            background: "var(--accent)",
+            border: "none",
+            borderRadius: 6,
+            color: "#fff",
+            fontSize: 11,
+            fontWeight: 600,
+            cursor: "pointer",
           }}
         >
-          暂无 Agent，点上方「新建 Agent」创建一个。
-        </div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {agents.map((p) => (
+          起会话
+        </button>
+        <button
+          data-testid="agent-edit-btn"
+          onClick={() => onEdit(p)}
+          title="编辑"
+          style={{
+            padding: "5px 9px",
+            background: "transparent",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            color: "var(--text-muted)",
+            fontSize: 11,
+            cursor: "pointer",
+          }}
+        >
+          编辑
+        </button>
+        <button
+          data-testid="agent-delete-btn"
+          onClick={() => onAskDelete(p.id)}
+          title="删除 Agent"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 28,
+            padding: 0,
+            background: "transparent",
+            border: "1px solid var(--border)",
+            color: "var(--text-dim)",
+            cursor: "pointer",
+            borderRadius: 6,
+          }}
+        >
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+            <path d="M10 11v6M14 11v6" />
+            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+          </svg>
+        </button>
+      </div>
+
+      {/* 起会话覆盖层（B4：内联收首条 message，禁用 window.prompt D-B4-3） */}
+      {starting && (
+        <div style={overlayStyle}>
+          <div style={{ fontSize: 11, color: "var(--text)", lineHeight: 1.4, marginBottom: 6 }}>
+            用 <span style={{ fontWeight: 600 }}>{p.name}</span> 起会话：
+          </div>
+          <textarea
+            data-testid="agent-start-input"
+            autoFocus
+            value={startMessage}
+            onChange={(e) => onChangeStartMessage(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter 提交、Shift+Enter 换行（与对话框输入习惯一致）
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                onSubmitStart(p.id);
+              }
+            }}
+            placeholder="第一条消息…"
+            rows={3}
+            style={{
+              ...inputStyle,
+              flex: 1,
+              resize: "none",
+              fontFamily: "inherit",
+              marginBottom: 6,
+            }}
+          />
+          {startError && (
             <div
-              key={p.id}
-              data-testid="agent-item"
-              data-agent-name={p.name}
+              data-testid="agent-start-error"
+              style={{ color: "#dc2626", fontSize: 10, lineHeight: 1.4, marginBottom: 6, overflowWrap: "anywhere" }}
+            >
+              {startError}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              data-testid="agent-start-submit"
+              onClick={() => onSubmitStart(p.id)}
+              disabled={startSubmitting || !startMessage.trim()}
               style={{
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-                background:
-                  confirmId === p.id ? "rgba(239,68,68,0.06)" : "var(--bg-hover)",
-                overflow: "hidden",
+                flex: 1,
+                padding: "5px 0",
+                background: "var(--accent)",
+                border: "none",
+                borderRadius: 6,
+                color: "#fff",
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: startSubmitting || !startMessage.trim() ? "not-allowed" : "pointer",
+                opacity: startSubmitting || !startMessage.trim() ? 0.65 : 1,
               }}
             >
-              {startId === p.id ? (
-                /* B4：内联「用此档案起会话」输入条——收首条 message（禁用 window.prompt，D-B4-3） */
-                <div style={{ padding: "10px 12px" }}>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: "var(--text)",
-                      lineHeight: 1.5,
-                      marginBottom: 8,
-                    }}
-                  >
-                    用 <span style={{ fontWeight: 600 }}>{p.name}</span> 起会话，输入首条消息：
-                  </div>
-                  <textarea
-                    data-testid="agent-start-input"
-                    autoFocus
-                    value={startMessage}
-                    onChange={(e) => onChangeStartMessage(e.target.value)}
-                    onKeyDown={(e) => {
-                      // Enter 提交、Shift+Enter 换行（与对话框输入习惯一致）
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        onSubmitStart(p.id);
-                      }
-                    }}
-                    placeholder="给这个 Agent 的第一条消息…"
-                    rows={2}
-                    style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit", marginBottom: 8 }}
-                  />
-                  {startError && (
-                    <div
-                      data-testid="agent-start-error"
-                      style={{ color: "#dc2626", fontSize: 11, lineHeight: 1.4, marginBottom: 8, overflowWrap: "anywhere" }}
-                    >
-                      {startError}
-                    </div>
-                  )}
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <button
-                      data-testid="agent-start-submit"
-                      onClick={() => onSubmitStart(p.id)}
-                      disabled={startingId === p.id || !startMessage.trim()}
-                      style={{
-                        flex: 1,
-                        padding: "5px 0",
-                        background: "var(--accent)",
-                        border: "none",
-                        borderRadius: 6,
-                        color: "#fff",
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: startingId === p.id || !startMessage.trim() ? "not-allowed" : "pointer",
-                        opacity: startingId === p.id || !startMessage.trim() ? 0.65 : 1,
-                      }}
-                    >
-                      {startingId === p.id ? "起会话中…" : "起会话"}
-                    </button>
-                    <button
-                      onClick={onCancelStart}
-                      style={{
-                        flex: 1,
-                        padding: "5px 0",
-                        background: "var(--bg)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 6,
-                        color: "var(--text-muted)",
-                        fontSize: 12,
-                        cursor: "pointer",
-                      }}
-                    >
-                      取消
-                    </button>
-                  </div>
-                </div>
-              ) : confirmId === p.id ? (
-                /* 内联删除确认条：强调删除整个 .pi/agents/<id>/ 目录（D-31/D-19） */
-                <div style={{ padding: "10px 12px" }}>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: "var(--text)",
-                      lineHeight: 1.5,
-                      marginBottom: 8,
-                    }}
-                  >
-                    删除 <span style={{ fontWeight: 600 }}>{p.name}</span>？
-                    <span style={{ color: "var(--text-dim)" }}>
-                      {" "}
-                      将删除其档案目录（含 agent.md / memory.md），
-                      不可恢复。
-                    </span>
-                  </div>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <button
-                      data-testid="agent-delete-confirm"
-                      onClick={() => onConfirmDelete(p.id)}
-                      style={{
-                        flex: 1,
-                        padding: "5px 0",
-                        background: "#ef4444",
-                        border: "none",
-                        borderRadius: 6,
-                        color: "#fff",
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: "pointer",
-                      }}
-                    >
-                      确认删除
-                    </button>
-                    <button
-                      onClick={onCancelDelete}
-                      style={{
-                        flex: 1,
-                        padding: "5px 0",
-                        background: "var(--bg)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 6,
-                        color: "var(--text-muted)",
-                        fontSize: 12,
-                        cursor: "pointer",
-                      }}
-                    >
-                      取消
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "10px 12px",
-                  }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 500,
-                        color: "var(--text)",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {p.name}
-                    </div>
-                    {p.role && (
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: "var(--text-dim)",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          marginTop: 2,
-                        }}
-                      >
-                        {p.role}
-                      </div>
-                    )}
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 8,
-                        flexWrap: "wrap",
-                        marginTop: 4,
-                        fontSize: 10,
-                        color: "var(--text-muted)",
-                      }}
-                    >
-                      <span title="模型">{p.model || "默认模型"}</span>
-                      <span>·</span>
-                      <span title="技能数">技能 {p.skills.length}</span>
-                      <span>·</span>
-                      <span title="工具数">工具 {p.tools.length}</span>
-                      <span>·</span>
-                      <span title="思考强度">
-                        思考 {THINKING_OPTIONS.find((t) => t.value === p.thinkingLevel)?.label}
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    data-testid="agent-start-btn"
-                    onClick={() => onAskStart(p.id)}
-                    title="用此档案起会话"
-                    style={{
-                      padding: "4px 10px",
-                      background: "var(--accent)",
-                      border: "1px solid var(--accent)",
-                      borderRadius: 6,
-                      color: "#fff",
-                      fontSize: 11,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      flexShrink: 0,
-                    }}
-                  >
-                    起会话
-                  </button>
-                  <button
-                    data-testid="agent-edit-btn"
-                    onClick={() => onEdit(p)}
-                    style={{
-                      padding: "4px 10px",
-                      background: "var(--bg)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 6,
-                      color: "var(--text-muted)",
-                      fontSize: 11,
-                      cursor: "pointer",
-                      flexShrink: 0,
-                    }}
-                  >
-                    编辑
-                  </button>
-                  <button
-                    data-testid="agent-delete-btn"
-                    onClick={() => onAskDelete(p.id)}
-                    title="删除 Agent"
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 28,
-                      height: 28,
-                      padding: 0,
-                      background: "none",
-                      border: "none",
-                      color: "var(--text-dim)",
-                      cursor: "pointer",
-                      borderRadius: 6,
-                      flexShrink: 0,
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.color = "#ef4444";
-                      e.currentTarget.style.background = "rgba(239,68,68,0.08)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.color = "var(--text-dim)";
-                      e.currentTarget.style.background = "none";
-                    }}
-                  >
-                    <svg
-                      width="13"
-                      height="13"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <polyline points="3 6 5 6 21 6" />
-                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                      <path d="M10 11v6M14 11v6" />
-                      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                    </svg>
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
+              {startSubmitting ? "起会话中…" : "起会话"}
+            </button>
+            <button
+              onClick={onCancelStart}
+              style={{
+                flex: 1,
+                padding: "5px 0",
+                background: "var(--bg)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                color: "var(--text-muted)",
+                fontSize: 11,
+                cursor: "pointer",
+              }}
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 删除确认覆盖层（M1：显真名，无 UUID 路径） */}
+      {confirming && (
+        <div style={overlayStyle}>
+          <div style={{ flex: 1, fontSize: 11, color: "var(--text)", lineHeight: 1.5 }}>
+            删除 <span style={{ fontWeight: 600 }}>{p.name}</span>？
+            <span style={{ color: "var(--text-dim)" }}>
+              {" "}
+              将删除其档案目录（含 agent.md / memory.md），不可恢复。
+            </span>
+          </div>
+          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+            <button
+              data-testid="agent-delete-confirm"
+              onClick={() => onConfirmDelete(p.id)}
+              style={{
+                flex: 1,
+                padding: "5px 0",
+                background: "#ef4444",
+                border: "none",
+                borderRadius: 6,
+                color: "#fff",
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              确认删除
+            </button>
+            <button
+              onClick={onCancelDelete}
+              style={{
+                flex: 1,
+                padding: "5px 0",
+                background: "var(--bg)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                color: "var(--text-muted)",
+                fontSize: 11,
+                cursor: "pointer",
+              }}
+            >
+              取消
+            </button>
+          </div>
         </div>
       )}
     </div>
   );
 }
+
+/** 卡片内覆盖层（起会话 / 删除确认）：盖住整张卡片，承载二次交互。 */
+const overlayStyle: React.CSSProperties = {
+  position: "absolute",
+  inset: 0,
+  padding: 12,
+  display: "flex",
+  flexDirection: "column",
+  background: "var(--bg)",
+  borderRadius: 12,
+};
 
 /* ── 表单区 ───────────────────────────────────────────────── */
 

@@ -171,3 +171,36 @@ export function selectAgentsForProject(s: AgentState, projectId: string | null):
   if (!projectId || s.loadedProjectId !== projectId) return [];
   return s.agents;
 }
+
+/**
+ * 卡片极简标识：取名称首个非空白字符并大写（中文原样、英文转大写）。
+ * 名称为空 / 全空白时回退 "?"。纯函数，便于单测。
+ */
+export function agentInitial(name: string): string {
+  const ch = name.trim()[0];
+  return ch ? ch.toUpperCase() : "?";
+}
+
+/** 卡片色块候选（柔和、深浅模式皆可读的中等饱和度）。 */
+const AGENT_COLORS: readonly string[] = [
+  "#6366f1", // indigo
+  "#0ea5e9", // sky
+  "#10b981", // emerald
+  "#f59e0b", // amber
+  "#ef4444", // red
+  "#ec4899", // pink
+  "#8b5cf6", // violet
+  "#14b8a6", // teal
+];
+
+/**
+ * 由名称稳定映射到一个色块（同名恒同色，与列表顺序无关）。
+ * 简单字符和哈希取模，纯函数，便于单测。
+ */
+export function agentColor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) {
+    h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  }
+  return AGENT_COLORS[h % AGENT_COLORS.length];
+}
