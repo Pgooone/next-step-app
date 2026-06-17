@@ -18,10 +18,6 @@ const launch = () =>
     executablePath: process.env.PW_EXECUTABLE,
     args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
   });
-const gotoSPA = async (page, url) => {
-  await page.goto(url, { waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(WAIT);
-};
 const shot = (page, name) =>
   page.screenshot({ path: path.join(OUT, name), fullPage: false }).then(() => log("shot", path.join(OUT, name)));
 const T = async (label, fn) => {
@@ -33,11 +29,6 @@ const T = async (label, fn) => {
     log("FAIL", label, "::", String(e.message || e).split("\n")[0]);
     return { ok: false, err: String(e.message || e).split("\n")[0] };
   }
-};
-const selectProject = async (page, id) => {
-  await page.evaluate((i) => localStorage.setItem("next-step:current-project-id", i), id);
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(WAIT);
 };
 // 直接用 ?session= URL 参数恢复指定会话（侧栏「写普通文件」同名会话散落 24 个 cwd，
 // 文本点击会命中错误 cwd 触发导航打架）。AppShell initialSessionId 读自 searchParams，
