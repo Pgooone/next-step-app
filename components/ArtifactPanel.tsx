@@ -85,6 +85,26 @@ export function ArtifactPanel() {
   const contentRef = useRef<HTMLDivElement>(null);
   // rollback 二次确认（D-D5-5 两步按钮，非原生 confirm）。
   const [confirmRollback, setConfirmRollback] = useState(false);
+  const rollbackConfirmRef = useRef<HTMLSpanElement>(null);
+
+  // 确认态打开时支持 Esc / 外点关闭（BUG-04，与 PendingChangeCard 全部✓/✗ 范式一致）。
+  useEffect(() => {
+    if (!confirmRollback) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (rollbackConfirmRef.current && !rollbackConfirmRef.current.contains(e.target as Node)) {
+        setConfirmRollback(false);
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setConfirmRollback(false);
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [confirmRollback]);
 
   // 版本列表随 artifact 打开 / currentVersion 变化（rollback、D4 物化新版）统一重拉。
   const currentVersion = artifact?.currentVersion;
@@ -172,7 +192,7 @@ export function ArtifactPanel() {
           <>
             <span style={{ color: "var(--text-dim)" }}>历史版本（只读）</span>
             {confirmRollback ? (
-              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span ref={rollbackConfirmRef} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{ color: "#ca8a04" }}>回滚到 v{selectedVersion}？将生成新版</span>
                 <button
                   onClick={() => {

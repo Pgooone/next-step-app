@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useArtifactStore } from "@/lib/stores/useArtifactStore";
 import { toast } from "@/lib/stores/useToastStore";
@@ -90,8 +90,29 @@ function ChangeCard({
   const [focusIdx, setFocusIdx] = useState(firstPendingIdx < 0 ? 0 : firstPendingIdx);
   const [busy, setBusy] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
+  // 「全部 ✓/✗」二次确认态（BUG-04）：null=未确认；confirm/reject=已点开对应动作的确认条。
+  // 复用 AgentManager.confirmDelete / ProjectSwitcher.confirmId 的内联两步范式，仅高危「全部」加，逐块不加。
+  const [confirmAll, setConfirmAll] = useState<"confirm" | "reject" | null>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
 
   const pendingCount = change.diffBlocks.filter((b) => b.state === "pending").length;
+
+  // 后端在确认态打开时已 resolve（pendingChanges 变化 → 无 pending 块）→ 自动清确认态（边界）。
+  useEffect(() => {
+    if (pendingCount === 0) setConfirmAll(null);
+  }, [pendingCount]);
+
+  // 外点关闭确认态（参考 ProjectSwitcher:54-64；仅在确认态打开时挂监听）。
+  useEffect(() => {
+    if (confirmAll === null) return;
+    const handler = (e: MouseEvent) => {
+      if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
+        setConfirmAll(null);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [confirmAll]);
 
   // resolve 一块（或省略 blockId 全部）：调 API → 刷新 → 聚焦推进到下一个 pending 块。
   const resolve = useCallback(
@@ -138,6 +159,21 @@ function ChangeCard({
   // YNRD（作用于聚焦块）。R 降级：仅提示需会话接线（D-D4-3）。
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      // 「全部」确认态打开时接管键盘：Esc 取消 / Enter 确认，其余 YNRD 一律拦下（防误触逐块）。
+      if (confirmAll !== null) {
+        if (e.key === "Escape") {
+          setConfirmAll(null);
+          e.preventDefault();
+        } else if (e.key === "Enter") {
+          if (!busy) {
+            const action = confirmAll;
+            setConfirmAll(null);
+            void resolve(action);
+          }
+          e.preventDefault();
+        }
+        return;
+      }
       const focused = change.diffBlocks[focusIdx];
       const key = e.key.toLowerCase();
       if (key === "y") {
@@ -160,11 +196,12 @@ function ChangeCard({
         e.preventDefault();
       }
     },
-    [change.diffBlocks, focusIdx, resolve, onJumpDiff],
+    [change.diffBlocks, focusIdx, resolve, onJumpDiff, confirmAll, busy],
   );
 
   return (
     <div
+      ref={cardRef}
       tabIndex={0}
       onKeyDown={onKeyDown}
       data-testid="pending-change-card"
@@ -185,27 +222,53 @@ function ChangeCard({
           {pendingCount > 0 ? `· ${pendingCount} 处待确认` : "· 全部已处理"}
         </span>
         <span style={{ marginLeft: "auto" }} />
-        <button onClick={onJumpDiff} title="跳到并排 Diff（D）" style={ghostBtn}>
-          查看 Diff
-        </button>
-        {pendingCount > 0 && (
+        {confirmAll !== null ? (
+          // 二次确认态（BUG-04）：替换操作区为确认条，明确块数；hint 仍在卡片下方不抢空间。
+          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ color: "#ca8a04" }}>
+              {confirmAll === "confirm" ? "确认全部" : "拒绝全部"} {pendingCount} 处待处理块？
+            </span>
+            <button
+              onClick={() => {
+                const action = confirmAll;
+                setConfirmAll(null);
+                void resolve(action);
+              }}
+              disabled={busy}
+              title="确认执行"
+              style={solidBtn(confirmAll === "confirm" ? "#16a34a" : "#dc2626")}
+            >
+              确认
+            </button>
+            <button onClick={() => setConfirmAll(null)} disabled={busy} title="取消" style={ghostBtn}>
+              取消
+            </button>
+          </span>
+        ) : (
           <>
-            <button
-              onClick={() => void resolve("confirm")}
-              disabled={busy}
-              title="确认全部待处理块"
-              style={solidBtn("#16a34a")}
-            >
-              全部 ✓
+            <button onClick={onJumpDiff} title="跳到并排 Diff（D）" style={ghostBtn}>
+              查看 Diff
             </button>
-            <button
-              onClick={() => void resolve("reject")}
-              disabled={busy}
-              title="拒绝全部待处理块"
-              style={solidBtn("#dc2626")}
-            >
-              全部 ✗
-            </button>
+            {pendingCount > 0 && (
+              <>
+                <button
+                  onClick={() => setConfirmAll("confirm")}
+                  disabled={busy}
+                  title="确认全部待处理块"
+                  style={solidBtn("#16a34a")}
+                >
+                  全部 ✓
+                </button>
+                <button
+                  onClick={() => setConfirmAll("reject")}
+                  disabled={busy}
+                  title="拒绝全部待处理块"
+                  style={solidBtn("#dc2626")}
+                >
+                  全部 ✗
+                </button>
+              </>
+            )}
           </>
         )}
       </div>
