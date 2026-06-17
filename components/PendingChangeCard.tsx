@@ -102,16 +102,25 @@ function ChangeCard({
     if (pendingCount === 0) setConfirmAll(null);
   }, [pendingCount]);
 
-  // 外点关闭确认态（参考 ProjectSwitcher:54-64；仅在确认态打开时挂监听）。
+  // 外点 / Esc 关闭确认态（仅在确认态打开时挂监听）。
+  // Esc 用文档级监听（而非卡片 onKeyDown）——鼠标点「全部✓/✗」后按钮被确认条替换、焦点丢到
+  // body，卡片 onKeyDown 收不到 Esc；文档级才能在鼠标流里可靠关闭（与 ArtifactPanel 回滚确认一致）。
   useEffect(() => {
     if (confirmAll === null) return;
-    const handler = (e: MouseEvent) => {
+    const onMouseDown = (e: MouseEvent) => {
       if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
         setConfirmAll(null);
       }
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setConfirmAll(null);
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, [confirmAll]);
 
   // resolve 一块（或省略 blockId 全部）：调 API → 刷新 → 聚焦推进到下一个 pending 块。
