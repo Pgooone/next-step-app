@@ -14,11 +14,11 @@
 
 ### 批次 1（无依赖，可并行）
 
-- [ ] **M1 · agent-naming-fix** — [M1-naming.md](M1-naming.md)：删界面 UUID 路径泄漏，显真名。trivial；若先做 M4 则被覆盖
-- [ ] **M2 · chat-file-upload** — [M2-file-upload.md](M2-file-upload.md)：对话框选文本类文件 → 读字 → `<file>` 内联。纯前端
-- [ ] **M3 · file-panel-hint** — [M3-panel-hint.md](M3-panel-hint.md)：「右看改动 / 左逐块确认」视觉提示，不搬按钮
-- [ ] **M5 · session-agent-mapping** — [M5-session-map.md](M5-session-map.md)：⭐承重墙——领域层「会话 ↔ agent / 主对话」映射 + store + API
-- [ ] **M6 · project-homepage** — [M6-project-home.md](M6-project-home.md)：项目卡片墙首页，点进才入工作台
+- [x] **M1 · agent-naming-fix** — [M1-naming.md](M1-naming.md)：删界面 UUID 路径泄漏，显真名。trivial；若先做 M4 则被覆盖
+- [x] **M2 · chat-file-upload** — [M2-file-upload.md](M2-file-upload.md)：对话框选文本类文件 → 读字 → `<file>` 内联。纯前端
+- [x] **M3 · file-panel-hint** — [M3-panel-hint.md](M3-panel-hint.md)：「右看改动 / 左逐块确认」视觉提示，不搬按钮
+- [x] **M5 · session-agent-mapping** — [M5-session-map.md](M5-session-map.md)：⭐承重墙——领域层「会话 ↔ agent / 主对话」映射 + store + API
+- [x] **M6 · project-homepage** — [M6-project-home.md](M6-project-home.md)：项目卡片墙首页，点进才入工作台
 
 ### 批次 2（依赖 M5）
 
