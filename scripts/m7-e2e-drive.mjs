@@ -107,6 +107,17 @@ const readSidebar = (page) =>
     return { hasMainHeader, hasOtherHeader, agentGroups };
   });
 
+// 轮询重读侧栏直到谓词成立或超时（仿 5.3 的重试循环）。返回最后一次读到的 sidebar。
+// 用于 5.2：claimMain/setMain 后 store 传播到 DOM 略晚于 session-map 服务端就绪，单读会偶发抢在传播前。
+const pollSidebar = async (page, pred, tries = 12, gapMs = 800) => {
+  let sb = await readSidebar(page);
+  for (let i = 0; i < tries && !pred(sb); i++) {
+    await page.waitForTimeout(gapMs);
+    sb = await readSidebar(page);
+  }
+  return sb;
+};
+
 const R = {};
 const errs = [];
 const browser = await launch();
@@ -132,7 +143,8 @@ try {
     if (!map?.mainSessionId) throw new Error("发首条后 mainSessionId 仍空（setMain 未生效）");
     // mainSessionId 应是新会话（≠ 种子会话）
     if (map.mainSessionId === fx.p1.seed) throw new Error("种子会话被误标 main");
-    const sb = await readSidebar(page);
+    // 轮询重读：等「主对话」标题渲染进 DOM（store 传播略晚于 session-map 就绪），非单读
+    const sb = await pollSidebar(page, (s) => s.hasMainHeader);
     if (!sb.hasMainHeader) throw new Error("侧栏未出现「主对话」区标题");
     return { mainSessionId: map.mainSessionId, sidebar: sb };
   });
@@ -150,7 +162,8 @@ try {
     const map = await getMap(fx.p1.id);
     if (map.mainSessionId !== mainBefore)
       throw new Error(`第二条抢占 main：原 ${mainBefore} → 现 ${map.mainSessionId}`);
-    const sb = await readSidebar(page);
+    // 轮询重读：等「其它会话」标题渲染进 DOM（同上，避免单读时序坑）
+    const sb = await pollSidebar(page, (s) => s.hasOtherHeader);
     if (!sb.hasOtherHeader) throw new Error("侧栏未出现「其它会话」区（第二条/种子应在此）");
     return { mainStillIs: map.mainSessionId, sidebar: sb };
   });
@@ -209,15 +222,19 @@ try {
     if (!grp) throw new Error("无 agent 分组");
     if (!grp.dotColor || grp.dotColor === "rgba(0, 0, 0, 0)") throw new Error("agent 分组无色点");
     if (!/^\d+$/.test(grp.count)) throw new Error("agent 分组无计数");
-    // 可折叠：点分组标题 toggle（组内 SessionTreeItem 出现/消失）
+    // 可折叠：点分组标题 toggle（组内 SessionTreeItem 出现/消失）。
+    // 注意：SessionItem 是 <div>（非 <button>，按钮仅 hover/有 fork 时出现），故不能数 <button>；
+    // 单会话组数 <button> 折叠前后恒为 1（只有标题按钮自身）→ 假 FAIL。改数「会话项行」：
+    // 每个 SessionItem 末行有「<n> msgs」meta（SessionSidebar SessionItem），折叠时整行 unmount。
     const countItems = () => page.evaluate((name) => {
       const btn = [...document.querySelectorAll("button")].find((b) =>
         [...b.querySelectorAll("span")].some((s) => s.textContent?.trim() === name) &&
         [...b.querySelectorAll("span")].some((s) => getComputedStyle(s).borderRadius === "50%"));
       if (!btn) return -1;
-      // 该分组容器（按钮的父 div）下，会话项数（含可点会话标题的元素，排除标题按钮自身）
       const container = btn.parentElement;
-      return container ? container.querySelectorAll("button").length : -1;
+      if (!container) return -1;
+      // 数组内「会话项」：匹配 meta span 文本形如「N msgs」的元素个数（每会话一行，折叠即消失）
+      return [...container.querySelectorAll("span")].filter((s) => /^\d+\s+msgs$/.test(s.textContent?.trim() || "")).length;
     }, AGENT_NAME);
     const beforeFold = await countItems();
     // 折叠

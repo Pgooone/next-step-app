@@ -22,7 +22,7 @@
 
 ### 批次 2（依赖 M5）
 
-- [ ] **M7 · main-chat-and-sidebar** — [M7-main-chat-sidebar.md](M7-main-chat-sidebar.md)：主对话 + 按需起 agent 会话 + 左侧分组标签。依赖 M5
+- [x] **M7 · main-chat-and-sidebar** — [M7-main-chat-sidebar.md](M7-main-chat-sidebar.md)：主对话 + 按需起 agent 会话 + 左侧分组标签。依赖 M5（真浏览器 5.2/5.3/5.4/防串显 5 项 PASS）
 - [x] **M4 · agent-manager-glass** — [M4-agent-glass.md](M4-agent-glass.md)：AgentManager 玻璃卡片重写 + 二级菜单现场改配置。独立 UI 重活，含 M1
 
 ### 批次 3（依赖 M5 + M7）

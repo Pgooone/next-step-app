@@ -16,6 +16,7 @@ import { ArtifactPicker } from "./ArtifactPicker";
 import { BranchNavigator } from "./BranchNavigator";
 import { useArtifactStore } from "@/lib/stores/useArtifactStore";
 import { useSessionMapStore } from "@/lib/stores/useSessionMapStore";
+import { useAgentStore } from "@/lib/stores/useAgentStore";
 import { useTheme } from "@/hooks/useTheme";
 import {
   useProjectStore,
@@ -68,6 +69,11 @@ export function AppShell() {
   useEffect(() => {
     if (currentProjectId) {
       void useSessionMapStore.getState().refresh(currentProjectId).catch(() => {});
+      // M7·5.4 修复：对称刷新 agent 档案 store。否则普通加载/刷新（未打开 AgentManager）下
+      // selectAgentsForProject 因 loadedProjectId 不匹配返回 []，makeAgentResolver 解析不出 agent，
+      // 左栏分组名回退成 agentId 短串、色点回退灰（session-grouping.ts:66-67）。
+      // useAgentStore 无 reset，但其 selector 在 currentProjectId=null 时已返回 []，故 else 无需清。
+      void useAgentStore.getState().refresh(currentProjectId).catch(() => {});
     } else {
       useSessionMapStore.getState().reset();
     }
@@ -222,15 +228,38 @@ export function AppShell() {
     // map 而误判），再据 claimMainIfEmpty 决定是否懒认定主对话（D-V1.1-09）：
     //  - 普通会话(true)：项目尚无主对话 → setMain（其内部已含 refresh，故不再手动刷）；不预建空会话。
     //  - agent 会话(false)：服务端已 setOwner 写归属，这次 refresh 即让左栏拿到 bySession 分组（5.3）。
-    if (currentProjectId) {
-      const store = useSessionMapStore.getState();
+    if (!currentProjectId) return;
+    const store = useSessionMapStore.getState();
+    const projectId = currentProjectId;
+    if (claimMainIfEmpty) {
+      // 普通会话：先 refresh 拿盘上最新映射（防刚切项目时 store 仍是旧项目 map 而误判），
+      // 再懒认定主对话（D-V1.1-09）：项目尚无主对话 → setMain（其内部已含 refresh）；不预建空会话。
       void store
-        .refresh(currentProjectId)
+        .refresh(projectId)
         .then((map) => {
-          const picked = claimMainIfEmpty ? pickMainOnSessionCreated(map, session.id) : null;
-          if (picked) void store.setMain(currentProjectId, picked);
+          const picked = pickMainOnSessionCreated(map, session.id);
+          if (picked) void store.setMain(projectId, picked);
         })
         .catch(() => {});
+    } else {
+      // M7·5.3 修复：agent 会话已由服务端 setOwner 写盘，但内核 jsonl + session-map 写盘相对前端
+      // 有延迟，单次 refresh 常拿不到归属 → 左栏分组当场不显（5.3 FAIL 根因之一）。有界自动重试
+      // refresh（每次并 setRefreshKey 重拉 /api/sessions，让会话落盘后进侧栏列表），直到 bySession
+      // 含该会话或达重试上限；消除「起会话当场分组不显、要手动刷新才出」的窗口。
+      let tries = 0;
+      const tick = () => {
+        tries++;
+        void store
+          .refresh(projectId)
+          .then((map) => {
+            setRefreshKey((k) => k + 1);
+            if (!map.bySession[session.id] && tries < 8) setTimeout(tick, 700);
+          })
+          .catch(() => {
+            if (tries < 8) setTimeout(tick, 700);
+          });
+      };
+      tick();
     }
   }, [router, currentProjectId]);
 
