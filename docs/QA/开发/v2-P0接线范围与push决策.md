@@ -72,6 +72,6 @@
 
 ## 由本会话决策派生的后续待办（登记不丢）
 
-- **P0 实现第一步**：spike 验证 `profile.tools` + guard `noTools/customTools` 共存（接线能否成立的命门）。
+- **P0 实现第一步**：✅ **spike 已验证 = GO**（2026-06-18，`spike/p0-profile-guard/`，11/11 PASS，三重确认）—— `profile.tools` 白名单与 guard `noTools/customTools` 共存下受管写仍被拦成 PendingChange。结论 + wire 约束见 ADR `../../设计决策记录.md` D-V1.1-12。**p0-wire 已解锁**（关键约束：白名单须含 write/edit；guard 须真并入 `profile-session-wiring.ts:105`）。
 - **登记后续档位**：③ dispatch worker 接线、idle 重建补 guard（反查 `ns-session-map`）。
 - **登记 gap**：主对话（pi-web 原生）改受管 artifact 不被拦 —— 红线张力，待用户决定是否处理。

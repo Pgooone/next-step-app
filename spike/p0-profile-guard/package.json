@@ -1,0 +1,19 @@
+{
+  "name": "p0-profile-guard-spike",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "验证：profile.tools 白名单与 artifact-guard 的 noTools+customTools 共存下，受管写拦截是否仍成立（P0 接线命门）",
+  "scripts": {
+    "spike": "node --conditions=import --import tsx harness.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "^0.79.0",
+    "@earendil-works/pi-coding-agent": "^0.79.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
