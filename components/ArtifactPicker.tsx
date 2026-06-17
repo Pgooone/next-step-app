@@ -94,8 +94,8 @@ export function ArtifactPicker({
           ) : artifacts === null ? (
             <div style={{ padding: 16, color: "var(--text-muted)", fontSize: 13 }}>加载中…</div>
           ) : artifacts.length === 0 ? (
-            <div style={{ padding: 16, color: "var(--text-muted)", fontSize: 13 }}>
-              当前项目暂无受管产物。
+            <div style={{ padding: 16, color: "var(--text-muted)", fontSize: 13, lineHeight: 1.7 }}>
+              当前项目暂无受管产物。受管产物会在此列出，支持按块确认与版本回溯。
             </div>
           ) : (
             artifacts.map((a) => (

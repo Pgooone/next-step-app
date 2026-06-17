@@ -535,8 +535,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             placeholder={
               isStreaming && (onSteer || onFollowUp)
                 ? "Steer 立即注入 / Follow-up 排队…"
-                : isStreaming ? "Agent is running…"
-                : "Message…"
+                : isStreaming ? "Agent 运行中…"
+                : (atAgents && atAgents.length > 0 ? "输入消息，或用 @ 转交给 Agent" : "输入消息…")
             }
             rows={1}
             style={{

@@ -406,6 +406,12 @@ function AgentList({
         gap: 12,
       }}
     >
+      {/* 空状态零引导：无 Agent 时给一句「这是什么 + 下一步」 */}
+      {agents.length === 0 && (
+        <div style={{ gridColumn: "1 / -1", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.7, padding: "4px 2px" }}>
+          还没有 Agent。Agent 是可自定义的协作角色（设定模型 / 技能 / 角色），点下方「新建 Agent」创建第一个。
+        </div>
+      )}
       {/* 新建入口：带「+」的空卡片 */}
       <button
         data-testid="agent-new-btn"
