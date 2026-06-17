@@ -23,7 +23,19 @@
 - `profile-session-wiring.ts` — **B4 按档案起会话接线**。`startProfileSession(...)` 组合
   `assembleProfileSessionOptions` → `createAgentSession` → `applyProfileRuntime` →
   `registerInnerSession` → 发首条 message，返回 `{ sessionId, diagnostics }`。逻辑放此（而非
-  `app/` 的 route）以便 faux 集成测（vitest 仅覆盖 lib/**，D-B4-7）；三个依赖注入口生产省略，route 退薄壳。
+  `app/` 的 route）以便 faux 集成测（vitest 仅覆盖 lib/**，D-B4-7）；依赖注入口生产省略，route 退薄壳。
+  - **P0 档位1（ADR D-V1.1-12）：profile 会话挂 artifact-guard**。建会话时无条件合并
+    `assembleArtifactGuardOptions({ sourceActor: profile.name, cwd }).options`
+    （`{ ...profileOptions, ...guardOptions, ...createOptionsOverride }`，键不冲突、顺序无关），
+    使自定义 agent 改受管 artifact 时被拦成 PendingChange、非受管路径正常放行。`sourceActor=profile.name`
+    （人类可读，`PendingChangeCard` 渲染「变更来自 <name>」；非 UUID agentId）。
+  - 命门：内核 allowlist（`tools`）仅激活列出的工具，**激活的 write/edit 是 guard 的 customTools 实现**
+    （同名 `.set` 覆盖内置，sdk.js:132 / agent-session.js:1868-71），故受管写仍被拦——**无需为白名单×guard
+    共存做特殊处理**；profile 不授 write/edit 则 agent 本就无法写（= 配置约束、非 bug，别加「强制塞 write」逻辑）。
+  - **仅 profile 会话这一处**：不碰主对话 `/api/agent/new`、`dispatch-runner.ts`、idle 重建/`rpc-manager`
+    原生路径——idle 重建路径无 guard（重建会话改受管 artifact 不被拦）属已登记 P0 gap，本卡不修。
+  - `guardDepsOverride?` 是**测试专用**注入口（指向 hermetic 临时 registry/.pi），生产省略 → guard 默认其
+    文件后端（读默认 `~/.pi/projects.json`），与 resolve/pending 路由的 `new PendingChangeStore()` 指向同一批文件，UI 读得到。
 - `dispatch-runner.ts` — **C1 单 worker 会话「起 + 等回合结束 + 取产物」**。`runWorker(...)` 与 B4 的区别：
   B4 fire-and-forget 即返回；派发需**等 worker 跑完并取回产物文本**，故自己组合那 5 步，并在
   `registerInnerSession` 之后、`send` 之前挂 `agent_end` 监听（包成 Promise，resolve 于

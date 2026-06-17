@@ -55,14 +55,14 @@
 
 搁置登记（不丢）：BUG-00 P0 承重墙（单独立项）、§F/§H、§D/§E（分期）、杂项小 UX——详见台账 §四。
 
-## P0 承重墙·档位1（v2 主线 · 待开工）
+## P0 承重墙·档位1（v2 主线 · 实现中：spike+wire 完成，verify 待跑）
 
 > 产物按块确认运行时接线，**只接 profile 会话路径**。范围/档位/命门：`../docs/QA/开发/v2-P0接线范围与push决策.md`。
-> 监工起始指令：[p0-prompt.md](p0-prompt.md)。**实现用 agent team（TeamCreate 队员）非 fire-and-forget subagent**；串行、`addBlockedBy` 锁序。
-> 状态：**spike PASS（GO，2026-06-18，三重确认 11/11）→ p0-wire 已解锁**；wire/verify 待用户决定是否开新窗口跑实现。
+> 监工起始指令：[p0-prompt.md](p0-prompt.md)。**实现用 agent team（TeamCreate 队员 ns-p0）非 fire-and-forget subagent**；串行、`addBlockedBy` 锁序。
+> 状态：**spike PASS + wire 完成（2026-06-18）→ p0-verify 已解锁**；verify 双层（真浏览器 lead 自跑 + 逻辑层独立复核）待跑。
 
 - [x] **P0·spike · 接线命门验证** ✅ **PASS（GO）** — [p0-spike.md](p0-spike.md)：profile.tools + guard noTools/customTools 共存（结论 + wire 约束见 ADR D-V1.1-12）
-- [ ] **P0·wire · 接线 profile 会话** — [p0-wire.md](p0-wire.md)：`profile-session-wiring.ts:105` 合并 guard options + 单测（批次 2，依赖 spike PASS）
+- [x] **P0·wire · 接线 profile 会话** ✅ **完成** — [p0-wire.md](p0-wire.md)：`profile-session-wiring.ts` 合并 guard options（sourceActor=profile.name）+ 单测；门禁 lead 复跑 301/tsc 0/eslint 0；决策 D-V1.1-13
 - [ ] **P0·verify · 双层闭环验收** — [p0-verify.md](p0-verify.md)：真浏览器 agent 真发 write → 拦 → 按块确认 → 落新版（批次 3，依赖 wire）
 
 登记后续档位（档位1 稳后）：③dispatch worker 接线、idle 重建补 guard、主对话 gap——详见 QA v2-P0「后续待办」。
