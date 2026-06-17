@@ -75,27 +75,33 @@ export function AgentManager({ projectId, projectRoot, onClose, onSessionStarted
     })),
   );
   // loadedProjectId 不匹配时（切项目瞬间）视为空，避免串显
-  const visibleAgents = loadedProjectId === projectId ? agents : [];
+  const visibleAgents = useMemo(
+    () => (loadedProjectId === projectId ? agents : []),
+    [loadedProjectId, projectId, agents],
+  );
 
   // 选项源
   const [models, setModels] = useState<ModelOption[]>([]);
   const [skills, setSkills] = useState<SkillOption[]>([]);
 
-  // 视图：列表 | 编辑表单（editingId=null 为新建）
-  const [editing, setEditing] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  // 视图：列表（默认） | 新建表单（create）| 某档案的二级菜单（menu）。三者互斥。
+  type View = { kind: "list" } | { kind: "create" } | { kind: "menu"; id: string };
+  const [view, setView] = useState<View>({ kind: "list" });
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // 待确认删除的档案 id（内联确认条）
-  const [confirmId, setConfirmId] = useState<string | null>(null);
-
-  // B4：正在「用此档案起会话」的 id（展开行内首条 message 输入条）；提交中的 id；错误文本
-  const [startId, setStartId] = useState<string | null>(null);
+  // 二级菜单内：待确认删除标记；起会话开场白 / 提交中 / 错误
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [startMessage, setStartMessage] = useState("");
-  const [startingId, setStartingId] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+
+  // 当前二级菜单对应的档案（视图为 menu 时）
+  const menuAgent = useMemo(
+    () => (view.kind === "menu" ? visibleAgents.find((a) => a.id === view.id) ?? null : null),
+    [view, visibleAgents],
+  );
 
   useEffect(() => {
     refresh(projectId).catch(() => {});
@@ -122,26 +128,31 @@ export function AgentManager({ projectId, projectRoot, onClose, onSessionStarted
   }, [projectRoot]);
 
   const openCreate = useCallback(() => {
-    setEditingId(null);
     setForm(EMPTY_FORM);
     setFormError(null);
-    setEditing(true);
+    setView({ kind: "create" });
   }, []);
 
-  const openEdit = useCallback((p: AgentProfile) => {
-    setEditingId(p.id);
+  // 点卡片 → 打开该档案的二级菜单（载入其配置，复位起会话/删除局部态）
+  const openMenu = useCallback((p: AgentProfile) => {
     setForm(fromProfile(p));
     setFormError(null);
-    setEditing(true);
+    setConfirmDelete(false);
+    setStartMessage("");
+    setStartError(null);
+    setView({ kind: "menu", id: p.id });
   }, []);
 
-  const closeForm = useCallback(() => {
-    setEditing(false);
-    setEditingId(null);
+  const backToList = useCallback(() => {
+    setView({ kind: "list" });
     setFormError(null);
+    setConfirmDelete(false);
+    setStartMessage("");
+    setStartError(null);
   }, []);
 
-  const handleSave = useCallback(async () => {
+  // 新建保存：name 必填 → create → 回列表
+  const handleCreate = useCallback(async () => {
     if (saving) return;
     const name = form.name.trim();
     if (!name) {
@@ -150,75 +161,96 @@ export function AgentManager({ projectId, projectRoot, onClose, onSessionStarted
     }
     setSaving(true);
     setFormError(null);
-    const payload = {
-      name,
-      role: form.role,
-      model: form.model,
-      skills: form.skills,
-      tools: form.tools,
-      thinkingLevel: form.thinkingLevel,
-    };
     try {
-      if (editingId === null) await create(projectId, payload);
-      else await update(projectId, editingId, payload);
-      closeForm();
+      await create(projectId, {
+        name,
+        role: form.role,
+        model: form.model,
+        skills: form.skills,
+        tools: form.tools,
+        thinkingLevel: form.thinkingLevel,
+      });
+      backToList();
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
-  }, [saving, form, editingId, create, update, projectId, closeForm]);
+  }, [saving, form, create, projectId, backToList]);
 
-  const handleRemoveConfirm = useCallback(
-    async (id: string) => {
-      setConfirmId(null);
-      try {
-        await remove(projectId, id);
-      } catch {
-        // 删除失败保持原状（后端 404 已被 store 视为成功）
-      }
-    },
-    [remove, projectId],
-  );
+  // 二级菜单保存配置：name 必填 → update（停留在菜单，给保存反馈）
+  const handleUpdate = useCallback(async () => {
+    if (saving || view.kind !== "menu") return;
+    const name = form.name.trim();
+    if (!name) {
+      setFormError("name 不能为空");
+      return;
+    }
+    setSaving(true);
+    setFormError(null);
+    try {
+      await update(projectId, view.id, {
+        name,
+        role: form.role,
+        model: form.model,
+        skills: form.skills,
+        tools: form.tools,
+        thinkingLevel: form.thinkingLevel,
+      });
+      backToList();
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }, [saving, view, form, update, projectId, backToList]);
 
-  // B4：展开某档案的「起会话」输入条（同时关掉删除确认，避免两条并存）
-  const openStart = useCallback((id: string) => {
-    setConfirmId(null);
+  // 二级菜单删除（二次确认后）：remove → 回列表
+  const handleRemove = useCallback(async () => {
+    if (view.kind !== "menu") return;
+    const id = view.id;
+    setConfirmDelete(false);
+    try {
+      await remove(projectId, id);
+    } catch {
+      // 删除失败保持原状（后端 404 已被 store 视为成功）
+    }
+    backToList();
+  }, [view, remove, projectId, backToList]);
+
+  // 二级菜单起会话：提交开场白 → startSession → 交给 AppShell 切换会话（关闭管理器）
+  const handleStart = useCallback(async () => {
+    if (view.kind !== "menu") return;
+    const message = startMessage.trim();
+    if (!message || starting) return;
+    setStarting(true);
     setStartError(null);
-    setStartMessage("");
-    setStartId(id);
-  }, []);
-
-  const cancelStart = useCallback(() => {
-    setStartId(null);
-    setStartError(null);
-    setStartMessage("");
-  }, []);
-
-  // B4：提交首条 message → 调端点起会话 → 成功后交给 AppShell 切换会话（关闭整个管理器）
-  const handleStartSubmit = useCallback(
-    async (id: string) => {
-      const message = startMessage.trim();
-      if (!message || startingId) return;
-      setStartingId(id);
-      setStartError(null);
-      try {
-        const { sessionId } = await startSession(projectId, id, message);
-        onSessionStarted(sessionId, projectRoot ?? "");
-      } catch (e) {
-        setStartError(e instanceof Error ? e.message : String(e));
-      } finally {
-        setStartingId(null);
-      }
-    },
-    [startMessage, startingId, startSession, projectId, onSessionStarted, projectRoot],
-  );
+    try {
+      const { sessionId } = await startSession(projectId, view.id, message);
+      onSessionStarted(sessionId, projectRoot ?? "");
+    } catch (e) {
+      setStartError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setStarting(false);
+    }
+  }, [view, startMessage, starting, startSession, projectId, onSessionStarted, projectRoot]);
 
   // model 单 string → 下拉选中值（拼回 provider/modelId）
   const selectedModelValue = useMemo(() => {
     const parsed = splitModel(form.model);
     return parsed ? joinModel(parsed.provider, parsed.modelId) : "";
   }, [form.model]);
+
+  // 二级菜单视图但档案已不存在（被删/切项目）→ 回退列表，避免空菜单
+  const showMenu = view.kind === "menu" && menuAgent !== null;
+  const wide = view.kind === "list";
+
+  const headerTitle =
+    view.kind === "create"
+      ? "新建 Agent"
+      : view.kind === "menu" && menuAgent
+        ? menuAgent.name
+        : "Agent 管理";
 
   return (
     <div
@@ -238,8 +270,8 @@ export function AgentManager({ projectId, projectRoot, onClose, onSessionStarted
     >
       <div
         style={{
-          // 编辑表单单列窄，卡片网格需更宽
-          width: editing ? "min(560px, 92vw)" : "min(820px, 94vw)",
+          // 表单/二级菜单单列窄，卡片网格需更宽
+          width: wide ? "min(820px, 94vw)" : "min(560px, 92vw)",
           maxHeight: "86vh",
           display: "flex",
           flexDirection: "column",
@@ -260,8 +292,37 @@ export function AgentManager({ projectId, projectRoot, onClose, onSessionStarted
             borderBottom: "1px solid var(--border)",
           }}
         >
-          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
-            {editing ? (editingId === null ? "新建 Agent" : "编辑 Agent") : "Agent 管理"}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            {view.kind !== "list" && (
+              <button
+                data-testid="agent-back-btn"
+                onClick={backToList}
+                title="返回列表"
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--text-muted)",
+                  cursor: "pointer",
+                  fontSize: 18,
+                  lineHeight: 1,
+                  padding: "2px 4px",
+                }}
+              >
+                ‹
+              </button>
+            )}
+            <div
+              style={{
+                fontSize: 14,
+                fontWeight: 600,
+                color: "var(--text)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {headerTitle}
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -282,8 +343,8 @@ export function AgentManager({ projectId, projectRoot, onClose, onSessionStarted
 
         {/* 主体 */}
         <div style={{ padding: 16, overflowY: "auto" }}>
-          {editing ? (
-            <AgentForm
+          {view.kind === "create" ? (
+            <CreateForm
               form={form}
               setForm={setForm}
               models={models}
@@ -292,27 +353,33 @@ export function AgentManager({ projectId, projectRoot, onClose, onSessionStarted
               selectedModelValue={selectedModelValue}
               error={formError}
               saving={saving}
-              onSave={handleSave}
-              onCancel={closeForm}
+              onSave={handleCreate}
+              onCancel={backToList}
+            />
+          ) : showMenu && menuAgent ? (
+            <AgentMenu
+              agent={menuAgent}
+              form={form}
+              setForm={setForm}
+              models={models}
+              skills={skills}
+              skillsDisabled={!projectRoot}
+              selectedModelValue={selectedModelValue}
+              error={formError}
+              saving={saving}
+              onSave={handleUpdate}
+              confirmDelete={confirmDelete}
+              onAskDelete={() => setConfirmDelete(true)}
+              onCancelDelete={() => setConfirmDelete(false)}
+              onConfirmDelete={handleRemove}
+              startMessage={startMessage}
+              starting={starting}
+              startError={startError}
+              onChangeStartMessage={setStartMessage}
+              onStart={handleStart}
             />
           ) : (
-            <AgentList
-              agents={visibleAgents}
-              confirmId={confirmId}
-              startId={startId}
-              startMessage={startMessage}
-              startingId={startingId}
-              startError={startError}
-              onCreate={openCreate}
-              onEdit={openEdit}
-              onAskDelete={setConfirmId}
-              onCancelDelete={() => setConfirmId(null)}
-              onConfirmDelete={handleRemoveConfirm}
-              onAskStart={openStart}
-              onCancelStart={cancelStart}
-              onChangeStartMessage={setStartMessage}
-              onSubmitStart={handleStartSubmit}
-            />
+            <AgentList agents={visibleAgents} onCreate={openCreate} onOpenMenu={openMenu} />
           )}
         </div>
       </div>
@@ -320,40 +387,16 @@ export function AgentManager({ projectId, projectRoot, onClose, onSessionStarted
   );
 }
 
-/* ── 列表区 ───────────────────────────────────────────────── */
+/* ── 列表区（一级菜单：正方形玻璃卡片网格，点卡进二级菜单） ─────────────── */
 
 function AgentList({
   agents,
-  confirmId,
-  startId,
-  startMessage,
-  startingId,
-  startError,
   onCreate,
-  onEdit,
-  onAskDelete,
-  onCancelDelete,
-  onConfirmDelete,
-  onAskStart,
-  onCancelStart,
-  onChangeStartMessage,
-  onSubmitStart,
+  onOpenMenu,
 }: {
   agents: AgentProfile[];
-  confirmId: string | null;
-  startId: string | null;
-  startMessage: string;
-  startingId: string | null;
-  startError: string | null;
   onCreate: () => void;
-  onEdit: (p: AgentProfile) => void;
-  onAskDelete: (id: string) => void;
-  onCancelDelete: () => void;
-  onConfirmDelete: (id: string) => void;
-  onAskStart: (id: string) => void;
-  onCancelStart: () => void;
-  onChangeStartMessage: (v: string) => void;
-  onSubmitStart: (id: string) => void;
+  onOpenMenu: (p: AgentProfile) => void;
 }) {
   return (
     <div
@@ -398,77 +441,36 @@ function AgentList({
       </button>
 
       {agents.map((p) => (
-        <AgentCard
-          key={p.id}
-          p={p}
-          confirming={confirmId === p.id}
-          starting={startId === p.id}
-          startMessage={startMessage}
-          startSubmitting={startingId === p.id}
-          startError={startId === p.id ? startError : null}
-          onEdit={onEdit}
-          onAskDelete={onAskDelete}
-          onCancelDelete={onCancelDelete}
-          onConfirmDelete={onConfirmDelete}
-          onAskStart={onAskStart}
-          onCancelStart={onCancelStart}
-          onChangeStartMessage={onChangeStartMessage}
-          onSubmitStart={onSubmitStart}
-        />
+        <AgentCard key={p.id} p={p} onOpen={onOpenMenu} />
       ))}
     </div>
   );
 }
 
-/* ── 单张正方形玻璃卡片（一级菜单：真名 + 首字母色块 + 操作） ─────────── */
+/* ── 单张正方形玻璃卡片（一级展示：真名 + 首字母色块，整卡可点进二级菜单） ── */
 
-function AgentCard({
-  p,
-  confirming,
-  starting,
-  startMessage,
-  startSubmitting,
-  startError,
-  onEdit,
-  onAskDelete,
-  onCancelDelete,
-  onConfirmDelete,
-  onAskStart,
-  onCancelStart,
-  onChangeStartMessage,
-  onSubmitStart,
-}: {
-  p: AgentProfile;
-  confirming: boolean;
-  starting: boolean;
-  startMessage: string;
-  startSubmitting: boolean;
-  startError: string | null;
-  onEdit: (p: AgentProfile) => void;
-  onAskDelete: (id: string) => void;
-  onCancelDelete: () => void;
-  onConfirmDelete: (id: string) => void;
-  onAskStart: (id: string) => void;
-  onCancelStart: () => void;
-  onChangeStartMessage: (v: string) => void;
-  onSubmitStart: (id: string) => void;
-}) {
+function AgentCard({ p, onOpen }: { p: AgentProfile; onOpen: (p: AgentProfile) => void }) {
   return (
-    <div
+    <button
       data-testid="agent-item"
       data-agent-name={p.name}
+      onClick={() => onOpen(p)}
+      title={`配置 ${p.name}`}
       className="glass-card"
       style={{
-        position: "relative",
         aspectRatio: "1",
         borderRadius: 12,
         padding: 12,
         display: "flex",
         flexDirection: "column",
+        alignItems: "flex-start",
         overflow: "hidden",
+        cursor: "pointer",
+        font: "inherit",
+        textAlign: "left",
       }}
     >
-      {/* 首字母色块 + 真名（一级展示，始终在底层） */}
+      {/* 首字母色块 */}
       <div
         style={{
           width: 40,
@@ -486,6 +488,7 @@ function AgentCard({
       >
         {agentInitial(p.name)}
       </div>
+      {/* 真名 */}
       <div
         style={{
           marginTop: 10,
@@ -495,242 +498,237 @@ function AgentCard({
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
+          maxWidth: "100%",
         }}
         title={p.name}
       >
         {p.name}
       </div>
+    </button>
+  );
+}
 
-      {/* 操作按钮区（卡片底部，常规态显示；确认/起会话态被覆盖层遮住） */}
-      <div style={{ marginTop: "auto", display: "flex", gap: 6 }}>
+/* ── 二级菜单（配置现场改并保存 + 起会话 + 删除，覆盖独立编辑按钮与卡片覆盖层） ── */
+
+function AgentMenu({
+  agent,
+  form,
+  setForm,
+  models,
+  skills,
+  skillsDisabled,
+  selectedModelValue,
+  error,
+  saving,
+  onSave,
+  confirmDelete,
+  onAskDelete,
+  onCancelDelete,
+  onConfirmDelete,
+  startMessage,
+  starting,
+  startError,
+  onChangeStartMessage,
+  onStart,
+}: {
+  agent: AgentProfile;
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  models: ModelOption[];
+  skills: SkillOption[];
+  skillsDisabled: boolean;
+  selectedModelValue: string;
+  error: string | null;
+  saving: boolean;
+  onSave: () => void;
+  confirmDelete: boolean;
+  onAskDelete: () => void;
+  onCancelDelete: () => void;
+  onConfirmDelete: () => void;
+  startMessage: string;
+  starting: boolean;
+  startError: string | null;
+  onChangeStartMessage: (v: string) => void;
+  onStart: () => void;
+}) {
+  return (
+    <div data-testid="agent-menu" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* 起会话区（行内开场白 → startSession，禁用 window.prompt D-B4-3） */}
+      <section style={sectionStyle}>
+        <div style={sectionTitleStyle}>起会话</div>
+        <textarea
+          data-testid="agent-start-input"
+          value={startMessage}
+          onChange={(e) => onChangeStartMessage(e.target.value)}
+          onKeyDown={(e) => {
+            // Enter 提交、Shift+Enter 换行（与对话框输入习惯一致）
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              onStart();
+            }
+          }}
+          placeholder={`用 ${agent.name} 起会话的第一条消息…`}
+          rows={2}
+          style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }}
+        />
+        {startError && (
+          <div
+            data-testid="agent-start-error"
+            style={{ color: "#dc2626", fontSize: 11, lineHeight: 1.4, overflowWrap: "anywhere" }}
+          >
+            {startError}
+          </div>
+        )}
         <button
-          data-testid="agent-start-btn"
-          onClick={() => onAskStart(p.id)}
-          title="用此档案起会话"
+          data-testid="agent-start-submit"
+          onClick={onStart}
+          disabled={starting || !startMessage.trim()}
           style={{
-            flex: 1,
-            padding: "5px 0",
+            alignSelf: "flex-start",
+            padding: "6px 16px",
             background: "var(--accent)",
             border: "none",
             borderRadius: 6,
             color: "#fff",
-            fontSize: 11,
+            fontSize: 12,
             fontWeight: 600,
-            cursor: "pointer",
+            cursor: starting || !startMessage.trim() ? "not-allowed" : "pointer",
+            opacity: starting || !startMessage.trim() ? 0.65 : 1,
           }}
         >
-          起会话
+          {starting ? "起会话中…" : "起会话"}
         </button>
-        <button
-          data-testid="agent-edit-btn"
-          onClick={() => onEdit(p)}
-          title="编辑"
-          style={{
-            padding: "5px 9px",
-            background: "transparent",
-            border: "1px solid var(--border)",
-            borderRadius: 6,
-            color: "var(--text-muted)",
-            fontSize: 11,
-            cursor: "pointer",
-          }}
-        >
-          编辑
-        </button>
-        <button
-          data-testid="agent-delete-btn"
-          onClick={() => onAskDelete(p.id)}
-          title="删除 Agent"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: 28,
-            padding: 0,
-            background: "transparent",
-            border: "1px solid var(--border)",
-            color: "var(--text-dim)",
-            cursor: "pointer",
-            borderRadius: 6,
-          }}
-        >
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+      </section>
+
+      {/* 配置区（现场改并保存 → update） */}
+      <section style={sectionStyle}>
+        <div style={sectionTitleStyle}>配置</div>
+        <AgentFields
+          form={form}
+          setForm={setForm}
+          models={models}
+          skills={skills}
+          skillsDisabled={skillsDisabled}
+          selectedModelValue={selectedModelValue}
+        />
+        {error && (
+          <div
+            data-testid="agent-form-error"
+            style={{ color: "#dc2626", fontSize: 12, lineHeight: 1.4, overflowWrap: "anywhere" }}
           >
-            <polyline points="3 6 5 6 21 6" />
-            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-            <path d="M10 11v6M14 11v6" />
-            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-          </svg>
+            {error}
+          </div>
+        )}
+        <button
+          data-testid="agent-save-btn"
+          onClick={onSave}
+          disabled={saving || !form.name.trim()}
+          style={{
+            alignSelf: "flex-start",
+            padding: "8px 20px",
+            background: "var(--accent)",
+            border: "none",
+            borderRadius: 7,
+            color: "#fff",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: saving || !form.name.trim() ? "not-allowed" : "pointer",
+            opacity: saving || !form.name.trim() ? 0.65 : 1,
+          }}
+        >
+          {saving ? "保存中…" : "保存配置"}
         </button>
-      </div>
+      </section>
 
-      {/* 起会话覆盖层（B4：内联收首条 message，禁用 window.prompt D-B4-3） */}
-      {starting && (
-        <div style={overlayStyle}>
-          <div style={{ fontSize: 11, color: "var(--text)", lineHeight: 1.4, marginBottom: 6 }}>
-            用 <span style={{ fontWeight: 600 }}>{p.name}</span> 起会话：
-          </div>
-          <textarea
-            data-testid="agent-start-input"
-            autoFocus
-            value={startMessage}
-            onChange={(e) => onChangeStartMessage(e.target.value)}
-            onKeyDown={(e) => {
-              // Enter 提交、Shift+Enter 换行（与对话框输入习惯一致）
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                onSubmitStart(p.id);
-              }
-            }}
-            placeholder="第一条消息…"
-            rows={3}
-            style={{
-              ...inputStyle,
-              flex: 1,
-              resize: "none",
-              fontFamily: "inherit",
-              marginBottom: 6,
-            }}
-          />
-          {startError && (
-            <div
-              data-testid="agent-start-error"
-              style={{ color: "#dc2626", fontSize: 10, lineHeight: 1.4, marginBottom: 6, overflowWrap: "anywhere" }}
-            >
-              {startError}
+      {/* 删除区（二次确认显真名，覆盖 M1） */}
+      <section style={{ ...sectionStyle, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
+        {confirmDelete ? (
+          <>
+            <div style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.5 }}>
+              删除 <span style={{ fontWeight: 600 }}>{agent.name}</span>？
+              <span style={{ color: "var(--text-dim)" }}>
+                {" "}
+                将删除其档案目录（含 agent.md / memory.md），不可恢复。
+              </span>
             </div>
-          )}
-          <div style={{ display: "flex", gap: 6 }}>
-            <button
-              data-testid="agent-start-submit"
-              onClick={() => onSubmitStart(p.id)}
-              disabled={startSubmitting || !startMessage.trim()}
-              style={{
-                flex: 1,
-                padding: "5px 0",
-                background: "var(--accent)",
-                border: "none",
-                borderRadius: 6,
-                color: "#fff",
-                fontSize: 11,
-                fontWeight: 600,
-                cursor: startSubmitting || !startMessage.trim() ? "not-allowed" : "pointer",
-                opacity: startSubmitting || !startMessage.trim() ? 0.65 : 1,
-              }}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                data-testid="agent-delete-confirm"
+                onClick={onConfirmDelete}
+                style={{
+                  padding: "6px 16px",
+                  background: "#ef4444",
+                  border: "none",
+                  borderRadius: 6,
+                  color: "#fff",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                确认删除
+              </button>
+              <button
+                onClick={onCancelDelete}
+                style={{
+                  padding: "6px 16px",
+                  background: "var(--bg)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  color: "var(--text-muted)",
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                取消
+              </button>
+            </div>
+          </>
+        ) : (
+          <button
+            data-testid="agent-delete-btn"
+            onClick={onAskDelete}
+            title="删除 Agent"
+            style={{
+              alignSelf: "flex-start",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "6px 14px",
+              background: "transparent",
+              border: "1px solid var(--border)",
+              color: "var(--text-dim)",
+              cursor: "pointer",
+              borderRadius: 6,
+              fontSize: 12,
+            }}
+          >
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             >
-              {startSubmitting ? "起会话中…" : "起会话"}
-            </button>
-            <button
-              onClick={onCancelStart}
-              style={{
-                flex: 1,
-                padding: "5px 0",
-                background: "var(--bg)",
-                border: "1px solid var(--border)",
-                borderRadius: 6,
-                color: "var(--text-muted)",
-                fontSize: 11,
-                cursor: "pointer",
-              }}
-            >
-              取消
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* 删除确认覆盖层（M1：显真名，无 UUID 路径） */}
-      {confirming && (
-        <div style={overlayStyle}>
-          <div style={{ flex: 1, fontSize: 11, color: "var(--text)", lineHeight: 1.5 }}>
-            删除 <span style={{ fontWeight: 600 }}>{p.name}</span>？
-            <span style={{ color: "var(--text-dim)" }}>
-              {" "}
-              将删除其档案目录（含 agent.md / memory.md），不可恢复。
-            </span>
-          </div>
-          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-            <button
-              data-testid="agent-delete-confirm"
-              onClick={() => onConfirmDelete(p.id)}
-              style={{
-                flex: 1,
-                padding: "5px 0",
-                background: "#ef4444",
-                border: "none",
-                borderRadius: 6,
-                color: "#fff",
-                fontSize: 11,
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              确认删除
-            </button>
-            <button
-              onClick={onCancelDelete}
-              style={{
-                flex: 1,
-                padding: "5px 0",
-                background: "var(--bg)",
-                border: "1px solid var(--border)",
-                borderRadius: 6,
-                color: "var(--text-muted)",
-                fontSize: 11,
-                cursor: "pointer",
-              }}
-            >
-              取消
-            </button>
-          </div>
-        </div>
-      )}
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+              <path d="M10 11v6M14 11v6" />
+              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+            </svg>
+            删除 Agent
+          </button>
+        )}
+      </section>
     </div>
   );
 }
 
-/** 卡片内覆盖层（起会话 / 删除确认）：盖住整张卡片，承载二次交互。 */
-const overlayStyle: React.CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  padding: 12,
-  display: "flex",
-  flexDirection: "column",
-  background: "var(--bg)",
-  borderRadius: 12,
-};
+/* ── 新建表单（名称/角色必填 + 配置；保存走 create） ───────────────── */
 
-/* ── 表单区 ───────────────────────────────────────────────── */
-
-const labelStyle: React.CSSProperties = {
-  display: "block",
-  fontSize: 11,
-  fontWeight: 600,
-  color: "var(--text-muted)",
-  marginBottom: 5,
-};
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  fontSize: 12,
-  padding: "7px 9px",
-  border: "1px solid var(--border)",
-  borderRadius: 6,
-  outline: "none",
-  background: "var(--bg)",
-  color: "var(--text)",
-  boxSizing: "border-box",
-};
-
-function AgentForm({
+function CreateForm({
   form,
   setForm,
   models,
@@ -752,6 +750,117 @@ function AgentForm({
   saving: boolean;
   onSave: () => void;
   onCancel: () => void;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <AgentFields
+        form={form}
+        setForm={setForm}
+        models={models}
+        skills={skills}
+        skillsDisabled={skillsDisabled}
+        selectedModelValue={selectedModelValue}
+      />
+
+      {/* 错误（含后端 422） */}
+      {error && (
+        <div
+          data-testid="agent-form-error"
+          style={{ color: "#dc2626", fontSize: 12, lineHeight: 1.4, overflowWrap: "anywhere" }}
+        >
+          {error}
+        </div>
+      )}
+
+      {/* 操作 */}
+      <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
+        <button
+          data-testid="agent-save-btn"
+          onClick={onSave}
+          disabled={saving || !form.name.trim()}
+          style={{
+            flex: 1,
+            padding: "8px 0",
+            background: "var(--accent)",
+            border: "none",
+            borderRadius: 7,
+            color: "#fff",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: saving || !form.name.trim() ? "not-allowed" : "pointer",
+            opacity: saving || !form.name.trim() ? 0.65 : 1,
+          }}
+        >
+          {saving ? "保存中…" : "保存"}
+        </button>
+        <button
+          onClick={onCancel}
+          style={{
+            flex: 1,
+            padding: "8px 0",
+            background: "var(--bg-hover)",
+            border: "1px solid var(--border)",
+            borderRadius: 7,
+            color: "var(--text-muted)",
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          取消
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── 共用字段（名称/角色/模型/技能/工具/思考强度，新建与二级菜单复用） ───── */
+
+const sectionStyle: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 10,
+};
+
+const sectionTitleStyle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 700,
+  color: "var(--text)",
+};
+
+const labelStyle: React.CSSProperties = {
+  display: "block",
+  fontSize: 11,
+  fontWeight: 600,
+  color: "var(--text-muted)",
+  marginBottom: 5,
+};
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  fontSize: 12,
+  padding: "7px 9px",
+  border: "1px solid var(--border)",
+  borderRadius: 6,
+  outline: "none",
+  background: "var(--bg)",
+  color: "var(--text)",
+  boxSizing: "border-box",
+};
+
+function AgentFields({
+  form,
+  setForm,
+  models,
+  skills,
+  skillsDisabled,
+  selectedModelValue,
+}: {
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  models: ModelOption[];
+  skills: SkillOption[];
+  skillsDisabled: boolean;
+  selectedModelValue: string;
 }) {
   const toggleSkill = (name: string) => {
     setForm((f) => {
@@ -919,54 +1028,6 @@ function AgentForm({
             );
           })}
         </div>
-      </div>
-
-      {/* 错误（含后端 422） */}
-      {error && (
-        <div
-          data-testid="agent-form-error"
-          style={{ color: "#dc2626", fontSize: 12, lineHeight: 1.4, overflowWrap: "anywhere" }}
-        >
-          {error}
-        </div>
-      )}
-
-      {/* 操作 */}
-      <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
-        <button
-          data-testid="agent-save-btn"
-          onClick={onSave}
-          disabled={saving || !form.name.trim()}
-          style={{
-            flex: 1,
-            padding: "8px 0",
-            background: "var(--accent)",
-            border: "none",
-            borderRadius: 7,
-            color: "#fff",
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: saving || !form.name.trim() ? "not-allowed" : "pointer",
-            opacity: saving || !form.name.trim() ? 0.65 : 1,
-          }}
-        >
-          {saving ? "保存中…" : "保存"}
-        </button>
-        <button
-          onClick={onCancel}
-          style={{
-            flex: 1,
-            padding: "8px 0",
-            background: "var(--bg-hover)",
-            border: "1px solid var(--border)",
-            borderRadius: 7,
-            color: "var(--text-muted)",
-            fontSize: 13,
-            cursor: "pointer",
-          }}
-        >
-          取消
-        </button>
       </div>
     </div>
   );
