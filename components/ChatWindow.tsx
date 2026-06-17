@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentMessage, SessionInfo, SessionTreeNode } from "@/lib/types";
 import { MessageView } from "./MessageView";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
+import { extractTransferHistory } from "@/lib/agent-transfer";
+import type { TransferAgent } from "./AgentTransferPopover";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { useAgentSession, type AgentPhase } from "@/hooks/useAgentSession";
 import { useAudio } from "@/hooks/useAudio";
@@ -80,6 +82,12 @@ interface Props {
   onSystemPromptChange?: (prompt: string | null) => void;
   onSessionStatsChange?: (stats: { tokens: { input: number; output: number; cacheRead: number; cacheWrite: number }; cost?: number } | null) => void;
   onContextUsageChange?: (usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => void;
+  /** M8：主对话才有值——该项目 agent 列表（@ 转交待选）。 */
+  atAgents?: TransferAgent[];
+  /** M8：当前会话是否主对话（决定是否启用 @ 转交、是否提取历史）。 */
+  isMainChat?: boolean;
+  /** M8：确认转交回调（透传给 AppShell 投递）。 */
+  onAgentTransfer?: (agentId: string, message: string) => void;
 }
 
 function phaseLabel(phase: AgentPhase): string {
@@ -149,7 +157,7 @@ function Typewriter({ phrases }: { phrases: string[] }) {
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onContextUsageChange }: Props) {
+export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onContextUsageChange, atAgents, isMainChat, onAgentTransfer }: Props) {
   const {
     loading, error, messages, entryIds, streamState,
     agentRunning, modelNames, modelList, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
@@ -168,6 +176,12 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   });
 
   const { soundEnabled, onSoundToggle, playDoneSound } = useAudio();
+
+  // M8：主对话历史提取（仅主对话；供 @ 转交载荷）。messages 变才重算。
+  const transferHistory = useMemo(
+    () => (isMainChat ? extractTransferHistory(messages) : []),
+    [isMainChat, messages],
+  );
   const playDoneSoundRef = useRef(playDoneSound);
   playDoneSoundRef.current = playDoneSound;
   const soundEnabledRef = useRef(soundEnabled);
@@ -251,6 +265,9 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       retryInfo={retryInfo}
       soundEnabled={soundEnabled}
       onSoundToggle={onSoundToggle}
+      atAgents={isMainChat ? atAgents : undefined}
+      transferHistory={transferHistory}
+      onAgentTransfer={onAgentTransfer}
     />
   );
 

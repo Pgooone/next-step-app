@@ -8,6 +8,8 @@ import {
   FILE_INPUT_ACCEPT,
   type TextAttachment,
 } from "@/lib/chat-file-attach";
+import { AgentTransferPopover, type TransferAgent } from "./AgentTransferPopover";
+import type { TransferHistoryItem } from "@/lib/agent-transfer";
 
 export interface AttachedImage {
   data: string;   // base64, no prefix
@@ -44,6 +46,12 @@ interface Props {
   retryInfo?: { attempt: number; maxAttempts: number; errorMessage?: string } | null;
   soundEnabled?: boolean;
   onSoundToggle?: () => void;
+  /** M8：主对话才传——该项目 agent 列表（@ 转交待选）。非主对话不传则 @ 不触发转交。 */
+  atAgents?: TransferAgent[];
+  /** M8：主对话历史（已提取的角色标注项），转交载荷用。 */
+  transferHistory?: TransferHistoryItem[];
+  /** M8：确认转交 → 起目标 agent 会话并投递载荷。 */
+  onAgentTransfer?: (agentId: string, message: string) => void;
 }
 
 export interface ChatInputHandle {
@@ -73,6 +81,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   retryInfo,
   soundEnabled, onSoundToggle,
+  atAgents, transferHistory, onAgentTransfer,
 }: Props, ref) {
   const [value, setValue] = useState("");
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
@@ -82,6 +91,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
   const [attachedTexts, setAttachedTexts] = useState<TextAttachment[]>([]);
   const [fileNotice, setFileNotice] = useState<string | null>(null);
+  // M8：@ 转交浮层是否打开（仅主对话、atAgents 非空时由 textarea 输入 @ 唤起）。
+  const [atMenuOpen, setAtMenuOpen] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -470,6 +481,20 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         )}
 
         {/* Main input */}
+        <div style={{ position: "relative" }}>
+          {atMenuOpen && atAgents && (
+            <AgentTransferPopover
+              agents={atAgents}
+              history={transferHistory ?? []}
+              attachments={attachedTexts}
+              onConfirm={(agentId, message) => {
+                onAgentTransfer?.(agentId, message);
+                setAtMenuOpen(false);
+                setValue((v) => v.replace(/(^|\s)@$/, "$1"));
+              }}
+              onClose={() => setAtMenuOpen(false)}
+            />
+          )}
         <div
           style={{
             display: "flex",
@@ -488,7 +513,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           <textarea
             ref={textareaRef}
             value={value}
-            onChange={(e) => setValue(e.target.value)}
+            onChange={(e) => {
+              const v = e.target.value;
+              setValue(v);
+              // M8：在主对话（atAgents 有值）输入「@」（行首或空白后）→ 唤起转交浮层。
+              if (atAgents && atAgents.length > 0) {
+                const before = v.slice(0, e.target.selectionStart ?? v.length);
+                if (/(^|\s)@$/.test(before)) setAtMenuOpen(true);
+              }
+            }}
             onKeyDown={handleKeyDown}
             onCompositionStart={() => {
               isComposingRef.current = true;
@@ -600,6 +633,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               Send
             </button>
           )}
+        </div>
         </div>
 
         {/* Bottom bar: left | center (context) | right */}

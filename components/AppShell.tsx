@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { SessionSidebar } from "./SessionSidebar";
 import { ProjectSwitcher } from "./ProjectSwitcher";
@@ -15,8 +15,9 @@ import { ArtifactPanel } from "./ArtifactPanel";
 import { ArtifactPicker } from "./ArtifactPicker";
 import { BranchNavigator } from "./BranchNavigator";
 import { useArtifactStore } from "@/lib/stores/useArtifactStore";
-import { useSessionMapStore } from "@/lib/stores/useSessionMapStore";
-import { useAgentStore } from "@/lib/stores/useAgentStore";
+import { useShallow } from "zustand/react/shallow";
+import { useSessionMapStore, selectMapForProject } from "@/lib/stores/useSessionMapStore";
+import { useAgentStore, selectAgentsForProject, agentColor } from "@/lib/stores/useAgentStore";
 import { useTheme } from "@/hooks/useTheme";
 import {
   useProjectStore,
@@ -34,6 +35,19 @@ export function AppShell() {
   const currentRoot = useProjectStore(selectCurrentRoot);
   const currentProjectId = useProjectStore(selectCurrentProjectId);
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
+
+  // M8：主对话 @ 转交所需——该项目 agent 列表（含色点）+ 当前会话是否主对话。
+  const rawAgents = useAgentStore(useShallow((s) => selectAgentsForProject(s, currentProjectId)));
+  const atAgents = useMemo(
+    () => rawAgents.map((a) => ({ id: a.id, name: a.name, color: agentColor(a.name) })),
+    [rawAgents],
+  );
+  const sessionMap = useSessionMapStore((s) => s.map);
+  const sessionMapLoadedId = useSessionMapStore((s) => s.loadedProjectId);
+  const isMainChat = !!(
+    selectedSession &&
+    selectMapForProject(sessionMap, sessionMapLoadedId, currentProjectId).mainSessionId === selectedSession.id
+  );
   // When user clicks +, we only store the cwd — no fake session id
   const [newSessionCwd, setNewSessionCwd] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -281,6 +295,17 @@ export function AppShell() {
       firstMessage: "",
     }, false);
   }, [handleSessionCreated]);
+
+  // M8：主对话 @agent 转交 —— 复用 useAgentStore.startSession 起目标 agent 会话（投递载荷作
+  // firstMessage、服务端 setOwner 写归属），再走 handleAgentSessionStarted 切会话接 SSE（不抢 main）。
+  const handleAgentTransfer = useCallback((agentId: string, message: string) => {
+    if (!currentProjectId || !currentRoot) return;
+    void useAgentStore
+      .getState()
+      .startSession(currentProjectId, agentId, message)
+      .then(({ sessionId }) => handleAgentSessionStarted(sessionId, currentRoot))
+      .catch((e) => console.error("[M8] @agent 转交失败:", e));
+  }, [currentProjectId, currentRoot, handleAgentSessionStarted]);
 
   const handleAgentEnd = useCallback(() => {
     setRefreshKey((k) => k + 1);
@@ -850,6 +875,9 @@ export function AppShell() {
               onSystemPromptChange={handleSystemPromptChange}
               onSessionStatsChange={handleSessionStatsChange}
               onContextUsageChange={handleContextUsageChange}
+              atAgents={atAgents}
+              isMainChat={isMainChat}
+              onAgentTransfer={handleAgentTransfer}
             />
           ) : showPlaceholder ? (
             activeCwd ? (
