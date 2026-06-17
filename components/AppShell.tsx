@@ -388,6 +388,7 @@ export function AppShell() {
   const sidebarContent = (
     <>
       <SessionSidebar
+        key={currentProjectId}
         selectedSessionId={selectedSession?.id ?? null}
         onSelectSession={handleSelectSession}
         onNewSession={handleNewSession}

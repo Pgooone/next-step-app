@@ -265,27 +265,34 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     onCwdChange?.(selectedCwd);
   }, [selectedCwd, onCwdChange]);
 
-  // Auto-select cwd and restore session from URL on first load
+  // Auto-select cwd and restore session from URL on first load.
+  // 默认 cwd = 当前项目根（selectedCwdProp），优先于 getRecentCwds——后者跨全局所有
+  // 会话取最近，会把新项目串成别的项目目录（BUG-01 缺陷②）。URL 会话恢复仍最优先。
   useEffect(() => {
-    if (allSessions.length === 0) return;
+    if (selectedCwd !== null) return;
 
-    if (selectedCwd === null) {
-      // If restoring a session, set cwd to match that session
-      if (initialSessionId && !restoredRef.current) {
-        restoredRef.current = true;
-        const target = allSessions.find((s) => s.id === initialSessionId);
-        if (target) {
-          setSelectedCwd(target.cwd);
-          onSelectSession(target, true);
-          return;
-        }
-        // Session not found — notify parent so it can show the placeholder
-        onInitialRestoreDone?.();
+    // URL 恢复指定会话：需等会话列表加载完再找（故 allSessions 空时仅在此分支等待）
+    if (initialSessionId && !restoredRef.current) {
+      if (allSessions.length === 0) return;
+      restoredRef.current = true;
+      const target = allSessions.find((s) => s.id === initialSessionId);
+      if (target) {
+        setSelectedCwd(target.cwd);
+        onSelectSession(target, true);
+        return;
       }
-      const cwds = getRecentCwds(allSessions);
-      if (cwds.length > 0) setSelectedCwd(cwds[0]);
+      // Session not found — notify parent so it can show the placeholder
+      onInitialRestoreDone?.();
     }
-  }, [allSessions, selectedCwd, initialSessionId, onSelectSession, onInitialRestoreDone]);
+
+    // 默认落到当前项目根；无项目根时才回退到全局最近 cwd
+    if (selectedCwdProp) {
+      setSelectedCwd(selectedCwdProp);
+      return;
+    }
+    const cwds = getRecentCwds(allSessions);
+    if (cwds.length > 0) setSelectedCwd(cwds[0]);
+  }, [allSessions, selectedCwd, selectedCwdProp, initialSessionId, onSelectSession, onInitialRestoreDone]);
 
   const commitCustomPath = useCallback(async () => {
     const path = customPathValue.trim();
