@@ -27,7 +27,7 @@
 
 ### 批次 3（依赖 M5 + M7）
 
-- [ ] **M8 · at-agent-transfer** — [M8-at-agent.md](M8-at-agent.md)：主对话 `@agent` 转交全历史+附件到该 agent 单独会话。依赖 M5 + M7
+- [x] **M8 · at-agent-transfer** — [M8-at-agent.md](M8-at-agent.md)：主对话 `@agent` 转交全历史+附件到该 agent 单独会话。依赖 M5 + M7（真浏览器 5 AC 截图全证：@唤起/勾选默认/投递归属/载荷 `<context>`+角色标注/Dispatch 并存）
 
 ## 不开发的需求（已剔除）
 
