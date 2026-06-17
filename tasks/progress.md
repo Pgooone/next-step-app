@@ -57,7 +57,7 @@
 
 ## P0 承重墙·档位1（v2 主线 · 待开工）
 
-> 产物按块确认运行时接线，**只接 profile 会话路径**。范围/档位/命门：`../docs/QA/v2-P0接线范围与push决策.md`。
+> 产物按块确认运行时接线，**只接 profile 会话路径**。范围/档位/命门：`../docs/QA/开发/v2-P0接线范围与push决策.md`。
 > 监工起始指令：[p0-prompt.md](p0-prompt.md)。**实现用 agent team（TeamCreate 队员）非 fire-and-forget subagent**；串行、`addBlockedBy` 锁序。
 > 状态：任务已拆，**实现未开始**（等用户决定是否开新窗口跑实现）。
 

@@ -3,7 +3,7 @@
 P0 档位1 接线前的 **go/no-go 关口**。验证 profile options 的 `tools` 白名单与 guard 的
 `noTools:"builtin"+customTools` 共存时，内核装配出的工具集是否正确——guard 的 write/edit
 生效且仍拦受管写，profile.tools 不把它们挡掉。当年 D2 spike 是裸会话、没测过这个组合。
-详见 `../docs/QA/v2-P0接线范围与push决策.md` 决策 C「头号技术风险」。
+详见 `../docs/QA/开发/v2-P0接线范围与push决策.md` 决策 C「头号技术风险」。
 
 - [ ] 读 `lib/pi/artifact-guard.ts`(149) + 定位 `assembleProfileSessionOptions`（看它返回的 `tools` 白名单）+ 参考 D2 spike（记忆 `next-step-v2-diff-blocker` 记 `spike/d2-intercept/harness.ts`，若仓库内还在）
 - [ ] 写 spike harness（仿 D2，faux provider）：构造 `{...profileOptions(含 tools 白名单), ...guardOptions(noTools+customTools)}` → `createAgentSession` → 让 faux agent 发 write 打受管路径

@@ -2,7 +2,7 @@
 
 档位1 核心改动：把 guard options 接进 profile 会话起会话链路，让自定义 agent 改受管
 artifact 时被拦成 PendingChange。**仅此一处**（不碰主对话 `/api/agent/new`、dispatch、idle 重建）。
-依赖 `p0-spike` PASS。详见 `../docs/QA/v2-P0接线范围与push决策.md`。
+依赖 `p0-spike` PASS。详见 `../docs/QA/开发/v2-P0接线范围与push决策.md`。
 
 - [ ] 读 `lib/pi/profile-session-wiring.ts`(96-105) + `lib/pi/artifact-guard.ts`(43-56 deps / 149) + 入口 route `app/api/projects/[id]/agents/[agentId]/session/route.ts`
 - [ ] 定 `sourceActor` 取值（`profile.name` vs `agentId`）——查 `PendingChange.sourceActor` 语义 + UI 怎么展示「谁改的」，记决策

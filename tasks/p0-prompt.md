@@ -1,7 +1,7 @@
 # P0 承重墙·档位1 实现监工起始指令（p0-prompt.md）
 
 > vibe-coding 第 4 步起始指令，给「实现窗口」用。本窗口只到「任务拆分完成」为止，**实现未开始**。
-> 真相源：`../docs/QA/v2-P0接线范围与push决策.md`（范围/档位/命门/风险）+ 记忆 `next-step-v2-diff-blocker`。
+> 真相源：`../docs/QA/开发/v2-P0接线范围与push决策.md`（范围/档位/命门/风险）+ 记忆 `next-step-v2-diff-blocker`。
 > （路径相对 `tasks/`；代码路径相对 `next-step-V1.1/` 根。）
 
 ## 角色与目标
