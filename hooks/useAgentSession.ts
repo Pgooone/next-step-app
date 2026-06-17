@@ -4,6 +4,8 @@ import { useState, useCallback, useRef, useEffect, useReducer } from "react";
 import type { AgentMessage, SessionInfo, SessionTreeNode } from "@/lib/types";
 import { normalizeToolCalls } from "@/lib/normalize";
 import { sendAgentCommand } from "@/lib/agent-client";
+import { composeQuotedMessage } from "@/lib/chat-quote";
+import { useArtifactStore } from "@/lib/stores/useArtifactStore";
 import type { ToolEntry } from "@/components/ToolPanel";
 
 export interface SessionData {
@@ -335,12 +337,17 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (!message.trim() && !images?.length) return;
     if (agentRunning) return;
 
+    // BUG-05：注入划选引用并乐观清除（入口立即清，防连点重复注入）。
+    const { editTarget, setEditTarget } = useArtifactStore.getState();
+    const finalMessage = composeQuotedMessage(editTarget?.quoteText, message);
+    if (editTarget) setEditTarget(null);
+
     const imageBlocks = images?.map((img) => ({ type: "image" as const, source: { type: "base64" as const, media_type: img.mimeType, data: img.data } }));
     const userMsg: AgentMessage = {
       role: "user",
       content: imageBlocks?.length
-        ? [...(message.trim() ? [{ type: "text" as const, text: message }] : []), ...imageBlocks]
-        : message,
+        ? [...(finalMessage.trim() ? [{ type: "text" as const, text: finalMessage }] : []), ...imageBlocks]
+        : finalMessage,
       timestamp: Date.now(),
     };
     setMessages((prev) => [...prev, userMsg]);
@@ -363,7 +370,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           body: JSON.stringify({
             cwd: newSessionCwd,
             type: "prompt",
-            message,
+            message: finalMessage,
             toolNames,
             ...(piImages?.length ? { images: piImages } : {}),
             ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),
@@ -383,13 +390,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           created: new Date().toISOString(),
           modified: new Date().toISOString(),
           messageCount: 1,
-          firstMessage: message,
+          firstMessage: finalMessage,
         });
       } else if (session) {
         connectEvents(session.id);
         await sendAgentCommand(session.id, {
           type: "prompt",
-          message,
+          message: finalMessage,
           ...(piImages?.length ? { images: piImages } : {}),
         });
       }
@@ -482,12 +489,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const handleSteer = useCallback(async (message: string, images?: AttachedImage[]) => {
     const sid = sessionIdRef.current;
     if (!sid) return;
-    setMessages((prev) => [...prev, { role: "user", content: `[steer] ${message}`, timestamp: Date.now() } as AgentMessage]);
+    // BUG-05：注入划选引用并乐观清除（同 handleSend）。
+    const { editTarget, setEditTarget } = useArtifactStore.getState();
+    const finalMessage = composeQuotedMessage(editTarget?.quoteText, message);
+    if (editTarget) setEditTarget(null);
+    setMessages((prev) => [...prev, { role: "user", content: `[steer] ${finalMessage}`, timestamp: Date.now() } as AgentMessage]);
     const piImages = images?.map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
     try {
       await sendAgentCommand(sid, {
         type: "steer",
-        message,
+        message: finalMessage,
         ...(piImages?.length ? { images: piImages } : {}),
       });
     } catch (e) {
@@ -498,12 +509,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const handleFollowUp = useCallback(async (message: string, images?: AttachedImage[]) => {
     const sid = sessionIdRef.current;
     if (!sid) return;
-    setMessages((prev) => [...prev, { role: "user", content: message, timestamp: Date.now() } as AgentMessage]);
+    // BUG-05：注入划选引用并乐观清除（同 handleSend）。
+    const { editTarget, setEditTarget } = useArtifactStore.getState();
+    const finalMessage = composeQuotedMessage(editTarget?.quoteText, message);
+    if (editTarget) setEditTarget(null);
+    setMessages((prev) => [...prev, { role: "user", content: finalMessage, timestamp: Date.now() } as AgentMessage]);
     const piImages = images?.map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
     try {
       await sendAgentCommand(sid, {
         type: "follow_up",
-        message,
+        message: finalMessage,
         ...(piImages?.length ? { images: piImages } : {}),
       });
     } catch (e) {
