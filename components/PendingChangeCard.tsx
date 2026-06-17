@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useArtifactStore } from "@/lib/stores/useArtifactStore";
+import { toast } from "@/lib/stores/useToastStore";
 import type { DiffBlock, PendingChange } from "@/lib/domain/pending-change-service";
 
 /**
@@ -109,17 +110,29 @@ function ChangeCard({
         );
         if (!res.ok) {
           const data = (await res.json().catch(() => ({}))) as { error?: string };
-          setHint(`操作失败：${data.error ?? `HTTP ${res.status}`}`);
+          const msg = `操作失败：${data.error ?? `HTTP ${res.status}`}`;
+          // 失败兜底：hint 可能滚出视口，补一条 toast（保留卡片内 hint）。
+          setHint(msg);
+          toast.error(msg);
           return;
         }
         await onResolved();
+        // 成功回执（全部：无 blockId → 单条汇总，带处理块数）。
+        if (blockId) {
+          toast.success(action === "confirm" ? "已确认该块" : "已拒绝该块");
+        } else {
+          const n = change.diffBlocks.filter((b) => b.state === "pending").length;
+          toast.success(action === "confirm" ? `已确认全部 ${n} 处` : `已拒绝全部 ${n} 处`);
+        }
       } catch (e) {
-        setHint(`操作失败：${String(e)}`);
+        const msg = `操作失败：${String(e)}`;
+        setHint(msg);
+        toast.error(msg);
       } finally {
         setBusy(false);
       }
     },
-    [artifactId, change.id, busy, onResolved],
+    [artifactId, change.id, change.diffBlocks, busy, onResolved],
   );
 
   // YNRD（作用于聚焦块）。R 降级：仅提示需会话接线（D-D4-3）。

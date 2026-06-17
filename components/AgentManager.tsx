@@ -12,6 +12,7 @@ import {
   toggleTool,
   useAgentStore,
 } from "@/lib/stores/useAgentStore";
+import { toast } from "@/lib/stores/useToastStore";
 
 interface Props {
   projectId: string;
@@ -171,6 +172,7 @@ export function AgentManager({ projectId, projectRoot, onClose, onSessionStarted
         thinkingLevel: form.thinkingLevel,
       });
       backToList();
+      toast.success(`已创建 Agent「${name}」`);
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -198,6 +200,7 @@ export function AgentManager({ projectId, projectRoot, onClose, onSessionStarted
         thinkingLevel: form.thinkingLevel,
       });
       backToList();
+      toast.success(`已保存「${name}」配置`);
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -209,14 +212,17 @@ export function AgentManager({ projectId, projectRoot, onClose, onSessionStarted
   const handleRemove = useCallback(async () => {
     if (view.kind !== "menu") return;
     const id = view.id;
+    const agentName = form.name.trim() || "Agent";
     setConfirmDelete(false);
     try {
       await remove(projectId, id);
-    } catch {
-      // 删除失败保持原状（后端 404 已被 store 视为成功）
+      toast.success(`已删除 Agent「${agentName}」`);
+    } catch (e) {
+      // 删除原本吞错（后端 404 已被 store 视为成功）：真失败补 toast 兜底。
+      toast.error(`删除 Agent 失败：${e instanceof Error ? e.message : String(e)}`);
     }
     backToList();
-  }, [view, remove, projectId, backToList]);
+  }, [view, form.name, remove, projectId, backToList]);
 
   // 二级菜单起会话：提交开场白 → startSession → 交给 AppShell 切换会话（关闭管理器）
   const handleStart = useCallback(async () => {
@@ -228,12 +234,13 @@ export function AgentManager({ projectId, projectRoot, onClose, onSessionStarted
     try {
       const { sessionId } = await startSession(projectId, view.id, message);
       onSessionStarted(sessionId, projectRoot ?? "");
+      toast.success(`已为「${form.name.trim() || "Agent"}」起会话`);
     } catch (e) {
       setStartError(e instanceof Error ? e.message : String(e));
     } finally {
       setStarting(false);
     }
-  }, [view, startMessage, starting, startSession, projectId, onSessionStarted, projectRoot]);
+  }, [view, startMessage, starting, startSession, projectId, onSessionStarted, projectRoot, form.name]);
 
   // model 单 string → 下拉选中值（拼回 provider/modelId）
   const selectedModelValue = useMemo(() => {

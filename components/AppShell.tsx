@@ -18,6 +18,7 @@ import { useArtifactStore } from "@/lib/stores/useArtifactStore";
 import { useShallow } from "zustand/react/shallow";
 import { useSessionMapStore, selectMapForProject } from "@/lib/stores/useSessionMapStore";
 import { useAgentStore, selectAgentsForProject, agentColor } from "@/lib/stores/useAgentStore";
+import { toast } from "@/lib/stores/useToastStore";
 import { useTheme } from "@/hooks/useTheme";
 import {
   useProjectStore,
@@ -300,12 +301,19 @@ export function AppShell() {
   // firstMessage、服务端 setOwner 写归属），再走 handleAgentSessionStarted 切会话接 SSE（不抢 main）。
   const handleAgentTransfer = useCallback((agentId: string, message: string) => {
     if (!currentProjectId || !currentRoot) return;
+    const agentName = rawAgents.find((a) => a.id === agentId)?.name ?? agentId;
     void useAgentStore
       .getState()
       .startSession(currentProjectId, agentId, message)
-      .then(({ sessionId }) => handleAgentSessionStarted(sessionId, currentRoot))
-      .catch((e) => console.error("[M8] @agent 转交失败:", e));
-  }, [currentProjectId, currentRoot, handleAgentSessionStarted]);
+      .then(({ sessionId }) => {
+        handleAgentSessionStarted(sessionId, currentRoot);
+        toast.success(`已转交到 ${agentName}`);
+      })
+      .catch((e) => {
+        console.error("[M8] @agent 转交失败:", e);
+        toast.error(`转交到 ${agentName} 失败：${e instanceof Error ? e.message : String(e)}`);
+      });
+  }, [currentProjectId, currentRoot, handleAgentSessionStarted, rawAgents]);
 
   const handleAgentEnd = useCallback(() => {
     setRefreshKey((k) => k + 1);

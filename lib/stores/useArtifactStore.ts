@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { toast } from "./useToastStore";
 import type { Artifact, ArtifactVersion } from "@/lib/domain/artifact-service";
 import type { PendingChange } from "@/lib/domain/pending-change-service";
 
@@ -205,13 +206,18 @@ export const useArtifactStore = create<ArtifactState>((set, get) => ({
       );
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        set({ rollbackError: `加载历史版失败：${data.error ?? `HTTP ${res.status}`}` });
+        const msg = `加载历史版失败：${data.error ?? `HTTP ${res.status}`}`;
+        // 失败兜底：rollbackError 所在面板可能已关/滚出视口，补一条 toast（保留局部态）。
+        set({ rollbackError: msg });
+        toast.error(msg);
         return;
       }
       const ver = (await res.json()) as ArtifactVersion;
       set({ selectedVersion: version, historyContent: ver.content, rollbackError: null });
     } catch (e) {
-      set({ rollbackError: `加载历史版失败：${String(e)}` });
+      const msg = `加载历史版失败：${String(e)}`;
+      set({ rollbackError: msg });
+      toast.error(msg);
     }
   },
 
@@ -231,15 +237,21 @@ export const useArtifactStore = create<ArtifactState>((set, get) => ({
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        set({ rollbackError: `回滚失败：${data.error ?? `HTTP ${res.status}`}` });
+        const msg = `回滚失败：${data.error ?? `HTTP ${res.status}`}`;
+        // 失败兜底：rollbackError 所在面板可能已关/滚出视口，补一条 toast（保留局部态）。
+        set({ rollbackError: msg });
+        toast.error(msg);
         return;
       }
       // 成功：复位到跟随最新 + refresh() 拉新内容/pending（D-D5-2 选 A，前端自刷新、无 SSE）。
       // 版本列表由 ArtifactPanel 监听 currentVersion 变化统一重拉（rollback 使 currentVersion+1）。
       set({ selectedVersion: null, historyContent: null });
       await get().refresh();
+      toast.success(`已回滚到 v${toVersion}`);
     } catch (e) {
-      set({ rollbackError: `回滚失败：${String(e)}` });
+      const msg = `回滚失败：${String(e)}`;
+      set({ rollbackError: msg });
+      toast.error(msg);
     } finally {
       set({ rollbackBusy: false });
     }

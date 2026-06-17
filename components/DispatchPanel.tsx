@@ -12,6 +12,7 @@ import {
   type Assignment,
   type DispatchStatus,
 } from "@/lib/stores/useDispatchStore";
+import { toast } from "@/lib/stores/useToastStore";
 
 interface Props {
   projectId: string;
@@ -112,8 +113,12 @@ export function DispatchPanel({ projectId, projectRoot, onClose, onOpenFile }: P
     setError(null);
     try {
       await dispatch(projectId, g, assignments);
+      toast.success("派发已发起");
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      // 失败兜底：error 在面板内，面板关掉就看不到，补一条 toast（保留局部态）。
+      toast.error(`派发失败：${msg}`);
     } finally {
       setSubmitting(false);
     }

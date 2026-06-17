@@ -6,6 +6,7 @@ import {
   useProjectStore,
   selectCurrentProject,
 } from "@/lib/stores/useProjectStore";
+import { toast } from "@/lib/stores/useToastStore";
 import type { Project } from "@/lib/domain/project-registry";
 
 /** 把绝对路径缩短为 …/倒数两段，用于下拉里每项的副标题。 */
@@ -84,6 +85,7 @@ export function ProjectSwitcher({ onProjectSelected }: Props) {
       setRoot("");
       setOpen(false);
       onProjectSelected?.(project.root);
+      toast.success(`已创建项目「${project.name}」`);
     } catch (e) {
       setCreateError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -94,15 +96,18 @@ export function ProjectSwitcher({ onProjectSelected }: Props) {
   const handleRemoveConfirm = useCallback(
     async (id: string) => {
       const wasCurrent = useProjectStore.getState().currentProjectId === id;
+      const projName = projects.find((p) => p.id === id)?.name ?? "项目";
       setConfirmId(null);
       try {
         await remove(id);
         if (wasCurrent) onProjectSelected?.(null);
-      } catch {
-        // 删除失败保持原状（后端 404 已被 store 视为成功）
+        toast.success(`已删除项目「${projName}」`);
+      } catch (e) {
+        // 删除原本吞错（后端 404 已被 store 视为成功）：真失败补 toast 兜底。
+        toast.error(`删除项目失败：${e instanceof Error ? e.message : String(e)}`);
       }
     },
-    [remove, onProjectSelected],
+    [remove, onProjectSelected, projects],
   );
 
   return (
