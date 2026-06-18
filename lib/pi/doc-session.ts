@@ -38,11 +38,11 @@ export const DOC_SESSION_TOOLS = [
 /**
  * 产出可展开进 `createAgentSession(...)` 的受限工具集 options。
  *
- * `cwd` 纳入入参以对齐 guard 的 `assembleArtifactGuardOptions` 装配契约 + V2-4 wiring 调用点
- * （那里有 cwd），本模块自身不消费它（doc-session 不重建任何 cwd 级内核工具 operations；
+ * `cwd` 纳入入参以对齐 V2-4 wiring 调用点（那里有 cwd，且沿用 P0 装配模块「入参带 cwd」的边界），
+ * 本模块自身不消费它（doc-session 不重建任何 cwd 级内核工具 operations；
  * cwd 由 wiring 直接传给 createAgentSession）。
  *
- * 用法（同 guard 边界，调用方负责 new 会话）：
+ * 用法（「只产 options、调用方负责 new 会话」边界）：
  *   const { options: docOptions } = assembleDocSessionOptions({ projectId, sourceActor, cwd });
  *   await createAgentSession({ ...profileOptions, ...docOptions, ...createOptionsOverride });
  * ⚠️ spread 顺序：docOptions 必须在 profileOptions **之后**——两者都含 `tools` 键，docOptions 的

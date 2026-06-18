@@ -6,19 +6,19 @@
 
 ## 批次进度（串行）
 - [x] 批次 0 · V2-0 工具机制 spike —— **GO**（lead 独立复跑 10/10 PASS、EXIT 0；范式+typebox 决策见 D-V2-07）
-- [ ] 批次 1 · V2-1 文档物化层
-- [ ] 批次 2 · V2-2 提议工具
-- [ ] 批次 3 · V2-3 会话装配 → V2-4 接线
-- [ ] 批次 4 · V2-5 删 guard
+- [x] 批次 1 · V2-1 文档物化层（`70af56b`，外部编辑保护 fail-clean + file-name.ts 抽离 D-V2-08）
+- [x] 批次 2 · V2-2 提议工具（`60e4d58`，含 5-agent 对抗 review 收口 D-V2-09）
+- [x] 批次 3 · V2-3 会话装配（`fd5930c`）→ V2-4 接线（`39892e7`，spread 顺序 + 泄漏对照测）
+- [x] 批次 4 · V2-5 删 guard（本次提交，删 543 行、grep 无活引用、spike stale 保留登记）
 - [ ] 批次 5 · V2-6 端到端验证
 
 ## 模块 checklist
 - [x] V2-0 spike：defineTool 签名 + 受限工具集组合（双向负对照 10/10）→ **GO**（`spike/v2-tools/`，D-V2-07）
-- [ ] V2-1 物化层：真实 crd.md + filePath 字段
-- [ ] V2-2 提议工具：create_artifact / propose_edit / list_artifacts（faux 验证）
-- [ ] V2-3 会话装配：受限工具集（无 write/edit/bash）
-- [ ] V2-4 接线：wiring 换 docSession（仅 profile 会话）
-- [ ] V2-5 删 guard：artifact-guard / intercept 清理无残留
+- [x] V2-1 物化层：真实 .md + filePath 字段 + EXTERNAL_MODIFIED 保护（`70af56b`）
+- [x] V2-2 提议工具：create_artifact / propose_edit / list_artifacts（`60e4d58`，10 单测 + promptGuidelines 加固）
+- [x] V2-3 会话装配：受限工具集（无 write/edit/bash）（`fd5930c`，DOC_SESSION_TOOLS 7 项）
+- [x] V2-4 接线：wiring 换 docSession（仅 profile 会话）（`39892e7`，泄漏对照测守 spread 顺序）
+- [x] V2-5 删 guard：artifact-guard / intercept 清理无残留（本次提交，spike stale 保留作历史留痕）
 - [ ] V2-6 验证：端到端 + 真浏览器 + D3-D5 无回归
 
 ## 本期不做（登记）

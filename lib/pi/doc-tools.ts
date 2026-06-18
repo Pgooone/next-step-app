@@ -6,7 +6,7 @@
  * （转 PendingChange、等用户按块确认才写新版）、列文档。这是 V2「文档实体 + 提议工具」模型的核心：
  * diff/版本/确认是文档层通用能力、AI 只是调用方之一（取代 P0「逐路给会话装 guard 拦写」）。
  *
- * 闭包注入范式同 `artifact-guard.ts` 的 `assembleArtifactGuardOptions`（QA Q4 先例）：
+ * 闭包注入范式沿用 P0 guard 装配的「构造期闭包注入」先例（QA Q4，guard 已于 V2-5 删除）：
  * execute 的 ctx（ExtensionContext）不带 projectId / agent 身份，故由本工厂在装配时把
  * `projectId` / `sourceActor` 经闭包注入每个工具的 execute。
  *
@@ -30,9 +30,9 @@ import { ProjectRegistry } from "../domain/project-registry";
 
 /**
  * 内核工具工厂返回具体 `ToolDefinition<具体schema,具体details>`，把异构具体类型收进数组会因
- * `renderCall`/`parameters` 泛型逆变方差报错（同 artifact-guard.ts 的 GuardToolDef 注释）。
- * 故本地等价定义 `DocToolDef = ToolDefinition<any,any>`，`any` 限定在这一行。export 供 V2-3
- * 文档会话装配复用；刻意不复用 artifact-guard 的 GuardToolDef —— 那个文件 V2-5 会删除。
+ * `renderCall`/`parameters` 泛型逆变方差报错（阶段0/D-D2-1 实测）。内核自身用 `ToolDef =
+ * ToolDefinition<any,any>` 规避、但该别名未从包根导出，故本地等价定义 `DocToolDef =
+ * ToolDefinition<any,any>`，`any` 限定在这一行。export 供 V2-3 文档会话装配复用。
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type DocToolDef = ToolDefinition<any, any>;
@@ -90,7 +90,7 @@ const listArtifactsSchema = Type.Object({});
 export function buildDocTools(deps: DocToolDeps): DocToolDef[] {
   const { projectId, sourceActor } = deps;
   // 默认后端指向 ~/.pi/projects.json（registry 构造惰性、无 I/O），与 resolve/pending 路由的默认 store
-  // 指向同一批文件、UI 读得到（同 guard 的 buildGuardOperations 默认后端约定）。
+  // 指向同一批文件、UI 读得到（沿用 P0 guard 装配的默认后端约定）。
   const registry = new ProjectRegistry();
   const artifactService = deps.artifactService ?? new ArtifactService(registry);
   // 透传 artifactService（D-V2-09）：PendingChangeStore 第二参为复用 artifactService 预留，

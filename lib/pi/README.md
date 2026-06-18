@@ -53,15 +53,10 @@
   会话后重试」由 orchestrator 判该 worker 失败）。计数源默认 `globalThis.__piSessions.size`（含前端聊天
   会话 + 派发 worker），可注入桩计数器便于测。TOCTOU 窗口（gate 通过→会话真正注册间的 async 间隙）在
   串行+单用户下可接受，仅注释不引并发池。
-- `artifact-intercept.ts` — **D2 受管 artifact 写盘路径识别（D-D2-2）**。`resolveManagedTarget(absPath, registry)`
-  运行时反查（不建索引）：词法归一 `resolve`（**不** realpath，目标文件可能尚不存在）→ 命中某项目
-  `<root>/.pi/artifacts/managed/<id>/` 前缀且 `<id>/artifact.json` 存在 → 返回 `{projectId,artifactId}`，
-  否则 `null`（放行正常写）。Iter C 派发产物在 managed 父级，`relative` 以 `..` 开头自然不误命中。
-- `artifact-guard.ts` — **D2 拦截编辑工具 → PendingChange（D-D2-1 选 C / D-D2-4/5）**。`assembleArtifactGuardOptions(deps)`
-  产出可展开进 `createAgentSession` 的 options（`noTools:"builtin"` + 注入了守卫 operations 的内核 write/edit
-  + 重建 read/bash/grep/find/ls，零工具漂移）。守卫 operations「自分流」：受管路径→读 `readCurrentContent`
-  当旧内容、`buildReplacePendingChange` 切块、落 PendingChange、**不写盘**；非受管→委托真实 fs 正常写。
-  `sourceActor` 由 deps 闭包注入（execute 的 ctx 不带 agent 身份）。沿用 B2「只产 options、调用方 new 会话」边界。
+- ~~`artifact-intercept.ts` / `artifact-guard.ts`~~ — **D2 受管写盘路径识别 + 拦截编辑工具转 PendingChange，
+  已于 V2-5 删除**。V2「文档实体 + 提议工具」模型不再「拦路径写」：profile 会话装受限工具集（无 write/edit/bash）、
+  改文档只能经提议工具按 id 操作（见下方 `doc-tools.ts` / `doc-session.ts`），故路径识别（`resolveManagedTarget`）
+  与守卫装配（`assembleArtifactGuardOptions`）均无存在必要、整体移除。
 - `doc-tools.ts` — **V2-2 文档「提议工具」工厂（`defineTool` 自定义工具）**。`buildDocTools(deps)` 返回
   3 个工具：`create_artifact({kind,title,content})`→`ArtifactService.createArtifact`（直接落 v1 + 物化，
   author=sourceActor）；`propose_edit({id,newContent})`→**①查未决**（`listPendingChanges` 非空则拒绝、
@@ -84,9 +79,9 @@
   白名单名过滤、漏名则 agent 调不到、闭环断）、且不含 write/edit/bash**；`customTools` = `buildDocTools(deps)`。
   **比 guard 更简**：不要 write/edit/bash → 白名单直接排除、customTools 只加 3 新工具，**无需重建任何内核
   工具 operations**。安全（依赖 V2-0 spike 双向实证）：白名单无 write/edit/bash → 内置写盘工具不激活；
-  customTools 只加只读提议工具 → **结构性无绕过**。deps 含 `cwd` 仅为对齐 guard 装配契约 + V2-4 调用点，
+  customTools 只加只读提议工具 → **结构性无绕过**。deps 含 `cwd` 仅为对齐 V2-4 调用点（那里有 cwd），
   本模块自身不消费（doc-session 不重建 cwd 级工具 operations，cwd 由 wiring 直接传 createAgentSession）。
-  V2-4 wiring 把 `assembleArtifactGuardOptions` 换成它时，**docOptions 须 spread 在 profileOptions 之后**
+  V2-4 wiring 把它合进 `createAgentSession` 时，**docOptions 须 spread 在 profileOptions 之后**
   覆盖 profile.tools（两者都含 tools 键，防 profile.tools 的 write/edit/bash 泄漏）。
 
 ## 约定 / 红线

@@ -266,7 +266,7 @@ describe("startProfileSession 组合整链", () => {
 // V2：profile 会话装「受限工具集」（替代 P0 的 artifact-guard）
 //
 // 复用上方 B4 fixture（registry/store/projectId，registry 指向临时 projects.json），
-// 叠加 artifact-guard.test.ts 的 faux 范式（setResponses 在捕获 streamSimple 之前）。
+// 叠加「setResponses 必须在捕获 streamSimple 之前」的 faux 范式（见下方 makeFauxWithResponses）。
 //
 // 关键：提议工具默认会 `new ProjectRegistry()`（读默认 ~/.pi/projects.json），hermetic 测试里
 // 看不到本测临时项目，故经 startProfileSession 的 docDepsOverride 注入指向同一临时 registry 的
@@ -294,7 +294,7 @@ function makeAwaitingRegister(): {
   return { register, captured };
 }
 
-/** 复刻 artifact-guard.test.ts 的 makeFaux：setResponses 必须在捕获 streamSimple 之前。 */
+/** 带 responses 的 faux 装配：setResponses 必须在捕获 streamSimple 之前。 */
 type FauxResponses = Parameters<ReturnType<typeof registerFauxProvider>["setResponses"]>[0];
 function makeFauxWithResponses(responses: FauxResponses): FauxBundle {
   const reg = registerFauxProvider({
@@ -329,7 +329,7 @@ function makeFauxWithResponses(responses: FauxResponses): FauxBundle {
   return { authStorage, modelRegistry, model, unregister: () => reg.unregister() };
 }
 
-/** 读某 artifact 的 pending/ 目录下全部 PendingChange（同 artifact-guard.test.ts）。 */
+/** 读某 artifact 的 pending/ 目录下全部 PendingChange。 */
 function readPendingChanges(artifactId: string): PendingChange[] {
   const pendingDir = join(projectRoot(), ".pi", "artifacts", "managed", artifactId, "pending");
   if (!existsSync(pendingDir)) return [];
