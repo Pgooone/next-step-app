@@ -70,8 +70,28 @@
 
 ---
 
+## 决策 D · P0 verify 验收深度（2026-06-18）
+
+**背景**：P0·wire（D-V1.1-13，commit 49635f1）完成后跑 verify 双层。逻辑层独立验收员经**真生产函数 `startProfileSession`** + faux 起会话**四重验证**（受管 write/**edit** 拦成 pending、非受管放行、只读边界、sourceActor=profile.name；harness `spike/p0-wire-verify/` 14/14，lead 亲跑复核）——wire 铁证成立。真浏览器层撞两坎：①本机**无模型凭证**（`~/.pi/auth.json` 不存在）→ 浏览器里没法让真 agent 写；②用 faux 在「fixture 进程内 `startProfileSession` + `SessionManager.create` + dev 可见状态」这个**从未测过的组合**下没绑上 responses（agent 只回空、没发 write）。同时确认 **D4 那轮已真浏览器验过「pending→逐块/全部✓→物化落新版」UI 闭环（12/12）**，而 P0 的 PendingChange 与 D4 **同构**（UI 不关心来源）。
+
+| 选项 | 说明 | 代价 |
+|---|---|---|
+| **A 接受逻辑层四重 + D4 浏览器先例（我推荐）** | 以「逻辑层(真生产路径)证 wire + D4 浏览器证 UI 闭环」为档位1 完成依据 | 最省、零 OOM 风险；残留极小 gap（P0 来源 pending 的浏览器原生渲染未单独跑，但与 D4 同构、风险近零） |
+| B 继续调通 faux 跑 P0 专项真浏览器 E2E | 换 in-process 造 profile + seed 可挂载会话，跑通真 wire pending→浏览器按块确认→落新版 | 多花时间 + OOM 风险；基本重证 D4 已证之事 |
+| C 用户配模型凭证 → 真驱动 | 浏览器里真起 agent 调模型写受管 artifact | 非确定性 + 需配凭证 + 撞已知 OOM 高危场景（agent 流式长窗口，[[next-step-m8-verified]] 崩因） |
+
+**我的推荐**：A。**理由**：①承重墙逻辑（会出错、最该反复验的）已用**真生产函数** `startProfileSession` 四重证；②UI 闭环 D4 已真浏览器证、同构数据；③B 拿时间 + 崩机风险重证已证之事，性价比极低；④C 要本机刻意不配的凭证 + 撞已知 OOM 崩溃场景；⑤残留仅一条极小已登记 gap，不触档位1 灵魂——「AI 改文档被拦→人按块确认→落新版」整条链每一环都已被独立证实。
+
+**交互细节**：用户初答「说人话解释选项 + 我推荐哪个为什么」，我用「安检门 / 模型钥匙」比喻讲清三档区别 + 推荐理由后记此。
+
+**谁拍**：用户授权 lead 选推荐并记录（首条指令「选择你推荐的决策并记录」）；已声明「你若更想要 B/C 随时叫停回退」，决策可逆。
+✅ **最终：A —— 接受逻辑层四重 + D4 浏览器先例为档位1 完成依据**；残留 gap 登记于下方。
+
+---
+
 ## 由本会话决策派生的后续待办（登记不丢）
 
 - **P0 实现第一步**：✅ **spike 已验证 = GO**（2026-06-18，`spike/p0-profile-guard/`，11/11 PASS，三重确认）—— `profile.tools` 白名单与 guard `noTools/customTools` 共存下受管写仍被拦成 PendingChange。结论 + wire 约束见 ADR `../../设计决策记录.md` D-V1.1-12。**p0-wire 已解锁**（关键约束：白名单须含 write/edit；guard 须真并入 `profile-session-wiring.ts:105`）。
 - **登记后续档位**：③ dispatch worker 接线、idle 重建补 guard（反查 `ns-session-map`）。
 - **登记 gap**：主对话（pi-web 原生）改受管 artifact 不被拦 —— 红线张力，待用户决定是否处理。
+- **P0 档位1 收官（决策 D）**：spike(D-V1.1-12) + wire(D-V1.1-13，49635f1) + verify(逻辑层四重 + D4 浏览器先例) 全完成。**verify gap**：P0 来源 pending 的浏览器原生渲染未单独跑（无凭证 + faux 该组合 finicky；与 D4 同构、风险近零）——后续若配凭证可补真驱动 E2E（起点 `scripts/p0-verify-fixture.mts`）。
