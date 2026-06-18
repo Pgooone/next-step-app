@@ -10,7 +10,7 @@
 - [x] 批次 2 · V2-2 提议工具（`60e4d58`，含 5-agent 对抗 review 收口 D-V2-09）
 - [x] 批次 3 · V2-3 会话装配（`fd5930c`）→ V2-4 接线（`39892e7`，spread 顺序 + 泄漏对照测）
 - [x] 批次 4 · V2-5 删 guard（本次提交，删 543 行、grep 无活引用、spike stale 保留登记）
-- [ ] 批次 5 · V2-6 端到端验证
+- [x] 批次 5 · V2-6 端到端验证（本次提交，doc-pipeline.test 7 测试 + lead 独立真浏览器：ArtifactPanel 渲染 V2 diff + API confirm→物化 + pageErrors 0）
 
 ## 模块 checklist
 - [x] V2-0 spike：defineTool 签名 + 受限工具集组合（双向负对照 10/10）→ **GO**（`spike/v2-tools/`，D-V2-07）
@@ -19,7 +19,7 @@
 - [x] V2-3 会话装配：受限工具集（无 write/edit/bash）（`fd5930c`，DOC_SESSION_TOOLS 7 项）
 - [x] V2-4 接线：wiring 换 docSession（仅 profile 会话）（`39892e7`，泄漏对照测守 spread 顺序）
 - [x] V2-5 删 guard：artifact-guard / intercept 清理无残留（本次提交，spike stale 保留作历史留痕）
-- [ ] V2-6 验证：端到端 + 真浏览器 + D3-D5 无回归
+- [x] V2-6 验证：端到端闭环 + coreIssue 正/负 + 真浏览器（ArtifactPanel 渲染 V2 diff/API confirm→物化/物化文件同步/pageErrors 0）+ D3-D5 无回归（test 324）
 
 ## 本期不做（登记）
 PDF/Word 解析 + 转化 skill；外部改动**自动**进版本（但本轮已加 EXTERNAL_MODIFIED 防覆盖）；block_id 方案 C；文档型 vs coding 型 profile 区分；delete/清理工具（孤儿文件）。
