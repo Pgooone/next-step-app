@@ -58,6 +58,21 @@
   + 重建 read/bash/grep/find/ls，零工具漂移）。守卫 operations「自分流」：受管路径→读 `readCurrentContent`
   当旧内容、`buildReplacePendingChange` 切块、落 PendingChange、**不写盘**；非受管→委托真实 fs 正常写。
   `sourceActor` 由 deps 闭包注入（execute 的 ctx 不带 agent 身份）。沿用 B2「只产 options、调用方 new 会话」边界。
+- `doc-tools.ts` — **V2-2 文档「提议工具」工厂（`defineTool` 自定义工具）**。`buildDocTools(deps)` 返回
+  3 个工具：`create_artifact({kind,title,content})`→`ArtifactService.createArtifact`（直接落 v1 + 物化，
+  author=sourceActor）；`propose_edit({id,newContent})`→**①查未决**（`listPendingChanges` 非空则拒绝、
+  引导先处理，D-V2-05）**②**`computeReplaceDiffBlocks` 空块（无变化）不 save、返回 changeId:null
+  **③**`buildReplacePendingChange`+`pendingStore.save`（**不写盘**，落的 PendingChange 与既有 resolve
+  路由/PendingChangeCard 兼容、确认流水线零新增）；`list_artifacts({})`→`listArtifacts`。`projectId`/
+  `sourceActor` 由 deps 闭包注入（execute 的 ctx 不带）；`artifactService`/`pendingStore` 可注入、生产
+  走默认文件后端。**与 guard 的根本区别**：guard 靠「拦 write/edit」防直接写盘；提议工具让 AI **结构性
+  无直接写盘路径**（只能调这 3 个工具），是 V2「文档实体+提议工具」模型取代「逐路装 guard」的核心。
+  **description 硬约束（模型唯一真读通道）**：`propose_edit` 描述写明「newContent 必须是完整新全文、
+  未改段落逐字保留」——用户「只改一段」的体验由 LCS 只切变化块 + 按块确认交付，agent 内部仍回整篇；
+  回残篇会被判删除致满屏噪声。白名单须含这 3 工具名（D-V2-04，否则内核按名过滤掉、调不到），由 V2-3
+  装配负责。execute 内 `try/catch` 把 ArtifactError（如 id 不存在=NOT_FOUND）转成给模型看的错误文本、
+  不让未捕获异常炸会话（引导 agent 改正/先 list_artifacts 核对 id）。`DocToolDef`（= `ToolDefinition<any,any>`，
+  方差规避）一并 export 供 V2-3 复用。
 
 ## 约定 / 红线
 - **只封装不 fork 内核**：所有持久注入走内核原生钩子
