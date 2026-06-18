@@ -8,6 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { buildArtifactFileName } from "./file-name";
 import { ProjectRegistry } from "./project-registry";
 
 /**
@@ -23,6 +24,12 @@ export type Artifact = {
   currentVersion: number; // 最高版号
   version: number; // 乐观锁计数
   status: "draft" | "finalized";
+  /**
+   * 物化真实文件相对 projectRoot 的路径（如 `需求规格.md`，V2-1）。create 时由 title 清洗生成、
+   * 落进 artifact.json，submitVersion/rollback 以此为准物化（不随 title 改而漂移）。
+   * 可选：兼容 V2 之前未物化的旧 artifact.json（无该字段时按「不物化」处理）。
+   */
+  filePath?: string;
   extra?: Record<string, unknown>;
 };
 
@@ -37,10 +44,14 @@ export type ArtifactVersion = {
   createdAt: string; // ISO-8601
 };
 
-/** 领域错误：code 由 API 层映射为 HTTP 状态（NOT_FOUND→404 / INVALID→422 / VERSION_CONFLICT→409）。 */
+/**
+ * 领域错误：code 由 API 层映射为 HTTP 状态
+ * （NOT_FOUND→404 / INVALID→422 / VERSION_CONFLICT→409 / EXTERNAL_MODIFIED→409）。
+ * EXTERNAL_MODIFIED（D-V2-06）：物化前发现真实文件已被外部手改，拒绝静默覆盖。
+ */
 export class ArtifactError extends Error {
   constructor(
-    public readonly code: "NOT_FOUND" | "INVALID" | "VERSION_CONFLICT",
+    public readonly code: "NOT_FOUND" | "INVALID" | "VERSION_CONFLICT" | "EXTERNAL_MODIFIED",
     message: string,
   ) {
     super(message);
@@ -93,6 +104,44 @@ export class ArtifactService {
     return join(this.versionsDir(projectId, id), `${version}.json`);
   }
 
+  /** 物化真实文件的绝对路径（= projectRoot 拼 artifact.filePath）。无 filePath 返回 undefined。 */
+  private materializedPath(projectId: string, artifact: Artifact): string | undefined {
+    if (!artifact.filePath) return undefined;
+    return join(this.registry.get(projectId).root, artifact.filePath);
+  }
+
+  /** 把 content 物化到 artifact 的真实文件（原子写，仿 atomicWrite）。无 filePath（旧 artifact）→ 跳过。 */
+  private materialize(projectId: string, artifact: Artifact, content: string): void {
+    const abs = this.materializedPath(projectId, artifact);
+    if (!abs) return;
+    this.atomicWrite(abs, content);
+  }
+
+  /**
+   * 外部编辑保护（D-V2-06）：物化覆盖前，断言真实文件未被外部手改。
+   * `expectedPriorContent` = 本次覆盖前「上一当前版」的 content（= 我们上次物化写下的内容）；
+   * 读真实文件现状与之比对，**不一致说明被外部改过** → 抛 EXTERNAL_MODIFIED 拒绝（防 AI 确认静默覆盖丢失）。
+   * 真实文件不存在（被外部删/尚未物化）视为「无外部改动」，放行。无 filePath 的旧 artifact 也放行。
+   *
+   * 刻意与 {@link materialize} 分离、在写任何新版本/元数据**之前**调用：一旦判定外部改动则整次
+   * submit/rollback 干净失败，不留「版本已加但真实文件没更新」的半截状态。
+   */
+  private assertNotExternallyModified(
+    projectId: string,
+    artifact: Artifact,
+    expectedPriorContent: string,
+  ): void {
+    const abs = this.materializedPath(projectId, artifact);
+    if (!abs || !existsSync(abs)) return;
+    const onDisk = readFileSync(abs, "utf-8");
+    if (onDisk !== expectedPriorContent) {
+      throw new ArtifactError(
+        "EXTERNAL_MODIFIED",
+        `真实文件已被外部修改，拒绝覆盖以防丢失：${artifact.filePath}（请先同步）`,
+      );
+    }
+  }
+
   /**
    * 建 artifact：校验 kind/title 非空，写 `managed/<uuid>/artifact.json`
    * （currentVersion=1, version=1, status='draft'）+ `versions/1.json`。返回新建 Artifact。
@@ -104,6 +153,9 @@ export class ArtifactService {
     if (!title) throw new ArtifactError("INVALID", "title 不能为空");
 
     const id = randomUUID();
+    // 物化文件名由 title 清洗生成、与项目根已有 .md 避让（V2-1 取舍2：物化到项目根）。
+    const projectRoot = this.registry.get(projectId).root;
+    const filePath = buildArtifactFileName(title, projectRoot);
     const artifact: Artifact = {
       id,
       projectId,
@@ -112,14 +164,16 @@ export class ArtifactService {
       currentVersion: 1,
       version: 1,
       status: "draft",
+      filePath,
       ...(input.extra !== undefined ? { extra: input.extra } : {}),
     };
 
+    const content = input.content ?? "";
     const version: ArtifactVersion = {
       id: randomUUID(),
       artifactId: id,
       version: 1,
-      content: input.content ?? "",
+      content,
       author: input.author ?? "user",
       createdAt: new Date().toISOString(),
     };
@@ -127,6 +181,8 @@ export class ArtifactService {
     mkdirSync(this.versionsDir(projectId, id), { recursive: true });
     this.atomicWrite(this.versionPath(projectId, id, 1), `${JSON.stringify(version, null, 2)}\n`);
     this.atomicWrite(this.metaPath(projectId, id), `${JSON.stringify(artifact, null, 2)}\n`);
+    // 首版无上一版 → 不比对、直接物化真实文件（V2-1）。
+    this.materialize(projectId, artifact, content);
     return artifact;
   }
 
@@ -213,6 +269,10 @@ export class ArtifactService {
       throw new ArtifactError("INVALID", "content 不能为空");
     }
 
+    // 外部编辑保护（D-V2-06）：写新版前先确认真实文件未被外部改（与「上一当前版」content 比对）。
+    const priorContent = this.readVersionContent(projectId, id, current.currentVersion);
+    this.assertNotExternallyModified(projectId, current, priorContent);
+
     const nextVersion = current.currentVersion + 1;
     const version: ArtifactVersion = {
       id: randomUUID(),
@@ -234,6 +294,8 @@ export class ArtifactService {
       version: current.version + 1,
     };
     this.atomicWrite(this.metaPath(projectId, id), `${JSON.stringify(next, null, 2)}\n`);
+    // 新版落盘后物化真实文件（= 当前版）。
+    this.materialize(projectId, next, input.content);
     return next;
   }
 
@@ -254,6 +316,10 @@ export class ArtifactService {
       throw new ArtifactError("NOT_FOUND", `回滚目标版本不存在: v${input.version}`);
     }
     const target = this.readVersion(targetPath);
+
+    // 外部编辑保护（D-V2-06）：写回退版前先确认真实文件未被外部改（与「上一当前版」content 比对）。
+    const priorContent = this.readVersionContent(projectId, id, current.currentVersion);
+    this.assertNotExternallyModified(projectId, current, priorContent);
 
     const nextVersion = current.currentVersion + 1;
     const version: ArtifactVersion = {
@@ -276,6 +342,8 @@ export class ArtifactService {
       version: current.version + 1,
     };
     this.atomicWrite(this.metaPath(projectId, id), `${JSON.stringify(next, null, 2)}\n`);
+    // 回退版落盘后物化真实文件（= 回退到的内容）。
+    this.materialize(projectId, next, target.content);
     return next;
   }
 

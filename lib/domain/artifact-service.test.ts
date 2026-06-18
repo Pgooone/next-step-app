@@ -330,3 +330,103 @@ describe("ArtifactService.listArtifacts", () => {
     }
   });
 });
+
+describe("V2-1 文档物化层", () => {
+  /** 读 artifact.json 里记录的 filePath（相对 projectRoot）。 */
+  function metaFilePath(id: string): string | undefined {
+    const meta = JSON.parse(readFileSync(join(managedArtifactDir(id), "artifact.json"), "utf-8"));
+    return meta.filePath as string | undefined;
+  }
+  /** 读物化的真实文件内容（projectRoot = dir）。 */
+  function readMaterialized(filePath: string): string {
+    return readFileSync(join(dir, filePath), "utf-8");
+  }
+
+  it("createArtifact：物化真实 .md 到项目根、content==v1、artifact.json 含 filePath", () => {
+    const a = service.createArtifact(projectId, { kind: "crd", title: "需求规格", content: "首版正文\n" });
+    expect(a.filePath).toBe("需求规格.md");
+    expect(metaFilePath(a.id)).toBe("需求规格.md");
+    expect(existsSync(join(dir, "需求规格.md"))).toBe(true);
+    expect(readMaterialized("需求规格.md")).toBe("首版正文\n");
+  });
+
+  it("submitVersion：提交新版后真实文件 == 新版内容", () => {
+    const a = service.createArtifact(projectId, { kind: "k", title: "改文档", content: "v1" });
+    service.submitVersion(projectId, a.id, { content: "v2-新内容" });
+    expect(readMaterialized("改文档.md")).toBe("v2-新内容");
+    service.submitVersion(projectId, a.id, { content: "v3-更新" });
+    expect(readMaterialized("改文档.md")).toBe("v3-更新");
+  });
+
+  it("rollback：回退后真实文件 == 回退到的版本内容", () => {
+    const a = service.createArtifact(projectId, { kind: "k", title: "退回测试", content: "v1-原始" });
+    service.submitVersion(projectId, a.id, { content: "v2-改动" });
+    expect(readMaterialized("退回测试.md")).toBe("v2-改动");
+    // 回退到 v1（产生 v3，content = v1 内容）
+    service.rollback(projectId, a.id, { version: 1 });
+    expect(readMaterialized("退回测试.md")).toBe("v1-原始");
+    expect(service.readCurrentContent(projectId, a.id)).toBe("v1-原始");
+  });
+
+  it("title 含非法字符 → 清洗成安全文件名", () => {
+    const a = service.createArtifact(projectId, { kind: "k", title: 'a/b:c*d?e"f<g>h|i', content: "x" });
+    expect(a.filePath).toBe("a_b_c_d_e_f_g_h_i.md");
+    expect(existsSync(join(dir, "a_b_c_d_e_f_g_h_i.md"))).toBe(true);
+  });
+
+  it("title 为空白/纯点 → 兜底 agent.md", () => {
+    const a = service.createArtifact(projectId, { kind: "k", title: "  ..  ", content: "x" });
+    // title 经 createArtifact 自身 trim 后非空校验："  ..  " trim 成 ".." 通过；文件名清洗成 "agent"
+    expect(a.filePath).toBe("agent.md");
+    expect(existsSync(join(dir, "agent.md"))).toBe(true);
+  });
+
+  it("超长 title → 文件名基名截断到 80 字符（防 ENAMETOOLONG）", () => {
+    const longTitle = "标".repeat(200);
+    const a = service.createArtifact(projectId, { kind: "k", title: longTitle, content: "x" });
+    const fp = a.filePath!;
+    expect(fp.endsWith(".md")).toBe(true);
+    const base = fp.slice(0, -3); // 去 .md
+    expect(base.length).toBe(80);
+    expect(existsSync(join(dir, fp))).toBe(true);
+  });
+
+  it("同 title 第二次建 → 文件名避让(-2)、不覆盖第一份", () => {
+    const a1 = service.createArtifact(projectId, { kind: "k", title: "同名", content: "第一份" });
+    const a2 = service.createArtifact(projectId, { kind: "k", title: "同名", content: "第二份" });
+    expect(a1.filePath).toBe("同名.md");
+    expect(a2.filePath).toBe("同名-2.md");
+    // 两份真实文件各自独立、内容互不覆盖
+    expect(readMaterialized("同名.md")).toBe("第一份");
+    expect(readMaterialized("同名-2.md")).toBe("第二份");
+  });
+
+  it("外部改真实文件后 submitVersion → 抛 EXTERNAL_MODIFIED（不静默覆盖）", () => {
+    const a = service.createArtifact(projectId, { kind: "k", title: "防覆盖", content: "原始内容" });
+    // 模拟外部手改真实文件
+    writeFileSync(join(dir, "防覆盖.md"), "外部手改的内容", "utf-8");
+    expectCode(() => service.submitVersion(projectId, a.id, { content: "AI 想写的新内容" }), "EXTERNAL_MODIFIED");
+    // 真实文件保持外部改动、未被覆盖；也没产生 v2
+    expect(readMaterialized("防覆盖.md")).toBe("外部手改的内容");
+    expect(existsSync(join(managedArtifactDir(a.id), "versions", "2.json"))).toBe(false);
+    expect(service.findArtifact(a.id).artifact.currentVersion).toBe(1);
+  });
+
+  it("外部改真实文件后 rollback → 抛 EXTERNAL_MODIFIED（不静默覆盖）", () => {
+    const a = service.createArtifact(projectId, { kind: "k", title: "防覆盖2", content: "v1" });
+    service.submitVersion(projectId, a.id, { content: "v2" });
+    // 此刻真实文件 = v2；外部手改它
+    writeFileSync(join(dir, "防覆盖2.md"), "外部改动", "utf-8");
+    expectCode(() => service.rollback(projectId, a.id, { version: 1 }), "EXTERNAL_MODIFIED");
+    expect(readMaterialized("防覆盖2.md")).toBe("外部改动");
+    expect(existsSync(join(managedArtifactDir(a.id), "versions", "3.json"))).toBe(false);
+  });
+
+  it("真实文件未被外部改 → submitVersion 正常出新版并物化（EXTERNAL_MODIFIED 不误报）", () => {
+    const a = service.createArtifact(projectId, { kind: "k", title: "正常路径", content: "v1" });
+    // 不动真实文件，直接提交——应正常成功
+    const a2 = service.submitVersion(projectId, a.id, { content: "v2" });
+    expect(a2.currentVersion).toBe(2);
+    expect(readMaterialized("正常路径.md")).toBe("v2");
+  });
+});

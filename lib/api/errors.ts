@@ -4,6 +4,7 @@ const STATUS_BY_CODE: Record<string, number> = {
   NOT_FOUND: 404,
   INVALID: 422,
   VERSION_CONFLICT: 409,
+  EXTERNAL_MODIFIED: 409, // D-V2-06：真实文件被外部改、拒绝静默覆盖
 };
 
 /** 把领域错误（带 string 类型的 code 字段）映射为符合 docs/04 契约的 HTTP 响应。 */

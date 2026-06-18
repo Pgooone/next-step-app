@@ -16,6 +16,7 @@ import { join, relative } from "node:path";
 
 import { AgentProfileStore } from "./agent-profile-store";
 import { DispatchStore, type Assignment, type DispatchTask } from "./dispatch-store";
+import { sanitizeFileName } from "./file-name";
 import { ProjectRegistry } from "./project-registry";
 import { acquireSlot } from "../pi/concurrency-gate";
 import { runWorker, type RegisterInnerSession } from "../pi/dispatch-runner";
@@ -220,17 +221,8 @@ function writeArtifact(
 }
 
 /**
- * 把 agentName 净化为安全文件名：**仅**替换文件系统非法字符，保留中文/Unicode 字母与数字。
- * - 替换为 `_`：路径分隔符与 Windows 保留字符 `/ \ : * ? " < > |` 及控制字符（U+0000–U+001F）。
- * - 去掉首尾空白与点（避免 `.`/`..` 越目录、或尾点在 Windows 不合法）。
- * - 全空 → 兜底 "agent"。
- *
- * 不可用旧的 `[^\w.\-]` 白名单：JS `\w` 仅匹配 ASCII，会把中文名（如「需求分析师」）整体压成单个 `_`
- * （真实端到端用 deepseek worker 跑出 `1-_.md` 的 bug 根因）。
+ * sanitizeFileName 已迁至共享模块 `./file-name`（V2-1，供 artifact-service 物化复用、避免 pi 依赖
+ * 经 orchestrator 链污染领域存储层）。此处 re-export 以兼容既有 `import ... from "./orchestrator"`。
  */
-export function sanitizeFileName(name: string): string {
-  const cleaned = name
-    .replace(/[/\\:*?"<>| -]+/g, "_")
-    .replace(/^[\s.]+|[\s.]+$/g, "");
-  return cleaned || "agent";
-}
+export { sanitizeFileName } from "./file-name";
+
