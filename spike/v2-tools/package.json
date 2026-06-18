@@ -1,0 +1,19 @@
+{
+  "name": "v2-tools-spike",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "V2-0 工具机制 spike：验证 defineTool 精确签名 + 受限工具集组合（D-V2-04）—— tools 白名单含全部 customTool 名 + customTools 提议工具，组合下内核既激活只读内置又挂上自定义工具，且 write/edit/bash 不可用",
+  "scripts": {
+    "spike": "node --conditions=import --import tsx harness.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "^0.79.0",
+    "@earendil-works/pi-coding-agent": "^0.79.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
