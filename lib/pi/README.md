@@ -73,6 +73,17 @@
   装配负责。execute 内 `try/catch` 把 ArtifactError（如 id 不存在=NOT_FOUND）转成给模型看的错误文本、
   不让未捕获异常炸会话（引导 agent 改正/先 list_artifacts 核对 id）。`DocToolDef`（= `ToolDefinition<any,any>`，
   方差规避）一并 export 供 V2-3 复用。
+- `doc-session.ts` — **V2-3 文档会话装配（替 artifact-guard 装配位）**。`assembleDocSessionOptions(deps)`
+  产出受限工具集 options `{ tools, customTools }`（同 guard 的「只产 options、调用方 new 会话」边界）：
+  `tools`（白名单）= 导出常量 `DOC_SESSION_TOOLS` 7 项 `["read","grep","find","ls","create_artifact",
+  "propose_edit","list_artifacts"]`——**含全部 3 个 customTool 名（D-V2-04 命门：内核对 customTools 也按
+  白名单名过滤、漏名则 agent 调不到、闭环断）、且不含 write/edit/bash**；`customTools` = `buildDocTools(deps)`。
+  **比 guard 更简**：不要 write/edit/bash → 白名单直接排除、customTools 只加 3 新工具，**无需重建任何内核
+  工具 operations**。安全（依赖 V2-0 spike 双向实证）：白名单无 write/edit/bash → 内置写盘工具不激活；
+  customTools 只加只读提议工具 → **结构性无绕过**。deps 含 `cwd` 仅为对齐 guard 装配契约 + V2-4 调用点，
+  本模块自身不消费（doc-session 不重建 cwd 级工具 operations，cwd 由 wiring 直接传 createAgentSession）。
+  V2-4 wiring 把 `assembleArtifactGuardOptions` 换成它时，**docOptions 须 spread 在 profileOptions 之后**
+  覆盖 profile.tools（两者都含 tools 键，防 profile.tools 的 write/edit/bash 泄漏）。
 
 ## 约定 / 红线
 - **只封装不 fork 内核**：所有持久注入走内核原生钩子
