@@ -45,6 +45,7 @@ import { ArtifactService } from "../domain/artifact-service";
 import { PendingChangeStore, type PendingChange } from "../domain/pending-change-service";
 import { AgentProfileStore, type AgentProfile } from "../domain/agent-profile-store";
 import { ProjectRegistry } from "../domain/project-registry";
+import { DOC_SESSION_TOOLS } from "./doc-session";
 import { startProfileSession, type RegisterInnerSession } from "./profile-session-wiring";
 
 // ---------------------------------------------------------------------------
@@ -154,6 +155,7 @@ function makeFauxRegister(): {
 async function start(profile: AgentProfile, faux: FauxBundle, extra?: { additionalSkillPaths?: string[] }) {
   const { register, captured } = makeFauxRegister();
   const result = await startProfileSession({
+    projectId,
     projectRoot: projectRoot(),
     profile,
     cwd: projectRoot(),
@@ -261,14 +263,14 @@ describe("startProfileSession 组合整链", () => {
 });
 
 // ===========================================================================
-// P0 档位1：profile 会话挂 artifact-guard（受管写拦截 / 非受管放行）
+// V2：profile 会话装「受限工具集」（替代 P0 的 artifact-guard）
 //
 // 复用上方 B4 fixture（registry/store/projectId，registry 指向临时 projects.json），
 // 叠加 artifact-guard.test.ts 的 faux 范式（setResponses 在捕获 streamSimple 之前）。
 //
-// 关键：guard 默认会 `new ProjectRegistry()`（读默认 ~/.pi/projects.json），hermetic 测试里
-// 看不到本测临时项目，故经 startProfileSession 的 guardDepsOverride 注入指向同一临时 registry
-// 的 ArtifactService/PendingChangeStore（生产省略 → guard 用默认文件后端，wiring 不变）。
+// 关键：提议工具默认会 `new ProjectRegistry()`（读默认 ~/.pi/projects.json），hermetic 测试里
+// 看不到本测临时项目，故经 startProfileSession 的 docDepsOverride 注入指向同一临时 registry 的
+// ArtifactService/PendingChangeStore（生产省略 → 提议工具用默认文件后端，wiring 不变）。
 // ===========================================================================
 
 /** 起会话即随首条 message 把 tool-call 跑完——故 send 直接 await inner.prompt（生产是 fire-and-forget）。 */
@@ -336,115 +338,127 @@ function readPendingChanges(artifactId: string): PendingChange[] {
     .map((f) => JSON.parse(readFileSync(join(pendingDir, f), "utf-8")) as PendingChange);
 }
 
-describe("startProfileSession 挂 artifact-guard", () => {
-  it("受管路径 write → 磁盘无文件 + PendingChange 落盘（sourceActor=profile.name）", async () => {
-    const artifactService = new ArtifactService(registry);
-    const pendingStore = new PendingChangeStore(registry);
-    const a = artifactService.createArtifact(projectId, {
-      kind: "crd",
-      title: "需求",
-      content: "第一行\n第二行\n",
-    });
-    const target = join(projectRoot(), ".pi", "artifacts", "managed", a.id, "doc.md");
-    const v1Path = join(projectRoot(), ".pi", "artifacts", "managed", a.id, "versions", "1.json");
-    const v1Before = readFileSync(v1Path, "utf-8");
-
-    // profile.name 即 sourceActor。tools 必须含 write——内核 allowlist 仅激活列出的工具，
-    // 激活的 write 是 guard 的 customTools 实现（同名覆盖内置）；不授 write 则 agent 本就无法写
-    // （= profile 配置约束、非 guard bug，红线）。
-    const profile = store.create(projectId, { name: "需求分析师", tools: ["read", "write", "edit"] });
-
-    const faux = makeFauxWithResponses([
-      () =>
-        fauxAssistantMessage([
-          fauxText("写入"),
-          fauxToolCall("write", { path: target, content: "第一行\n改过的第二行\n第三行\n" }),
-        ]),
-      () => fauxAssistantMessage([fauxText("done")]),
-    ]);
+describe("startProfileSession 装受限工具集（V2 doc-session）", () => {
+  /** 起会话并把 docDepsOverride 指向本测临时后端；返回捕获的 inner。 */
+  async function startDoc(
+    profile: AgentProfile,
+    faux: FauxBundle,
+    deps: { artifactService: ArtifactService; pendingStore: PendingChangeStore },
+    firstMessage = "开始",
+  ) {
     const { register, captured } = makeAwaitingRegister();
+    await startProfileSession({
+      projectId,
+      projectRoot: projectRoot(),
+      profile,
+      cwd: projectRoot(),
+      firstMessage,
+      registerInnerSession: register,
+      sessionManager: SessionManager.inMemory(),
+      createOptionsOverride: {
+        model: faux.model,
+        authStorage: faux.authStorage,
+        modelRegistry: faux.modelRegistry,
+      },
+      docDepsOverride: { artifactService: deps.artifactService, pendingStore: deps.pendingStore },
+    });
+    return captured;
+  }
+
+  it("会话工具集为受限集：含且仅含 7 名（read/grep/find/ls + 3 提议工具）、不含 write/edit/bash", async () => {
+    const artifactService = new ArtifactService(registry);
+    const pendingStore = new PendingChangeStore(registry, artifactService);
+    const profile = store.create(projectId, { name: "文档助手", tools: ["read"] });
+    const faux = makeFauxWithResponses([() => fauxAssistantMessage([fauxText("ok")])]);
     try {
-      await startProfileSession({
-        projectRoot: projectRoot(),
-        profile,
-        cwd: projectRoot(),
-        firstMessage: "更新文档", // 首条 message 即触发 write tool-call
-        registerInnerSession: register,
-        sessionManager: SessionManager.inMemory(),
-        createOptionsOverride: {
-          model: faux.model,
-          authStorage: faux.authStorage,
-          modelRegistry: faux.modelRegistry,
-        },
-        guardDepsOverride: { registry, artifactService, pendingStore },
-      });
-
-      // 会话确实建起来了（inner 被 register 捕获）
-      expect(captured.inner).not.toBeNull();
-
-      // 磁盘：目标文件未写、版本文件未变、未新增版本（写被拦成 PendingChange）
-      expect(existsSync(target)).toBe(false);
-      expect(readFileSync(v1Path, "utf-8")).toBe(v1Before);
-      expect(
-        existsSync(join(projectRoot(), ".pi", "artifacts", "managed", a.id, "versions", "2.json")),
-      ).toBe(false);
-
-      // PendingChange 落盘，sourceActor = profile.name（UI 渲染「变更来自 需求分析师」）
-      const changes = readPendingChanges(a.id);
-      expect(changes).toHaveLength(1);
-      const pc = changes[0];
-      expect(pc.op).toBe("replace");
-      expect(pc.sourceActor).toBe("需求分析师");
-      expect(pc.artifactId).toBe(a.id);
-      expect(pc.diffBlocks.length).toBeGreaterThan(0);
-      const allLines = pc.diffBlocks.flatMap((b) => b.lines);
-      expect(allLines).toContain("第三行");
+      const captured = await startDoc(profile, faux, { artifactService, pendingStore });
+      const active = captured.inner!.getActiveToolNames().slice().sort();
+      expect(active).toEqual([...DOC_SESSION_TOOLS].sort());
+      for (const f of ["write", "edit", "bash"]) {
+        expect(active).not.toContain(f);
+      }
     } finally {
       faux.unregister();
     }
   });
 
-  it("非受管路径 write → 正常落盘、无 PendingChange", async () => {
+  it("泄漏对照：profile.tools 含 write/edit/bash → 经装配后仍被受限集覆盖掉（docOptions 覆盖 profile.tools，D-V2-04/major4）", async () => {
     const artifactService = new ArtifactService(registry);
-    const pendingStore = new PendingChangeStore(registry);
-    const normal = join(projectRoot(), "note.txt");
+    const pendingStore = new PendingChangeStore(registry, artifactService);
+    // 故意给一个「想要写盘工具」的档案——验证受限白名单把它覆盖掉、危险工具不泄漏。
+    const profile = store.create(projectId, {
+      name: "想越权的 agent",
+      tools: ["read", "write", "edit", "bash"],
+    });
+    const faux = makeFauxWithResponses([() => fauxAssistantMessage([fauxText("ok")])]);
+    try {
+      const captured = await startDoc(profile, faux, { artifactService, pendingStore });
+      const active = captured.inner!.getActiveToolNames();
+      // 受限集生效：active 恰为 7 受限名，profile.tools 的 write/edit/bash 未泄漏
+      expect(active.slice().sort()).toEqual([...DOC_SESSION_TOOLS].sort());
+      for (const f of ["write", "edit", "bash"]) {
+        expect(active).not.toContain(f);
+      }
+    } finally {
+      faux.unregister();
+    }
+  });
 
-    const profile = store.create(projectId, { name: "agent-a", tools: ["read", "write", "edit"] });
-
+  it("闭环：agent 调 create_artifact → 落 v1 + 物化真实文件（author=profile.name）", async () => {
+    const artifactService = new ArtifactService(registry);
+    const pendingStore = new PendingChangeStore(registry, artifactService);
+    const profile = store.create(projectId, { name: "需求分析师", tools: ["read"] });
     const faux = makeFauxWithResponses([
       () =>
         fauxAssistantMessage([
-          fauxText("写"),
-          fauxToolCall("write", { path: normal, content: "普通文件内容\n" }),
+          fauxText("新建文档"),
+          fauxToolCall("create_artifact", { kind: "crd", title: "需求规格", content: "首版正文\n" }),
         ]),
       () => fauxAssistantMessage([fauxText("done")]),
     ]);
-    const { register } = makeAwaitingRegister();
     try {
-      await startProfileSession({
-        projectRoot: projectRoot(),
-        profile,
-        cwd: projectRoot(),
-        firstMessage: "写普通文件",
-        registerInnerSession: register,
-        sessionManager: SessionManager.inMemory(),
-        createOptionsOverride: {
-          model: faux.model,
-          authStorage: faux.authStorage,
-          modelRegistry: faux.modelRegistry,
-        },
-        guardDepsOverride: { registry, artifactService, pendingStore },
-      });
+      await startDoc(profile, faux, { artifactService, pendingStore }, "建个需求文档");
+      const list = artifactService.listArtifacts(projectId);
+      expect(list).toHaveLength(1);
+      expect(list[0].title).toBe("需求规格");
+      // 物化真实文件 + v1 内容正确 + author = profile.name
+      expect(existsSync(join(projectRoot(), "需求规格.md"))).toBe(true);
+      expect(artifactService.readCurrentContent(projectId, list[0].id)).toBe("首版正文\n");
+      const v1 = artifactService.getVersion(projectId, list[0].id, 1);
+      expect(v1.author).toBe("需求分析师");
+    } finally {
+      faux.unregister();
+    }
+  });
 
-      // 非受管：正常写盘、内容一致
-      expect(existsSync(normal)).toBe(true);
-      expect(readFileSync(normal, "utf-8")).toBe("普通文件内容\n");
-      // 无任何 PendingChange 产生（managed 目录都没有）
-      const managedDir = join(projectRoot(), ".pi", "artifacts", "managed");
-      const pendingCount = existsSync(managedDir)
-        ? readdirSync(managedDir).reduce((n, id) => n + readPendingChanges(id).length, 0)
-        : 0;
-      expect(pendingCount).toBe(0);
+  it("闭环：agent 调 propose_edit → 落 PendingChange（不写盘、无新版本、sourceActor=profile.name）", async () => {
+    const artifactService = new ArtifactService(registry);
+    const pendingStore = new PendingChangeStore(registry, artifactService);
+    // 先建一份已存在文档（拿到已知 id 供 propose）
+    const a = artifactService.createArtifact(projectId, { kind: "crd", title: "改我", content: "甲\n乙\n" });
+    const realBefore = readFileSync(join(projectRoot(), a.filePath!), "utf-8");
+    const profile = store.create(projectId, { name: "编辑助手", tools: ["read"] });
+    const faux = makeFauxWithResponses([
+      () =>
+        fauxAssistantMessage([
+          fauxText("提议修改"),
+          fauxToolCall("propose_edit", { id: a.id, newContent: "甲\n改过的乙\n丙\n" }),
+        ]),
+      () => fauxAssistantMessage([fauxText("done")]),
+    ]);
+    try {
+      await startDoc(profile, faux, { artifactService, pendingStore }, "改这份文档");
+      // 落 PendingChange，不写盘（真实文件未变）、无新版本
+      const changes = readPendingChanges(a.id);
+      expect(changes).toHaveLength(1);
+      const pc = changes[0];
+      expect(pc.op).toBe("replace");
+      expect(pc.sourceActor).toBe("编辑助手");
+      expect(pc.diffBlocks.flatMap((b) => b.lines)).toContain("丙");
+      expect(readFileSync(join(projectRoot(), a.filePath!), "utf-8")).toBe(realBefore);
+      expect(
+        existsSync(join(projectRoot(), ".pi", "artifacts", "managed", a.id, "versions", "2.json")),
+      ).toBe(false);
     } finally {
       faux.unregister();
     }

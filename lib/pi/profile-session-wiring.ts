@@ -12,15 +12,16 @@
  * 读到 id 错位的「幻影空会话」。故本函数建会话后立即发首条 prompt（fire-and-forget，
  * 事件经 registry 的 SSE 流出去），与 /api/agent/new 已验证路径同款，触发真落盘。
  *
- * ── D-B4-4 / 同源 P0 gap：idle 重建会丢 live 注入与 guard（本卡不处理）─────
+ * ── D-B4-4 / 同源 gap：idle 重建会丢 live 注入与受限工具集（本卡不处理）─────
  * 会话 idle 销毁后，SSE 路由会重走 startRpcSession 重建——那条路径无档案注入、
- * 亦无 artifact-guard，model/thinking 回默认，但**已落盘的 systemPrompt 仍在**
- * （注入块已写进会话文件）。重建会话改受管 artifact 不会被拦，属已登记的 P0 gap，本卡不修。
+ * 亦无 doc-session 受限工具集，model/thinking 回默认，但**已落盘的 systemPrompt 仍在**
+ * （注入块已写进会话文件）。重建会话不受受限工具集约束，属已登记的 gap，本卡不修。
  *
- * ── P0 档位1（ADR D-V1.1-12）：profile 会话挂 artifact-guard ─────────────
- * 本函数建会话时一律合并 {@link assembleArtifactGuardOptions} 的 options，使自定义 agent
- * 改「受管 artifact」时被拦成 PendingChange（不写盘）、非受管路径正常放行。
- * **仅 profile 会话这一处**——不碰主对话 /api/agent/new、dispatch、idle 重建/rpc-manager 原生路径。
+ * ── V2（文档实体 + 提议工具）：profile 会话装受限工具集 ─────────────
+ * 本函数建会话时一律合并 {@link assembleDocSessionOptions} 的 options（替代 P0 的 artifact-guard）：
+ * 白名单只给只读内置（read/grep/find/ls）+ 3 个提议工具（create_artifact/propose_edit/list_artifacts），
+ * **无 write/edit/bash**——AI 结构性无直接写盘路径，改文档只能走「提议 → PendingChange → 按块确认 →
+ * 才写盘」的受管通道。**仅 profile 会话这一处**——不碰主对话 /api/agent/new、dispatch、idle 重建/rpc-manager。
  *
  * 红线：本模块只「封装/组合」内核与既有封装，不 fork 内核、不碰 /api/agent/new。
  */
@@ -35,7 +36,8 @@ import {
 
 import type { AgentProfile } from "../domain/agent-profile-store";
 import { applyProfileRuntime, assembleProfileSessionOptions } from "./agent-profile-session";
-import { assembleArtifactGuardOptions, type ArtifactGuardDeps } from "./artifact-guard";
+import { assembleDocSessionOptions } from "./doc-session";
+import type { DocToolDeps } from "./doc-tools";
 
 /** 起会话后回报给前端的诊断（D-B4-5：前端仅 console.warn，toast 后置）。 */
 export interface ProfileSessionDiagnostics {
@@ -72,6 +74,7 @@ export type RegisterInnerSession = (inner: AgentSession) => {
  * @param firstMessage 首条用户消息（不可为空——空则触发 D-B4-3 的幻影会话坑）。
  */
 export async function startProfileSession(args: {
+  projectId: string;
   projectRoot: string;
   profile: AgentProfile;
   cwd: string;
@@ -87,14 +90,15 @@ export async function startProfileSession(args: {
    */
   createOptionsOverride?: Partial<CreateAgentSessionOptions>;
   /**
-   * 测试可注入 artifact-guard 的后端依赖（指向 hermetic 临时 registry/.pi 文件），
-   * 让 hermetic 单测能断言守卫真的拦截。**生产省略**——guard 默认其文件后端服务
-   * （读默认 ~/.pi/projects.json），与 resolve/pending 路由指向同一批文件（artifact-guard.ts:91-93）。
-   * sourceActor/cwd 由本函数恒定填充，故此处只暴露三个后端实例。
+   * 测试可注入提议工具的后端依赖（指向 hermetic 临时 registry/.pi 文件），让 hermetic 单测能断言
+   * create_artifact/propose_edit 真的落盘到本测项目。**生产省略**——提议工具默认其文件后端服务
+   * （buildDocTools 内 new ProjectRegistry() 读默认 ~/.pi/projects.json），与 resolve/pending 路由指向
+   * 同一批文件（doc-tools.ts）。projectId/sourceActor 由本函数恒定填充，故此处只暴露两个后端实例。
    */
-  guardDepsOverride?: Pick<ArtifactGuardDeps, "registry" | "artifactService" | "pendingStore">;
+  docDepsOverride?: Pick<DocToolDeps, "artifactService" | "pendingStore">;
 }): Promise<ProfileSessionResult> {
   const {
+    projectId,
     projectRoot,
     profile,
     cwd,
@@ -103,7 +107,7 @@ export async function startProfileSession(args: {
     additionalSkillPaths,
     sessionManager,
     createOptionsOverride,
-    guardDepsOverride,
+    docDepsOverride,
   } = args;
 
   const agentDir = getAgentDir();
@@ -116,21 +120,24 @@ export async function startProfileSession(args: {
     additionalSkillPaths,
   });
 
-  // P0 档位1：profile 会话一律挂 artifact-guard——自定义 agent 改受管 artifact 时
-  // 被拦成 PendingChange（不写盘）。guard 不传 registry/service/store → 默认其文件后端，
-  // 与 resolve/pending 路由的 new PendingChangeStore() 指向同一批 .pi 文件，UI 读得到（artifact-guard.ts:91-93）。
+  // V2：profile 会话一律装「受限工具集」——只读内置 + 3 提议工具，无 write/edit/bash。
+  // 提议工具不传后端 → 默认其文件后端（buildDocTools 内 new ProjectRegistry() 读默认 ~/.pi/projects.json），
+  // 与 resolve/pending 路由指向同一批 .pi 文件，UI 读得到（doc-tools.ts）。
   // sourceActor = profile.name（PendingChangeCard 渲染「变更来自 <name>」，人类可读，非 UUID agentId）。
-  // 命门（spike 已证，ADR D-V1.1-12）：tools(白名单) 在场时内核忽略 noTools，但同名 customTools 覆盖内置，
-  // 故 guard write/edit 仍胜、受管写仍被拦——无需为白名单×guard 共存做特殊处理。
-  // spread 顺序：profileOptions → guardOptions → createOptionsOverride（末位，测试可覆盖 model/auth；键不冲突、顺序无关）。
-  const { options: guardOptions } = assembleArtifactGuardOptions({
+  const { options: docOptions } = assembleDocSessionOptions({
+    projectId,
     sourceActor: profile.name,
     cwd,
-    ...guardDepsOverride, // 生产为 undefined → guard 用默认文件后端；测试注入 hermetic registry/.pi
+    ...docDepsOverride, // 生产为 undefined → 提议工具用默认文件后端；测试注入 hermetic service/store
   });
+  // ⚠️ spread 顺序是受限集生效的唯一支点（D-V2-04 / major4）：options(=assembleProfileSessionOptions)
+  // 含 `tools: profile.tools`，docOptions 也含 `tools`(7 项受限白名单)——两个 tools 键相撞，docOptions
+  // 必须排在 options **之后**覆盖掉 profile.tools，否则 profile.tools 若含 write/edit/bash 会泄漏、
+  // 受限集当场失效。（P0 guard 走 noTools 无 tools 键、顺序无关；本轮不同，故此处顺序不可调。）
+  // createOptionsOverride 仍排末位（测试覆盖 model/auth；不含 tools 键、不影响白名单）。
   const { session: inner } = await createAgentSession({
     ...options,
-    ...guardOptions,
+    ...docOptions,
     ...createOptionsOverride,
   });
 

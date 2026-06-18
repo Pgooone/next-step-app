@@ -29,6 +29,7 @@ export async function POST(
     const profile = new AgentProfileStore().get(id, agentId);
 
     const result = await startProfileSession({
+      projectId: id,
       projectRoot,
       profile,
       cwd: projectRoot,
