@@ -34,7 +34,7 @@
 - 批次 3：**p0-verify**（真浏览器端到端闭环 + 逻辑层独立复核）
 
 ## 监工循环
-1. 取当前批次任务 → team 队员实现（附该 `tasks/p0-*.md` + QA v2-P0 对应节 + 相关代码位置）。
+1. 取当前批次任务 → team 队员实现（附该 `tasks/第一轮-基础迭代/p0-*.md` + QA v2-P0 对应节 + 相关代码位置）。
 2. 队员回来：监工**亲验 diff** + 跑门禁；不过→写回任务卡改；过→勾 `progress.md` + 单独 commit。
 3. **spike PASS 才开 wire；wire 门禁绿才开 verify**。
 4. verify 双层 PASS = 档位1 完成 → 回写台账/QA/记忆 → 登记后续档位（dispatch/idle/主对话 gap）。
