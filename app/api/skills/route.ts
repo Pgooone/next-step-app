@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { DefaultResourceLoader, getAgentDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { claudeSkillDirs, retagClaudeSkillScope } from "@/lib/pi/claude-skill-dirs";
 
 export const dynamic = "force-dynamic";
 
@@ -13,10 +14,17 @@ export async function GET(req: Request) {
   if (!cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
 
   try {
-    const loader = new DefaultResourceLoader({ cwd, agentDir: getAgentDir() });
+    const loader = new DefaultResourceLoader({
+      cwd,
+      agentDir: getAgentDir(),
+      // 让 pi 也发现 Claude Code 约定目录 .claude/skills（内核默认只扫 .pi/skills）。
+      additionalSkillPaths: claudeSkillDirs(cwd),
+    });
     await loader.reload();
     const { skills, diagnostics } = loader.getSkills();
-    return NextResponse.json({ skills, diagnostics });
+    // .claude/skills 经 additionalSkillPaths 进来时 scope 非 project/user，
+    // 按路径前缀重标，使前端按「项目/全局」分组（与原生 .pi/skills 一致）。
+    return NextResponse.json({ skills: retagClaudeSkillScope(skills, cwd), diagnostics });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }

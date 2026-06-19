@@ -4,6 +4,7 @@ import { ProjectRegistry } from "@/lib/domain/project-registry";
 import { domainErrorResponse } from "@/lib/api/errors";
 import { registerInnerSession } from "@/lib/rpc-manager";
 import { runDispatch } from "@/lib/domain/orchestrator";
+import { claudeSkillDirs } from "@/lib/pi/claude-skill-dirs";
 
 // POST /api/projects/[id]/dispatch — 发起一次串行派发
 // body: { goal: string, assignments: { agentId, subTask }[] }（2–3 条）
@@ -30,7 +31,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     // fire-and-forget：建任务后异步跑编排，不 await（前端轮询 GET /api/dispatch/[taskId]）。
     // 内部所有异常都收敛为 task→failed 落盘，这里再兜一层防未捕获 rejection。
-    void runDispatch(task, { registry, dispatchStore: store, registerInnerSession }).catch(() => {});
+    void runDispatch(task, {
+      registry,
+      dispatchStore: store,
+      registerInnerSession,
+      // 让派发的 worker 会话也发现 .claude/skills（再经 profile.skills 过滤后真加载）。
+      additionalSkillPaths: claudeSkillDirs(registry.get(id).root),
+    }).catch(() => {});
 
     return NextResponse.json(task, { status: 201 });
   } catch (error) {
