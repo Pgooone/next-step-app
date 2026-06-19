@@ -1,4 +1,11 @@
-# 项目内 skill 识别 —— `.claude/skills` 纳入决策（2026-06-20）
+# 项目内 skill 识别 —— 技能来源纳入决策（2026-06-20）
+
+> **⚠️ 2026-06-20 用户校正（最重要，先读）**：初版实现误把 `.claude/skills` 当作「项目 skill」并重标 project/global。用户澄清：
+> - `.claude/skills` 是 **Claude Code 的 skill 目录、并非 pi 项目 skill**；纳入它只是为了「多增加一处 skill 来源」，应落「path（额外来源）」组、**不标项目**。
+> - **Next-Step 的项目 skill = `<cwd>/.pi/skills` + `<cwd>/.pi/agent/skills`**；用户最初的诉求是把 **`<cwd>/.pi/agent/skills`** 纳入扫描范围（标「项目」）。
+>
+> 校正已落地：helper `claude-skill-dirs.ts` → `extra-skill-dirs.ts`；`extraSkillDirs` 扫 `.pi/agent/skills`+`.claude/skills`；`retagProjectSkills` 只把 `.pi/agent/skills`→project，`.claude/skills` 不重标。下方原决策记录保留，按上述校正理解。
+
 
 ## 背景
 用户报 bug：Skills 按钮的二级菜单看不到「项目内的 skill」，且要能区分全局 / 项目。

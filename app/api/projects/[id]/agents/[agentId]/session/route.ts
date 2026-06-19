@@ -5,7 +5,7 @@ import { domainErrorResponse } from "@/lib/api/errors";
 import { registerInnerSession } from "@/lib/rpc-manager";
 import { startProfileSession } from "@/lib/pi/profile-session-wiring";
 import { setOwner } from "@/lib/domain/session-agent-map";
-import { claudeSkillDirs } from "@/lib/pi/claude-skill-dirs";
+import { extraSkillDirs } from "@/lib/pi/extra-skill-dirs";
 
 // POST /api/projects/[id]/agents/[agentId]/session
 // body: { message: string }
@@ -36,8 +36,8 @@ export async function POST(
       cwd: projectRoot,
       firstMessage: message,
       registerInnerSession,
-      // 让按档案起的会话也发现 .claude/skills（再经 profile.skills 过滤后真加载）。
-      additionalSkillPaths: claudeSkillDirs(projectRoot),
+      // 让按档案起的会话也发现 .pi/agent/skills + .claude/skills（再经 profile.skills 过滤后真加载）。
+      additionalSkillPaths: extraSkillDirs(projectRoot),
     });
 
     // M7·5.3：会话创建成功后立即写「会话→agent」归属，供左栏分组（功能#5.4）。

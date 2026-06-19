@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { DefaultResourceLoader, getAgentDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
-import { claudeSkillDirs, retagClaudeSkillScope } from "@/lib/pi/claude-skill-dirs";
+import { extraSkillDirs, retagProjectSkills } from "@/lib/pi/extra-skill-dirs";
 
 export const dynamic = "force-dynamic";
 
@@ -17,14 +17,13 @@ export async function GET(req: Request) {
     const loader = new DefaultResourceLoader({
       cwd,
       agentDir: getAgentDir(),
-      // 让 pi 也发现 Claude Code 约定目录 .claude/skills（内核默认只扫 .pi/skills）。
-      additionalSkillPaths: claudeSkillDirs(cwd),
+      // 补扫内核默认外的目录：项目级 .pi/agent/skills（项目 skill）+ .claude/skills（额外来源）。
+      additionalSkillPaths: extraSkillDirs(cwd),
     });
     await loader.reload();
     const { skills, diagnostics } = loader.getSkills();
-    // .claude/skills 经 additionalSkillPaths 进来时 scope 非 project/user，
-    // 按路径前缀重标，使前端按「项目/全局」分组（与原生 .pi/skills 一致）。
-    return NextResponse.json({ skills: retagClaudeSkillScope(skills, cwd), diagnostics });
+    // 把项目级 .pi/agent/skills 重标为 project（与原生 .pi/skills 同组）；.claude/skills 不重标（落 path 组）。
+    return NextResponse.json({ skills: retagProjectSkills(skills, cwd), diagnostics });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }

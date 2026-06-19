@@ -4,7 +4,7 @@ import { ProjectRegistry } from "@/lib/domain/project-registry";
 import { domainErrorResponse } from "@/lib/api/errors";
 import { registerInnerSession } from "@/lib/rpc-manager";
 import { runDispatch } from "@/lib/domain/orchestrator";
-import { claudeSkillDirs } from "@/lib/pi/claude-skill-dirs";
+import { extraSkillDirs } from "@/lib/pi/extra-skill-dirs";
 
 // POST /api/projects/[id]/dispatch — 发起一次串行派发
 // body: { goal: string, assignments: { agentId, subTask }[] }（2–3 条）
@@ -35,8 +35,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       registry,
       dispatchStore: store,
       registerInnerSession,
-      // 让派发的 worker 会话也发现 .claude/skills（再经 profile.skills 过滤后真加载）。
-      additionalSkillPaths: claudeSkillDirs(registry.get(id).root),
+      // 让派发的 worker 会话也发现 .pi/agent/skills + .claude/skills（再经 profile.skills 过滤后真加载）。
+      additionalSkillPaths: extraSkillDirs(registry.get(id).root),
     }).catch(() => {});
 
     return NextResponse.json(task, { status: 201 });
