@@ -32,3 +32,15 @@ export function getRelativeFilePath(filePath: string, cwd?: string): string {
 export function joinFilePath(parent: string, child: string): string {
   return `${normalizeFilePathSlashes(parent).replace(/\/$/, "")}/${child}`;
 }
+
+export function buildManagedAbsPaths(
+  artifacts: ReadonlyArray<{ filePath?: string }>,
+  projectRoot: string,
+): Set<string> {
+  if (!projectRoot) return new Set();
+  return new Set(
+    artifacts
+      .filter((a): a is { filePath: string } => Boolean(a.filePath))
+      .map((a) => normalizeFilePathSlashes(joinFilePath(projectRoot, a.filePath))),
+  );
+}

@@ -5,8 +5,8 @@
 > **详细设计已过 ultracode 8-agent 设计 + 对抗（2026-06-19）**：1 blocker（去重 key 裸名→绝对路径 D-V3-04）+ 2 major（projectId 透传 D-V3-08 / cwd 语义 §四）已修订并入。直接按修订后任务卡做。
 
 ## 批次进度（串行）
-- [ ] T1 · .pi 侧车隐藏（IGNORED_NAMES 加 `.pi`）
-- [ ] T2 · 受管分组渲染 + 绝对路径去重（**承重墙**）
+- [x] T1 · .pi 侧车隐藏（IGNORED_NAMES 加 `.pi`）—— commit `5dd8664`
+- [x] T2 · 受管分组渲染 + 绝对路径去重（**承重墙**）—— 含 D-V3-09 加固
 - [ ] T3 · 接线 + 删 Artifacts 按钮/ArtifactPicker
 - [ ] T4 · 端到端真浏览器验收 + 机制层零回归
 
