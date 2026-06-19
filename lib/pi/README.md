@@ -9,7 +9,8 @@
 
 > 注意：本目录是「逻辑封装区」。既有的内核交互债 `lib/rpc-manager.ts`、`lib/pi-types.ts`
 > 等当前落在 `lib/` 根下（基座沿用）；本区新增 B2 起会话封装与 B4 起会话接线（`profile-session-wiring.ts`），
-> 不迁移、不重构它们（B4 仅给 `rpc-manager.ts` 加 `registerInnerSession` 这一最小 export，D-B4-1）。
+> 不迁移、不重构它们（B4 仅给 `rpc-manager.ts` 加 `registerInnerSession` 最小 export，D-B4-1；第五轮再加
+> `withStartLock`/`startRpcSessionInner`——方案 A 共享并发锁、纯结构提取行为不变）。
 
 ## 关键模块
 - `agent-profile-session.ts` — **B2 按档案注入起会话**。对外函数：
@@ -50,6 +51,12 @@
     角色/记忆，只装工具集会让角色静默丢失（spike 结论）。`registerInnerSession?` 默认走惰性
     `import("../rpc-manager")` 避免静态导入环；DI 缝同 startProfileSession（`docDepsOverride` 为 hermetic
     单测硬约束）。接线归 T2 的 `resolveOrReattachSession`（`session-reattach.ts`，T2 建）。
+- `session-reattach.ts` — **第五轮 / D-B4-4 resolver**。`resolveOrReattachSession(sessionId, filePath, cwd, deps?)`
+  供两条 re-attach 路由 not-alive 分支取代裸 `startRpcSession`：活会话快路径 → `getOwner` 判档案会话 →
+  `lookupProfile` 反查 project+档案，命中则 `reattachProfileSession`（带受限工具集），否则/已删走 generic
+  `startRpcSessionInner`；三分支统一返回 `{ session, realSessionId }`。**并发去重（方案 A）**：复用
+  `withStartLock` 与 `startRpcSession` 共用同一把 `__piStartLocks`，消除「两路由并发 fast-path miss → 双建 +
+  孤儿 onDestroy 级联误删」。容错只吞 NOT_FOUND（档案/项目删→generic）、INVALID/IO 续抛。接线归 T3。
 - `dispatch-runner.ts` — **C1 单 worker 会话「起 + 等回合结束 + 取产物」**。`runWorker(...)` 与 B4 的区别：
   B4 fire-and-forget 即返回；派发需**等 worker 跑完并取回产物文本**，故自己组合那 5 步，并在
   `registerInnerSession` 之后、`send` 之前挂 `agent_end` 监听（包成 Promise，resolve 于

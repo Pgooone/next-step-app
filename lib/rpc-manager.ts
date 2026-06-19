@@ -293,6 +293,89 @@ export function registerInnerSession(inner: AgentSessionLike): {
   return { session: wrapper, realSessionId };
 }
 
+/** withStartLock 的可选依赖口：默认走进程级 registry/locks；测试注入 hermetic 副本（方案 A 并发去重单测）。 */
+export interface StartLockDeps {
+  registry?: Map<string, AgentSessionWrapper>;
+  locks?: Map<string, Promise<{ session: AgentSessionWrapper; realSessionId: string }>>;
+}
+
+/**
+ * 方案 A 共享并发锁（第五轮）——把「existing 活会话快路径 + inflight 去重 + locks.set(build().finally)」
+ * 收成一处，让 {@link startRpcSession} 与 `resolveOrReattachSession`（session-reattach.ts）**共用同一把**
+ * `__piStartLocks`。这样无论走 /api/agent/new 还是两条 re-attach 路由，同一 sessionId 并发只建一个会话，
+ * 不留「两路由 fast-path 同时 miss → 各建一个 → 孤儿 onDestroy 级联反复重建」的并发窗口。
+ *
+ * `build` 是**不带锁**的建会话内层（如 {@link startRpcSessionInner} 或 reattach 分支）；其结果 promise
+ * 进锁表、`finally` 摘除。`deps` 仅供单测注入 hermetic registry/locks（生产省略 → 进程级 globalThis）。
+ */
+export function withStartLock(
+  sessionId: string,
+  build: () => Promise<{ session: AgentSessionWrapper; realSessionId: string }>,
+  deps?: StartLockDeps,
+): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
+  const registry = deps?.registry ?? getRegistry();
+  const locks = deps?.locks ?? getLocks();
+
+  const existing = registry.get(sessionId);
+  if (existing?.isAlive()) return Promise.resolve({ session: existing, realSessionId: sessionId });
+
+  const inflight = locks.get(sessionId);
+  if (inflight) return inflight;
+
+  const starting = build().finally(() => locks.delete(sessionId));
+  locks.set(sessionId, starting);
+  return starting;
+}
+
+/**
+ * 不带锁的建会话内层（方案 A 前置，第五轮）——从 {@link startRpcSession} 的建会话主体原样提取
+ * （行为完全等价：toolNames 处理 / 默认激活集 / 空工具清 systemPrompt / registerInnerSession 一字未改）。
+ * 供 {@link startRpcSession}（经 {@link withStartLock} 加锁）与 resolver 的 generic 分支（已在外层锁内、
+ * 直接调本函数避免双锁）复用。
+ */
+export async function startRpcSessionInner(
+  sessionFile: string,
+  cwd: string,
+  toolNames?: string[],
+): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
+  const { SessionManager, getAgentDir } = await import("@earendil-works/pi-coding-agent");
+  const agentDir = getAgentDir();
+
+  const sessionManager = sessionFile
+    ? SessionManager.open(sessionFile, undefined)
+    : SessionManager.create(cwd, undefined);
+
+  // Determine which tools to pass based on requested toolNames.
+  // Since v0.68.0, createAgentSession expects string[] tool names instead of Tool[] instances.
+  // Pass all built-in coding tool names by default; for "all off", pass empty array.
+  const allCodingToolNames = ["read", "bash", "edit", "write", "grep", "find", "ls"];
+  let toolsOption: string[] | undefined;
+  if (toolNames !== undefined) {
+    toolsOption = toolNames.length === 0 ? [] : allCodingToolNames;
+  }
+
+  const { session: inner } = await createAgentSession({
+    cwd,
+    agentDir,
+    sessionManager,
+    ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
+  });
+
+  // If specific tool names were requested (non-empty), narrow active tools now
+  if (toolNames && toolNames.length > 0) {
+    inner.setActiveToolsByName(toolNames);
+  }
+
+  // When all tools are disabled, clear the system prompt entirely.
+  // pi's buildSystemPrompt always produces a non-empty prompt even with no tools;
+  // the only way to truly clear it is to call agent.setSystemPrompt directly.
+  if (toolNames?.length === 0) {
+    inner.agent.state.systemPrompt = "";
+  }
+
+  return registerInnerSession(inner);
+}
+
 /**
  * Get or create an AgentSession for the given session.
  * For new sessions (sessionFile === ""), pi generates its own id.
@@ -304,54 +387,5 @@ export async function startRpcSession(
   cwd: string,
   toolNames?: string[]
 ): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
-  const registry = getRegistry();
-  const locks = getLocks();
-
-  const existing = registry.get(sessionId);
-  if (existing?.isAlive()) return { session: existing, realSessionId: sessionId };
-
-  const inflight = locks.get(sessionId);
-  if (inflight) return inflight;
-
-  const starting = (async () => {
-    const { SessionManager, getAgentDir } = await import("@earendil-works/pi-coding-agent");
-    const agentDir = getAgentDir();
-
-    const sessionManager = sessionFile
-      ? SessionManager.open(sessionFile, undefined)
-      : SessionManager.create(cwd, undefined);
-
-    // Determine which tools to pass based on requested toolNames.
-    // Since v0.68.0, createAgentSession expects string[] tool names instead of Tool[] instances.
-    // Pass all built-in coding tool names by default; for "all off", pass empty array.
-    const allCodingToolNames = ["read", "bash", "edit", "write", "grep", "find", "ls"];
-    let toolsOption: string[] | undefined;
-    if (toolNames !== undefined) {
-      toolsOption = toolNames.length === 0 ? [] : allCodingToolNames;
-    }
-
-    const { session: inner } = await createAgentSession({
-      cwd,
-      agentDir,
-      sessionManager,
-      ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
-    });
-
-    // If specific tool names were requested (non-empty), narrow active tools now
-    if (toolNames && toolNames.length > 0) {
-      inner.setActiveToolsByName(toolNames);
-    }
-
-    // When all tools are disabled, clear the system prompt entirely.
-    // pi's buildSystemPrompt always produces a non-empty prompt even with no tools;
-    // the only way to truly clear it is to call agent.setSystemPrompt directly.
-    if (toolNames?.length === 0) {
-      inner.agent.state.systemPrompt = "";
-    }
-
-    return registerInnerSession(inner);
-  })().finally(() => locks.delete(sessionId));
-
-  locks.set(sessionId, starting);
-  return starting;
+  return withStartLock(sessionId, () => startRpcSessionInner(sessionFile, cwd, toolNames));
 }
