@@ -12,7 +12,6 @@ import { SkillsConfig } from "./SkillsConfig";
 import { AgentManager } from "./AgentManager";
 import { DispatchPanel } from "./DispatchPanel";
 import { ArtifactPanel } from "./ArtifactPanel";
-import { ArtifactPicker } from "./ArtifactPicker";
 import { BranchNavigator } from "./BranchNavigator";
 import { useArtifactStore } from "@/lib/stores/useArtifactStore";
 import { useShallow } from "zustand/react/shallow";
@@ -59,7 +58,6 @@ export function AppShell() {
   const [skillsConfigOpen, setSkillsConfigOpen] = useState(false);
   const [agentManagerOpen, setAgentManagerOpen] = useState(false);
   const [dispatchPanelOpen, setDispatchPanelOpen] = useState(false);
-  const [artifactPickerOpen, setArtifactPickerOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   // 右侧面板是否处于「产物视图」（artifact 打开时盖过文件视图，D-D3-7）
   const selectedArtifactId = useArtifactStore((s) => s.selectedArtifactId);
@@ -351,8 +349,7 @@ export function AppShell() {
   }, [selectedSession, router]);
 
   // 选中产物 → store 打开（拉内容 + pending）+ 打开右侧面板进入产物视图（D-D3-7）
-  const handlePickArtifact = useCallback((artifactId: string) => {
-    setArtifactPickerOpen(false);
+  const handleOpenArtifact = useCallback((artifactId: string) => {
     void useArtifactStore.getState().open(artifactId);
     setRightPanelOpen(true);
   }, []);
@@ -407,6 +404,7 @@ export function AppShell() {
         selectedCwd={selectedSession?.cwd ?? newSessionCwd ?? currentRoot ?? null}
         onCwdChange={handleCwdChange}
         onOpenFile={handleOpenFile}
+        onOpenArtifact={handleOpenArtifact}
         explorerRefreshKey={explorerRefreshKey}
         onAtMention={handleAtMention}
         headerSlot={
@@ -485,19 +483,6 @@ export function AppShell() {
                 <circle cx="18" cy="19" r="3" />
                 <line x1="8.6" y1="10.5" x2="15.4" y2="6.5" />
                 <line x1="8.6" y1="13.5" x2="15.4" y2="17.5" />
-              </svg>
-            ),
-          },
-          {
-            label: "Artifacts",
-            onClick: () => setArtifactPickerOpen(true),
-            disabled: !currentProjectId,
-            icon: (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="16" y1="13" x2="8" y2="13" />
-                <line x1="16" y1="17" x2="8" y2="17" />
               </svg>
             ),
           },
@@ -1006,13 +991,6 @@ export function AppShell() {
         projectRoot={currentRoot}
         onClose={() => setDispatchPanelOpen(false)}
         onOpenFile={handleOpenFile}
-      />
-    )}
-    {artifactPickerOpen && currentProjectId && (
-      <ArtifactPicker
-        projectId={currentProjectId}
-        onPick={handlePickArtifact}
-        onClose={() => setArtifactPickerOpen(false)}
       />
     )}
     </>

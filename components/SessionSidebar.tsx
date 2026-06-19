@@ -6,7 +6,7 @@ import type { SessionInfo } from "@/lib/types";
 import { FileExplorer } from "./FileExplorer";
 import { useSessionMapStore, selectMapForProject } from "@/lib/stores/useSessionMapStore";
 import { useAgentStore, selectAgentsForProject, agentColor } from "@/lib/stores/useAgentStore";
-import { useProjectStore, selectCurrentProjectId } from "@/lib/stores/useProjectStore";
+import { useProjectStore, selectCurrentProjectId, selectCurrentRoot } from "@/lib/stores/useProjectStore";
 import { groupSessionsByOwner, makeAgentResolver, type AgentSessionGroup } from "@/lib/session-grouping";
 
 interface Props {
@@ -23,6 +23,7 @@ interface Props {
   explorerRefreshKey?: number;
   onAtMention?: (relativePath: string) => void;
   headerSlot?: React.ReactNode;
+  onOpenArtifact?: (id: string) => void;
 }
 
 function formatRelativeTime(dateStr: string): string {
@@ -202,7 +203,7 @@ function PiAgentTitle() {
   );
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, explorerRefreshKey, onAtMention, headerSlot }: Props) {
+export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, explorerRefreshKey, onAtMention, headerSlot, onOpenArtifact }: Props) {
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -370,6 +371,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // M7·5.4：按「会话→agent / 主对话」归属把当前列表切三区。store 在 sidebar 内订阅（方案 A）。
   // selectMapForProject/selectAgentsForProject 不匹配项目时回退空，避免切项目串显。
   const currentProjectId = useProjectStore(selectCurrentProjectId);
+  const currentRoot = useProjectStore(selectCurrentRoot);
   const { map, loadedProjectId } = useSessionMapStore(
     useShallow((s) => ({ map: s.map, loadedProjectId: s.loadedProjectId })),
   );
@@ -869,6 +871,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 onOpenFile={onOpenFile ?? (() => {})}
                 refreshKey={explorerKey}
                 onAtMention={onAtMention}
+                projectId={currentProjectId}
+                projectRoot={currentRoot}
+                onOpenArtifact={onOpenArtifact}
               />
             </div>
           )}

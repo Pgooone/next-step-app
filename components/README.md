@@ -12,11 +12,10 @@ React 函数式组件（全部 `"use client"` + hooks）。基座组件（`ChatW
   pending 块行内高亮 add 绿 / del 红删除线 / mod 黄（AC②③）、块数 > 25 自动降级并排 Diff（AC④）、
   「查看 Diff」逐块视图（AC⑤）、划选「引用到对话框」写 `editTarget.quoteText`（AC⑥）。
   渲染纯函数在 `lib/artifact-view`；配色用基座 `var(--...)` 内联主题（同 `FileViewer`）。
-- `ArtifactPicker.tsx` — 极简「打开产物」模态：列当前项目 artifact（`GET /api/projects/[id]/artifacts`）
-  → 选中交 `AppShell` 在右侧面板用 `ArtifactPanel` 打开。
 - 受管文档入口已并入 `FileExplorer.tsx` 顶部「受管文档」可折叠分组（点开进 `ArtifactPanel`），
   下方普通树按绝对路径去重剔除已物化的受管 .md（如 `crd.md`），避免双现并堵死从 `FileViewer` 打开受管 .md 的路径。
-- 接线：`AppShell.tsx`（Artifacts 侧栏按钮 + 右侧面板产物视图，与文件视图互斥）、
+- 接线：`SessionSidebar.tsx`（透传 `projectId`/`projectRoot`/`onOpenArtifact` 给 `FileExplorer`）、
+  `AppShell.tsx`（`handleOpenArtifact` 经 `useArtifactStore.open` 在右侧面板打开产物视图，与文件视图互斥）、
   `ChatWindow.tsx`（`QuoteBar` 读 `editTarget.quoteText` 展示 / 清除，AC⑥ 读侧）。
 - **红线**：D3 纯渲染，**不做** resolve / 逐块确认 / 版本切换 / rollback（D4 / §5.5 / §5.6）。
 

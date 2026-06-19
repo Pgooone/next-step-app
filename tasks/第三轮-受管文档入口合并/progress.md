@@ -7,7 +7,7 @@
 ## 批次进度（串行）
 - [x] T1 · .pi 侧车隐藏（IGNORED_NAMES 加 `.pi`）—— commit `5dd8664`
 - [x] T2 · 受管分组渲染 + 绝对路径去重（**承重墙**）—— 含 D-V3-09 加固
-- [ ] T3 · 接线 + 删 Artifacts 按钮/ArtifactPicker
+- [x] T3 · 接线 + 删 Artifacts 按钮/ArtifactPicker —— 链路 A 端到端通、旧入口移除
 - [ ] T4 · 端到端真浏览器验收 + 机制层零回归
 
 ## 关键约束（实现必看）
