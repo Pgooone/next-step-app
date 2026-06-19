@@ -16,9 +16,11 @@ npm run test    # vitest
 npm run lint
 ```
 
-## 本次迭代（V1.1）要做什么
+## V1.1 各轮（已完成）
 
-源自 `docs/第一轮-基础迭代/需求文档.md`（由 `docs/第一轮-基础迭代/Next-step改进原始需求.txt` 经多轮问答确认而来，全程见 `docs/QA/`）。共 **1 bug + 5 功能 + 1 外观**：
+V1.1 已完成多轮：**第一轮·基础迭代**（M1~M8，下表）+ **bug-fix 轮**（5 缺陷）+ **P0**（profile 会话接拦截）+ **第二轮·V2「提议工具」模型**（文档型 Agent 用 `create_artifact`/`propose_edit` 产文档 → 块级确认 → 物化真实 `.md`，取代旧 guard；已真模型 DeepSeek 端到端验证）。详见 `docs/第二轮-V2提议工具/` + `docs/第一轮-基础迭代/新手引导.md`。
+
+第一轮源自 `docs/第一轮-基础迭代/需求文档.md`，共 **1 bug + 5 功能 + 1 外观**：
 
 | 编号 | 一句话 | 状态 / 决策 |
 |---|---|---|
@@ -32,6 +34,8 @@ npm run lint
 
 ## 文档导航（`docs/` + `tasks/`）
 
+- **★ 新手必读** `docs/第一轮-基础迭代/新手引导.md` —— 跑通一条完整工作流（含 V2 文档型 Agent 提议工具）+ 当前限制；配套 `流程漏洞审查.md`（流程断点现状，2026-06-19 据 V2+bug-fix 重核）
+- **第二轮·V2 提议工具** `docs/第二轮-V2提议工具/{需求文档,概要设计,详细设计}.md` —— 文档实体 + 提议工具模型（V2-0~V2-6）
 - `docs/第一轮-基础迭代/需求文档.md` —— ★ 正式 V1.1 需求文档（现状→决策→落地→验收）
 - `docs/第一轮-基础迭代/前端界面深度解析报告.md` —— 前端逐控件深度解析（约 26000 字）
 - `docs/第一轮-基础迭代/概要设计.md` —— 模块划分（vibe-coding 第 2 步）
@@ -56,7 +60,7 @@ npm run lint
 **Next-Step 新增**（每区有自己的薄 README）
 - `lib/domain/`：`project-registry` / `agent-profile` / `orchestrator` / `artifact` 等领域逻辑
 - `lib/stores/`：`useProjectStore` / `useAgentStore` / `useDispatchStore` / `useArtifactStore`
-- `lib/pi/`：内核封装 / 工具拦截层（产物编辑拦截 → diff_blocks）
+- `lib/pi/`：内核封装（`profile-session-wiring`）+ **V2 提议工具层**（`doc-session` 受限工具集 / `doc-tools` 的 create_artifact·propose_edit·list_artifacts；旧 artifact-guard 拦截层 V2-5 已删）
 - `app/api/`：`projects` · `health` · `projects/[id]/agents` · `dispatch` · `artifacts`
 - `components/`：`ProjectSwitcher` · `ArtifactPanel` · `PendingChangeCard` · `AgentManager` · `DispatchPanel`
 
