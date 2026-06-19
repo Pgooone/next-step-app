@@ -215,6 +215,10 @@ async function main() {
         return d.currentVersion;
       }, artifactId);
       await page.locator('[data-testid="pending-change-card"]').getByRole("button", { name: "全部 ✓" }).click();
+      // BUG-04 二次确认：「全部 ✓」仅弹确认条（setConfirmAll），需再点「确认执行」才真物化
+      await sleep(700);
+      await shot(page, "onb-03b-confirmbar.png");
+      await page.locator('[data-testid="pending-change-card"] button[title="确认执行"]').click();
       await sleep(3500);
       const after = await page.evaluate(async (id) => {
         const r = await fetch(`/api/artifacts/${id}`);
