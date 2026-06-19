@@ -5,6 +5,7 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -184,6 +185,22 @@ export class ArtifactService {
     // 首版无上一版 → 不比对、直接物化真实文件（V2-1）。
     this.materialize(projectId, artifact, content);
     return artifact;
+  }
+
+  /**
+   * 彻底删除受管 artifact：删侧车目录（meta + versions + pending）+ 物化 .md（容错）。
+   * 不存在 → NOT_FOUND；ifMatch 不符 → VERSION_CONFLICT(409)。
+   * 结构操作、与 createArtifact 对称、不走 propose→按块确认（D-V4-02）。
+   */
+  deleteArtifact(projectId: string, id: string, input?: { ifMatch?: number }): void {
+    const artifact = this.readMeta(projectId, id); // NOT_FOUND
+    this.assertVersionMatch(artifact.version, input?.ifMatch); // VERSION_CONFLICT
+    const matPath = this.materializedPath(projectId, artifact);
+    if (matPath) {
+      // best-effort：.md 缺失 / 被外部删 → 静默跳过，不阻断侧车删除（D-V4-03）
+      try { rmSync(matPath, { force: true }); } catch { /* ignore */ }
+    }
+    rmSync(this.artifactDir(projectId, id), { recursive: true, force: true });
   }
 
   /**

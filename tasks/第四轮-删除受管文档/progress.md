@@ -5,7 +5,7 @@
 > 用户拍板：**A1 彻底删除（侧车+磁盘 .md 双删）/ B2 两处入口（ArtifactPanel 头部 + 受管分组行垃圾桶）/ C1 仅用户可删**。
 
 ## 批次进度（串行）
-- [ ] T1 · 后端删除（deleteArtifact + DELETE 路由 + 单测）
+- [x] T1 · 后端删除（deleteArtifact + DELETE 路由 + 单测）—— +7 单测、test 336
 - [ ] T2 · 前端入口与二次确认（store.delete + 两处入口 + 刷新接线）
 - [ ] T3 · 真浏览器验收 + 机制层零回归
 

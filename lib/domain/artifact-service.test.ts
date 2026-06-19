@@ -430,3 +430,69 @@ describe("V2-1 文档物化层", () => {
     expect(readMaterialized("正常路径.md")).toBe("v2");
   });
 });
+
+describe("ArtifactService.deleteArtifact（第四轮·彻底删除）", () => {
+  it("删后 listArtifacts 不含 + 侧车目录消失 + 物化 .md 消失", () => {
+    const a = service.createArtifact(projectId, { kind: "crd", title: "待删", content: "正文" });
+    expect(existsSync(managedArtifactDir(a.id))).toBe(true);
+    expect(existsSync(join(dir, "待删.md"))).toBe(true);
+
+    service.deleteArtifact(projectId, a.id);
+
+    expect(service.listArtifacts(projectId).some((x) => x.id === a.id)).toBe(false);
+    expect(existsSync(managedArtifactDir(a.id))).toBe(false);
+    expect(existsSync(join(dir, "待删.md"))).toBe(false);
+  });
+
+  it("带 pending 的删后 pending 目录一并清", () => {
+    const a = service.createArtifact(projectId, { kind: "crd", title: "带pending", content: "正文" });
+    // 手造一个 pending 子目录文件（与 versions 平级，在侧车 artifactDir 内）
+    const pendingDir = join(managedArtifactDir(a.id), "pending");
+    mkdirSync(pendingDir, { recursive: true });
+    writeFileSync(join(pendingDir, "x.json"), "{}", "utf-8");
+    expect(existsSync(pendingDir)).toBe(true);
+
+    service.deleteArtifact(projectId, a.id);
+
+    expect(existsSync(pendingDir)).toBe(false);
+    expect(existsSync(managedArtifactDir(a.id))).toBe(false);
+  });
+
+  it("不存在 id → NOT_FOUND", () => {
+    expectCode(() => service.deleteArtifact(projectId, "no-such-id"), "NOT_FOUND");
+  });
+
+  it("If-Match 不符 → VERSION_CONFLICT", () => {
+    const a = service.createArtifact(projectId, { kind: "k", title: "锁冲突", content: "v1" });
+    expectCode(() => service.deleteArtifact(projectId, a.id, { ifMatch: 99 }), "VERSION_CONFLICT");
+    // 冲突时未删
+    expect(existsSync(managedArtifactDir(a.id))).toBe(true);
+  });
+
+  it("If-Match 与当前 version 相符 → 正常删", () => {
+    const a = service.createArtifact(projectId, { kind: "k", title: "锁匹配", content: "v1" });
+    service.deleteArtifact(projectId, a.id, { ifMatch: a.version });
+    expect(existsSync(managedArtifactDir(a.id))).toBe(false);
+  });
+
+  it("无 filePath 的旧 artifact → 不抛、只删侧车", () => {
+    const a = service.createArtifact(projectId, { kind: "k", title: "无路径", content: "v1" });
+    // 模拟旧 artifact：抹掉 meta 里的 filePath
+    const metaPath = join(managedArtifactDir(a.id), "artifact.json");
+    const meta = JSON.parse(readFileSync(metaPath, "utf-8")) as Record<string, unknown>;
+    delete meta.filePath;
+    writeFileSync(metaPath, JSON.stringify(meta, null, 2), "utf-8");
+
+    expect(() => service.deleteArtifact(projectId, a.id)).not.toThrow();
+    expect(existsSync(managedArtifactDir(a.id))).toBe(false);
+  });
+
+  it(".md 已被外部删 → 不抛、正常删侧车", () => {
+    const a = service.createArtifact(projectId, { kind: "k", title: "已被外删", content: "v1" });
+    rmSync(join(dir, "已被外删.md"), { force: true }); // 外部先删了物化文件
+    expect(existsSync(join(dir, "已被外删.md"))).toBe(false);
+
+    expect(() => service.deleteArtifact(projectId, a.id)).not.toThrow();
+    expect(existsSync(managedArtifactDir(a.id))).toBe(false);
+  });
+});
