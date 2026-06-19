@@ -7,6 +7,8 @@ const IGNORED_NAMES = new Set([
   "node_modules", ".git", ".next", "dist", "build", "__pycache__",
   ".turbo", ".cache", "coverage", ".pytest_cache", ".mypy_cache",
   "target", "vendor", ".DS_Store", ".git",
+  // .pi = Next-Step 侧车内部目录（agents/dispatch/artifacts/managed/session-map），不在文件树暴露
+  ".pi",
 ]);
 
 const IGNORED_SUFFIXES = [".pyc"];
