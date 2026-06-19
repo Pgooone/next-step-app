@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { getFileIcon, FolderIcon } from "./FileIcons";
 import { encodeFilePathForApi, getRelativeFilePath, joinFilePath, buildManagedAbsPaths } from "@/lib/file-paths";
 import type { Artifact } from "@/lib/domain/artifact-service";
+import { useArtifactStore } from "@/lib/stores/useArtifactStore";
 
 interface FileEntry {
   name: string;
@@ -215,12 +216,32 @@ function TreeNode({
 function ManagedDocsGroup({
   artifacts,
   onOpenArtifact,
+  onDeleted,
 }: {
   artifacts: Artifact[];
   onOpenArtifact?: (id: string) => void;
+  onDeleted?: () => void;
 }) {
   const [open, setOpen] = useState(true);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  // 行内删除二次确认（第四轮，同 ArtifactPanel 两步范式）：记当前处于确认态的行 id。
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const confirmRef = useRef<HTMLDivElement>(null);
+
+  // 确认态支持 Esc / 外点关闭（与 ArtifactPanel 删除确认一致，BUG-04）。
+  useEffect(() => {
+    if (!confirmId) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (confirmRef.current && !confirmRef.current.contains(e.target as Node)) setConfirmId(null);
+    };
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === "Escape") setConfirmId(null); };
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [confirmId]);
 
   if (artifacts.length === 0) return null;
 
@@ -291,9 +312,66 @@ function ManagedDocsGroup({
               >
                 {a.title}
               </span>
-              <span style={{ flexShrink: 0, fontSize: 11, color: "var(--text-dim)" }}>
-                {a.kind} · v{a.currentVersion}
-              </span>
+              {confirmId === a.id ? (
+                <div
+                  ref={confirmRef}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 4 }}
+                >
+                  <span style={{ fontSize: 11, color: "#dc2626" }} title="永久删除该文档、全部版本历史与待确认变更、及磁盘文件，不可恢复">
+                    删除？
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirmId(null);
+                      void useArtifactStore.getState().delete(a.id).then((ok) => { if (ok) onDeleted?.(); });
+                    }}
+                    style={{ border: "none", background: "#dc2626", color: "#fff", fontSize: 10, borderRadius: 3, padding: "1px 6px", cursor: "pointer" }}
+                  >
+                    确认
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setConfirmId(null); }}
+                    style={{ border: "1px solid var(--border)", background: "transparent", color: "var(--text-dim)", fontSize: 10, borderRadius: 3, padding: "1px 6px", cursor: "pointer" }}
+                  >
+                    取消
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <span style={{ flexShrink: 0, fontSize: 11, color: "var(--text-dim)" }}>
+                    {a.kind} · v{a.currentVersion}
+                  </span>
+                  {hoveredId === a.id && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setConfirmId(a.id); }}
+                      title="删除该受管文档"
+                      aria-label="删除"
+                      style={{
+                        flexShrink: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        border: "none",
+                        background: "transparent",
+                        color: "var(--text-dim)",
+                        cursor: "pointer",
+                        padding: 0,
+                        width: 18,
+                        height: 18,
+                      }}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        <line x1="10" y1="11" x2="10" y2="17" />
+                        <line x1="14" y1="11" x2="14" y2="17" />
+                      </svg>
+                    </button>
+                  )}
+                </>
+              )}
             </div>
           ))}
         </div>
@@ -354,6 +432,15 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention, project
     return () => { alive = false; };
   }, [projectId, refreshKey]);
 
+  // 入口②删成功后本地静默重取受管列表（不 null-gate、不闪 Loading，丢掉已删项）。
+  const reloadArtifacts = useCallback(() => {
+    if (!projectId) return;
+    fetch(`/api/projects/${encodeURIComponent(projectId)}/artifacts`)
+      .then((r) => (r.ok ? (r.json() as Promise<Artifact[]>) : Promise.reject()))
+      .then(setArtifacts)
+      .catch(() => { /* 静默：保留现状 */ });
+  }, [projectId]);
+
   if (error) {
     return (
       <div style={{ padding: "8px 12px", fontSize: 11, color: "#f87171" }}>
@@ -367,7 +454,7 @@ export function FileExplorer({ cwd, onOpenFile, refreshKey, onAtMention, project
 
   return (
     <div style={{ padding: "2px 4px" }}>
-      <ManagedDocsGroup artifacts={artifacts ?? []} onOpenArtifact={onOpenArtifact} />
+      <ManagedDocsGroup artifacts={artifacts ?? []} onOpenArtifact={onOpenArtifact} onDeleted={reloadArtifacts} />
       {loading || artifacts === null ? (
         <div style={{ padding: "8px 12px", fontSize: 11, color: "var(--text-dim)" }}>
           Loading files...

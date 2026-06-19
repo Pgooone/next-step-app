@@ -59,7 +59,7 @@ function Markdown({ children }: { children: string }) {
   );
 }
 
-export function ArtifactPanel() {
+export function ArtifactPanel({ onDeleted }: { onDeleted?: () => void } = {}) {
   const artifact = useArtifactStore((s) => s.artifact);
   const loading = useArtifactStore((s) => s.loading);
   const error = useArtifactStore((s) => s.error);
@@ -75,6 +75,8 @@ export function ArtifactPanel() {
   const listVersions = useArtifactStore((s) => s.listVersions);
   const selectVersion = useArtifactStore((s) => s.selectVersion);
   const rollback = useArtifactStore((s) => s.rollback);
+  // delete 是保留字，局部以 deleteArtifact 引用（store 内 action 键名仍是 delete，对外一致）。
+  const deleteArtifact = useArtifactStore((s) => s.delete);
   // selectPendingBlocks 每次 flatMap+filter 返回新数组引用，直接订阅会让 zustand 的
   // useSyncExternalStore 快照恒不等（Object.is）→ 无限重渲染（getSnapshot should be cached /
   // Maximum update depth）。用 useShallow 逐元素浅比较：DiffBlock 元素来自稳定的
@@ -86,6 +88,9 @@ export function ArtifactPanel() {
   // rollback 二次确认（D-D5-5 两步按钮，非原生 confirm）。
   const [confirmRollback, setConfirmRollback] = useState(false);
   const rollbackConfirmRef = useRef<HTMLSpanElement>(null);
+  // 删除二次确认（第四轮，复刻 rollback 两步范式）。
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const deleteConfirmRef = useRef<HTMLSpanElement>(null);
 
   // 确认态打开时支持 Esc / 外点关闭（BUG-04，与 PendingChangeCard 全部✓/✗ 范式一致）。
   useEffect(() => {
@@ -105,6 +110,25 @@ export function ArtifactPanel() {
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [confirmRollback]);
+
+  // 删除确认态同款 Esc / 外点关闭（BUG-04）。
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (deleteConfirmRef.current && !deleteConfirmRef.current.contains(e.target as Node)) {
+        setConfirmDelete(false);
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setConfirmDelete(false);
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [confirmDelete]);
 
   // 版本列表随 artifact 打开 / currentVersion 变化（rollback、D4 物化新版）统一重拉。
   const currentVersion = artifact?.currentVersion;
@@ -228,6 +252,34 @@ export function ArtifactPanel() {
           </span>
         )}
         <span style={{ marginLeft: "auto" }} />
+        {/* 删除按钮 + 两步二次确认（第四轮，复刻 rollback 范式）。 */}
+        {confirmDelete ? (
+          <span ref={deleteConfirmRef} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ color: "#dc2626" }}>
+              永久删除该文档、全部版本历史与待确认变更、及磁盘文件，不可恢复？
+            </span>
+            <button
+              onClick={() => {
+                setConfirmDelete(false);
+                void deleteArtifact().then((ok) => { if (ok) onDeleted?.(); });
+              }}
+              style={solidBtn("#dc2626")}
+            >
+              确认删除
+            </button>
+            <button onClick={() => setConfirmDelete(false)} style={btnStyle(false)}>
+              取消
+            </button>
+          </span>
+        ) : (
+          <button
+            onClick={() => setConfirmDelete(true)}
+            title="永久删除该文档（含全部版本与待确认变更、磁盘文件）"
+            style={solidBtn("#dc2626")}
+          >
+            删除
+          </button>
+        )}
         {/* 划选引用按钮（AC⑥） */}
         <button
           onClick={handleQuote}

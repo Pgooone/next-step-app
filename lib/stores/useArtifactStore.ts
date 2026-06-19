@@ -95,6 +95,13 @@ interface ArtifactState {
    * 成功后 refresh() 拉新内容/pending + 复位 selectedVersion=null（回到最新）；409 等失败写 rollbackError。
    */
   rollback: (toVersion: number) => Promise<void>;
+  /**
+   * 彻底删除一个受管 artifact（第四轮）：target = id ?? selectedArtifactId。
+   * target 为当前打开项时带 If-Match=artifact.version（乐观锁）；DELETE /api/artifacts/[id]。
+   * 成功后仅当 target===selectedArtifactId 才 close()（删非当前打开项不误清右栏）；
+   * 409/404/其它失败走 toast。结构操作、不走 propose（D-V4-02）。返回是否删成功（供入口决定是否刷新）。
+   */
+  delete: (id?: string) => Promise<boolean>;
 }
 
 export const useArtifactStore = create<ArtifactState>((set, get) => ({
@@ -254,6 +261,32 @@ export const useArtifactStore = create<ArtifactState>((set, get) => ({
       toast.error(msg);
     } finally {
       set({ rollbackBusy: false });
+    }
+  },
+
+  delete: async (id) => {
+    const { selectedArtifactId, artifact } = get();
+    const target = id ?? selectedArtifactId;
+    if (!target) return false;
+    const isOpen = target === selectedArtifactId;
+    try {
+      const res = await fetch(`/api/artifacts/${encodeURIComponent(target)}`, {
+        method: "DELETE",
+        // 删当前打开项时带乐观锁（删非当前打开项不带，并发面小，D-V4 gap 4）。
+        headers: isOpen && artifact ? { "If-Match": String(artifact.version) } : undefined,
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        toast.error(`删除失败：${data.error ?? `HTTP ${res.status}`}`);
+        return false;
+      }
+      // 成功：仅当删的是当前打开项才清右栏（删他项不误清，T2 红线）。
+      if (isOpen) get().close();
+      toast.success("已删除");
+      return true;
+    } catch (e) {
+      toast.error(`删除失败：${String(e)}`);
+      return false;
     }
   },
 }));

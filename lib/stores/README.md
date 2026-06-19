@@ -24,6 +24,9 @@
   + `historyContent`；`listVersions()` 拉 `GET .../versions`、`selectVersion(v|null)`（选历史版拉 `.../versions/[v]`、
   null 或选回当前版回到跟随最新）、`rollback(toVersion)`（带 `If-Match`=当前 version 乐观锁、成功后 `refresh()` 并复位
   selectedVersion=null、409 写 `rollbackError`）。无 SSE（D-D5-2 选 A：自己触发的操作后直接 refresh）。
+  **第四轮删除**：`delete(id?)`（target=`id ?? selectedArtifactId`，删当前打开项带 `If-Match`=version 乐观锁、
+  `DELETE /api/artifacts/[id]`；成功**仅当 target===selectedArtifactId 才 `close()`**、返回 boolean 供入口决定刷新、
+  409/404/失败走 toast）。结构操作、不走 propose（D-V4-02）。
   **刻意不持久化**（全是会话内瞬态、刷新归零合理），故无 `hydrate`、天然无 SSR hydration 问题。
   渲染仍只读：不引入手动编辑器 / 绕过 PendingChange 的写路径（D-D5-1）。
 

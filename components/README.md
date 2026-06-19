@@ -14,6 +14,9 @@ React 函数式组件（全部 `"use client"` + hooks）。基座组件（`ChatW
   渲染纯函数在 `lib/artifact-view`；配色用基座 `var(--...)` 内联主题（同 `FileViewer`）。
 - 受管文档入口已并入 `FileExplorer.tsx` 顶部「受管文档」可折叠分组（点开进 `ArtifactPanel`），
   下方普通树按绝对路径去重剔除已物化的受管 .md（如 `crd.md`），避免双现并堵死从 `FileViewer` 打开受管 .md 的路径。
+- **删除入口（第四轮）**：`ArtifactPanel.tsx` 头部状态栏红色「删除」按钮、`FileExplorer.tsx` 受管分组行 hover 垃圾桶，
+  两处都走同款两步二次确认（复刻 rollback `rollbackConfirmRef` + Esc/外点关，文案警示永久删除文档/版本历史/待确认变更/磁盘文件）
+  → 统一调 `useArtifactStore.delete`；入口①经 `onDeleted` 回调 bump `explorerRefreshKey` 刷新分组、入口②本地重取。
 - 接线：`SessionSidebar.tsx`（透传 `projectId`/`projectRoot`/`onOpenArtifact` 给 `FileExplorer`）、
   `AppShell.tsx`（`handleOpenArtifact` 经 `useArtifactStore.open` 在右侧面板打开产物视图，与文件视图互斥）、
   `ChatWindow.tsx`（`QuoteBar` 读 `editTarget.quoteText` 展示 / 清除，AC⑥ 读侧）。

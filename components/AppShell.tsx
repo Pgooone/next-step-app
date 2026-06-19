@@ -943,7 +943,7 @@ export function AppShell() {
         {/* Content — 产物视图优先（D-D3-7），否则文件视图 */}
         <div style={{ flex: 1, overflow: "hidden" }}>
           {selectedArtifactId ? (
-            <ArtifactPanel />
+            <ArtifactPanel onDeleted={() => setExplorerRefreshKey((k) => k + 1)} />
           ) : activeFileTab?.filePath ? (
             <FileViewer filePath={activeFileTab.filePath} cwd={activeCwd ?? undefined} />
           ) : (
