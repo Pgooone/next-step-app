@@ -38,6 +38,7 @@ import type { AgentProfile } from "../domain/agent-profile-store";
 import { applyProfileRuntime, assembleProfileSessionOptions } from "./agent-profile-session";
 import { assembleDocSessionOptions } from "./doc-session";
 import type { DocToolDeps } from "./doc-tools";
+import { extraSkillDirs } from "./extra-skill-dirs";
 
 /** 起会话后回报给前端的诊断（D-B4-5：前端仅 console.warn，toast 后置）。 */
 export interface ProfileSessionDiagnostics {
@@ -62,6 +63,17 @@ export type RegisterInnerSession = (inner: AgentSession) => {
   session: { send(command: Record<string, unknown>): Promise<unknown> };
   realSessionId: string;
 };
+
+/**
+ * re-attach 专用登记口（D-B4-4）。与 {@link RegisterInnerSession} 的区别：返回 `session` 用泛型
+ * `S` 透传上层（生产是 rpc-manager 的 `AgentSessionWrapper`，T2 resolver 要在其上调 `isAlive()` 等），
+ * 而非窄到只剩 `send`。生产默认走 rpc-manager 的 `registerInnerSession`（经惰性 import，避免与
+ * rpc-manager 形成静态导入环——见 {@link reattachProfileSession} 的 registerInnerSession 默认值）；
+ * 测试注入 faux（不碰进程级 globalThis registry）。
+ */
+export type ReattachInnerSession<S = unknown> = (
+  inner: AgentSession,
+) => { session: S; realSessionId: string } | Promise<{ session: S; realSessionId: string }>;
 
 /**
  * 按档案起一个真实会话：装配注入选项 → createAgentSession → 应用运行时（model/thinking）
@@ -154,4 +166,106 @@ export async function startProfileSession(args: {
     sessionId: realSessionId,
     diagnostics: { modelFallback, missingSkills: diagnostics.missingSkills },
   };
+}
+
+/**
+ * D-B4-4 修复 —— re-attach 一个已存在的文档型 profile 会话（idle 销毁 / dev 重启 / SSE 重连后重建）。
+ *
+ * 与 {@link startProfileSession} **同源装配**（同一 loader 带注入块 + 同一受限工具集），**唯三差异**：
+ *   ① 用 `SessionManager.open(filePath)` 重开既有会话（非 `create` 新建）——会话文件已在磁盘；
+ *   ② **不发首条 message**（D-B4-3 的「必发首条」是为**新建**会话触发真落盘防幻影空会话；
+ *      re-attach 的 jsonl 已存在、无此问题，重发会污染历史）；
+ *   ③ `applyProfileRuntime` 重应用 model/thinking（否则重建后回内核默认）。
+ *
+ * systemPrompt 走「现算覆盖」（spike 结论 + §〇）：内核**不持久化** systemPrompt，每次构造期由
+ * resourceLoader 现算。故 re-attach **必须**照常走完整 `assembleProfileSessionOptions`（带注入块 loader），
+ * 得到与初次完全一致的 systemPrompt——只装工具集会让角色/记忆静默丢失（jsonl 无可回放的 systemPrompt）。
+ *
+ * 红线②：spread 顺序 `options → docOptions` 不可调——docOptions 的 7 名受限白名单必须**覆盖**
+ * profile.tools，否则 profile.tools 若含 write/edit/bash 会泄漏、受限集当场失效。
+ *
+ * @returns `registerInnerSession` 的 `{ session, realSessionId }`（**非** {@link ProfileSessionResult}）——
+ *   T2 的 resolver 三分支统一 `const { session } = await ...` 解构，需拿到带 `isAlive()` 的真实包装器。
+ */
+export async function reattachProfileSession<S = unknown>(args: {
+  sessionId: string;
+  filePath: string;
+  projectId: string;
+  projectRoot: string;
+  profile: AgentProfile;
+  /** 测试可注入额外技能目录；省略 → `extraSkillDirs(projectRoot)`（与生产 startProfileSession 调用点一致）。 */
+  additionalSkillPaths?: string[];
+  /** 测试注入 in-memory/持久化 SessionManager 保持 hermetic；生产省略 → `SessionManager.open(filePath)`。 */
+  sessionManager?: SessionManager;
+  /** 测试注入 faux model/auth/modelRegistry，让无凭证环境也能起会话；生产省略。 */
+  createOptionsOverride?: Partial<CreateAgentSessionOptions>;
+  /**
+   * 测试注入提议工具后端（指向 hermetic 临时 registry/.pi），让 `getActiveToolNames()` 断言 hermetic。
+   * **最硬约束**：不注入则 `buildDocTools` 默认 `new ProjectRegistry()` 读真实 `~/.pi`（doc-tools.ts），单测非 hermetic。
+   * 生产省略 → 提议工具用默认文件后端，与 resolve/pending 路由指向同一批文件。
+   */
+  docDepsOverride?: Pick<DocToolDeps, "artifactService" | "pendingStore">;
+  /**
+   * 登记口：测试注入 faux（不碰进程级 registry）；生产省略 → 惰性 import rpc-manager 的真实
+   * `registerInnerSession`（动态 import 避免静态导入环：rpc-manager 不 import 本文件，本文件亦不
+   * 静态 import rpc-manager）。
+   */
+  registerInnerSession?: ReattachInnerSession<S>;
+}): Promise<{ session: S; realSessionId: string }> {
+  // sessionId 不在本体消费（inner.sessionId 为准）——仅作 T2 resolver 调用契约的语义参数，故不解构。
+  const {
+    filePath,
+    projectId,
+    projectRoot,
+    profile,
+    additionalSkillPaths,
+    sessionManager,
+    createOptionsOverride,
+    docDepsOverride,
+    registerInnerSession,
+  } = args;
+
+  // 差异①：open 既有会话文件（非 create）。
+  const sm = sessionManager ?? SessionManager.open(filePath, undefined);
+  const agentDir = getAgentDir();
+
+  // 与初次同源：带注入块的 loader（systemPrompt 现算覆盖，§〇 spike 结论）+ 技能过滤。
+  const { options } = await assembleProfileSessionOptions({
+    projectRoot,
+    profile,
+    cwd: projectRoot,
+    sessionManager: sm,
+    agentDir,
+    additionalSkillPaths: additionalSkillPaths ?? extraSkillDirs(projectRoot),
+  });
+
+  // 受限工具集（与 startProfileSession 同款）：解构 .options、cwd 必填（major #1，照初版错层会泄漏写盘工具）。
+  const { options: docOptions } = assembleDocSessionOptions({
+    projectId,
+    sourceActor: profile.name,
+    cwd: projectRoot,
+    ...docDepsOverride,
+  });
+
+  // spread 顺序 options → docOptions → createOptionsOverride 不可调（D-V2-04/红线②）：
+  // docOptions.tools(7 受限白名单)须覆盖 options.tools(profile.tools)。删冗余 sessionManager: sm（options 已含同一 sm）。
+  const { session: inner } = await createAgentSession({
+    ...options,
+    ...docOptions,
+    ...createOptionsOverride,
+  });
+
+  // 差异③：重应用 model/thinking（re-attach 否则回内核默认）。
+  await applyProfileRuntime(inner, profile);
+
+  // 差异②：登记进 registry 接事件流，但**不发首条 message**。生产经惰性 `await import` 拿真实
+  // registerInnerSession（动态 import 避免与 rpc-manager 形成静态导入环——rpc-manager 不 import 本
+  // 文件，本文件亦不静态 import rpc-manager；同 rpc-manager.ts:317 的惰性 import 范式）；测试注入 faux。
+  const register: ReattachInnerSession<S> =
+    registerInnerSession ??
+    (async (s: AgentSession) => {
+      const { registerInnerSession: real } = await import("../rpc-manager");
+      return real(s) as { session: S; realSessionId: string };
+    });
+  return register(inner);
 }

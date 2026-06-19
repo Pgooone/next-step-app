@@ -46,7 +46,11 @@ import { PendingChangeStore, type PendingChange } from "../domain/pending-change
 import { AgentProfileStore, type AgentProfile } from "../domain/agent-profile-store";
 import { ProjectRegistry } from "../domain/project-registry";
 import { DOC_SESSION_TOOLS } from "./doc-session";
-import { startProfileSession, type RegisterInnerSession } from "./profile-session-wiring";
+import {
+  reattachProfileSession,
+  startProfileSession,
+  type RegisterInnerSession,
+} from "./profile-session-wiring";
 
 // ---------------------------------------------------------------------------
 // 夹具：临时项目 + 档案存储（同 agent-profile-session.test.ts）
@@ -459,6 +463,168 @@ describe("startProfileSession 装受限工具集（V2 doc-session）", () => {
       expect(
         existsSync(join(projectRoot(), ".pi", "artifacts", "managed", a.id, "versions", "2.json")),
       ).toBe(false);
+    } finally {
+      faux.unregister();
+    }
+  });
+});
+
+// ===========================================================================
+// T1（第五轮 / D-B4-4）：reattachProfileSession —— re-attach 重建受限 doc 工具集
+//
+// 与 startProfileSession 同源装配（同一 loader + 同一 7 名受限白名单），唯三差异：open 而非
+// create / 不发首条 message / 重应用 model。本套断言三条 AC：
+//   AC① 重建后 getActiveToolNames() 恰=7 受限名、不含 write/edit/bash（抓 major #1 错层 spread）；
+//   AC② open 既有 jsonl 保留历史（buildSessionContext().messages.length>0，非 rpc wrapper 硬编码 0 的 messageCount）；
+//   AC③ 重建后 systemPrompt 含 <agent_profile> 角色注入块（防丢角色静默回归）。
+//
+// 全 hermetic：sessionManager / docDepsOverride / createOptionsOverride / registerInnerSession 全注入。
+// ===========================================================================
+
+/**
+ * reattach 专用 faux 登记口：不碰进程级 registry，捕获内核 inner，原样把 inner 作为 `session` 透传
+ * （T2 resolver 生产里 session 是 AgentSessionWrapper；T1 只需在捕获的 inner 上读 getActiveToolNames/
+ * sessionManager/systemPrompt，故直接回 inner）。**不发 message**——reattach 本就不发首条，验证这点：
+ * 若实现误发，下方 sends/prompt 计数会暴露。
+ */
+function makeFauxReattachRegister(): {
+  register: (inner: AgentSession) => { session: AgentSession; realSessionId: string };
+  captured: { inner: AgentSession | null };
+} {
+  const captured: { inner: AgentSession | null } = { inner: null };
+  const register = (inner: AgentSession) => {
+    captured.inner = inner;
+    return { session: inner, realSessionId: inner.sessionId };
+  };
+  return { register, captured };
+}
+
+/**
+ * 造一个**已落盘**的持久化会话文件（AC② 需要可被 open 读回历史）。
+ * 关键（session-manager.js:640-650）：内核只在出现 assistant 消息时才把 fileEntries 刷盘——故必须
+ * append 一条 user + 一条 assistant，文件才真正写出；只 append user 会停留在 not-flushed、磁盘无文件。
+ * 返回真实 sessionFile 路径供 reattach 用 SessionManager.open 重开。
+ */
+function makePersistedSessionFile(cwd: string, sessionDir: string): string {
+  const sm = SessionManager.create(cwd, sessionDir);
+  sm.appendMessage({ role: "user", content: "首轮用户消息", timestamp: Date.now() });
+  sm.appendMessage({
+    role: "assistant",
+    content: [{ type: "text", text: "首轮助手回复" }],
+    api: "faux",
+    provider: "faux",
+    model: "faux-1",
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "stop",
+    timestamp: Date.now(),
+  });
+  const file = sm.getSessionFile();
+  if (!file || !existsSync(file)) {
+    throw new Error("fixture 未落盘：期望 create+user+assistant 后磁盘有 jsonl 文件");
+  }
+  return file;
+}
+
+describe("reattachProfileSession（re-attach 重建受限 doc 工具集，T1/D-B4-4）", () => {
+  let sessionDir: string;
+  beforeEach(() => {
+    sessionDir = mkdtempSync(join(tmpdir(), "ns-t1-sessions-"));
+  });
+  afterEach(() => {
+    rmSync(sessionDir, { recursive: true, force: true });
+  });
+
+  /** 用持久化 fixture 重开会话；docDepsOverride 指向本测临时后端，全 hermetic。 */
+  async function reattach(
+    profile: AgentProfile,
+    faux: FauxBundle,
+    deps: { artifactService: ArtifactService; pendingStore: PendingChangeStore },
+  ) {
+    const filePath = makePersistedSessionFile(projectRoot(), sessionDir);
+    const { register, captured } = makeFauxReattachRegister();
+    const result = await reattachProfileSession({
+      sessionId: "ignored-real-id-from-inner",
+      filePath,
+      projectId,
+      projectRoot: projectRoot(),
+      profile,
+      // open 同一持久化文件（reattach 的 sessionManager 注入缝；省略则生产走 SessionManager.open(filePath)）
+      sessionManager: SessionManager.open(filePath, undefined),
+      createOptionsOverride: {
+        model: faux.model,
+        authStorage: faux.authStorage,
+        modelRegistry: faux.modelRegistry,
+      },
+      docDepsOverride: { artifactService: deps.artifactService, pendingStore: deps.pendingStore },
+      registerInnerSession: register,
+    });
+    return { result, captured, filePath };
+  }
+
+  it("AC①：重建后 getActiveToolNames() 恰=7 受限名、不含 write/edit/bash（抓 major #1 错层 spread）", async () => {
+    const artifactService = new ArtifactService(registry);
+    const pendingStore = new PendingChangeStore(registry, artifactService);
+    // 故意给含 write/edit/bash 的 profile.tools——验证 docOptions 覆盖、危险工具不泄漏（红线②）。
+    const profile = store.create(projectId, {
+      name: "文档助手",
+      tools: ["read", "write", "edit", "bash"],
+    });
+    writeDocs(profile, "我是 ROLE-X 角色", "");
+    const faux = makeFaux();
+    try {
+      const { result, captured } = await reattach(profile, faux, { artifactService, pendingStore });
+      expect(captured.inner).not.toBeNull();
+      const active = captured.inner!.getActiveToolNames().slice().sort();
+      expect(active).toEqual([...DOC_SESSION_TOOLS].sort());
+      for (const f of ["write", "edit", "bash"]) {
+        expect(active).not.toContain(f);
+      }
+      // 返回 { session, realSessionId }（非 ProfileSessionResult）：session 即捕获的 inner
+      expect(result.session).toBe(captured.inner);
+      expect(result.realSessionId).toBe(captured.inner!.sessionId);
+    } finally {
+      faux.unregister();
+    }
+  });
+
+  it("AC②：open 既有 jsonl 保留首轮历史（buildSessionContext().messages.length>0）", async () => {
+    const artifactService = new ArtifactService(registry);
+    const pendingStore = new PendingChangeStore(registry, artifactService);
+    const profile = store.create(projectId, { name: "文档助手", tools: ["read"] });
+    const faux = makeFaux();
+    try {
+      const { captured } = await reattach(profile, faux, { artifactService, pendingStore });
+      // 不可用 rpc wrapper 的 messageCount（硬编码 0）——直接读内核 SessionManager 的上下文。
+      const messages = captured.inner!.sessionManager.buildSessionContext().messages;
+      expect(messages.length).toBeGreaterThan(0);
+      // 首轮 user+assistant 都在
+      expect(messages.some((m) => m.role === "user")).toBe(true);
+      expect(messages.some((m) => m.role === "assistant")).toBe(true);
+    } finally {
+      faux.unregister();
+    }
+  });
+
+  it("AC③：重建后 systemPrompt 含 <agent_profile> 角色注入块 + 角色正文（防丢角色静默回归）", async () => {
+    const artifactService = new ArtifactService(registry);
+    const pendingStore = new PendingChangeStore(registry, artifactService);
+    const profile = store.create(projectId, { name: "文档助手", tools: ["read"] });
+    writeDocs(profile, "我是 ROLE-X 角色", "记住 MEM-Y 这条");
+    const faux = makeFaux();
+    try {
+      const { captured } = await reattach(profile, faux, { artifactService, pendingStore });
+      const sp = captured.inner!.systemPrompt;
+      expect(sp).toContain("<agent_profile>");
+      expect(sp).toContain("ROLE-X");
+      // memory.md 也注入（与初次 startProfileSession 等价，systemPrompt=现算覆盖、非叠加）
+      expect(sp).toContain("MEM-Y");
     } finally {
       faux.unregister();
     }

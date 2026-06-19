@@ -35,11 +35,21 @@
     `tools: profile.tools`、`docOptions` 也含 `tools`(7 项受限白名单)，两键相撞，**docOptions 必须排
     `options` 之后**覆盖 profile.tools，否则 profile.tools 若含 write/edit/bash 会泄漏、受限集当场失效。
     （P0 guard 走 `noTools` 无 tools 键、顺序无关；本轮不同，顺序不可调——有泄漏对照测守住。）
-  - **仅 profile 会话这一处**：不碰主对话 `/api/agent/new`、`dispatch-runner.ts`、idle 重建/`rpc-manager`
-    原生路径——idle 重建路径无受限工具集属已登记 gap，本卡不修。文档型 vs coding 型 profile 区分=登记后续。
+  - **仅 profile 会话这一处**：不碰主对话 `/api/agent/new`、`dispatch-runner.ts`。idle 重建/`rpc-manager`
+    原生路径无受限工具集属已登记 gap（D-B4-4）→ **第五轮 `reattachProfileSession` 起修**（见下条；主对话/
+    dispatch §A/§B 仍留后续）。文档型 vs coding 型 profile 区分=登记后续。
   - `docDepsOverride?` 是**测试专用**注入口（指向 hermetic 临时 service/store），生产省略 → 提议工具默认其
     文件后端（`buildDocTools` 内 `new ProjectRegistry()` 读默认 `~/.pi/projects.json`），与 resolve/pending
     路由指向同一批文件，UI 读得到。
+  - **`reattachProfileSession(...)`（第五轮 / D-B4-4，T1）** — re-attach 一个**已存在**的文档型 profile
+    会话（idle 销毁 / dev 重启 / SSE 重连后重建）。与 `startProfileSession` 同源装配（同一带注入块 loader +
+    同一 7 名受限白名单），唯三差异：`SessionManager.open(filePath)` 而非 create / **不发首条 message** /
+    `applyProfileRuntime` 重应用 model。返回 `{ session, realSessionId }`（非 `ProfileSessionResult`——T2
+    resolver 需带 `isAlive()` 的包装器，故 `ReattachInnerSession<S>` 泛型透传 session 类型）。
+    **`systemPrompt=现算覆盖`**：内核不持久化 systemPrompt、resourceLoader 每次现算，故必走完整 loader 重注
+    角色/记忆，只装工具集会让角色静默丢失（spike 结论）。`registerInnerSession?` 默认走惰性
+    `import("../rpc-manager")` 避免静态导入环；DI 缝同 startProfileSession（`docDepsOverride` 为 hermetic
+    单测硬约束）。接线归 T2 的 `resolveOrReattachSession`（`session-reattach.ts`，T2 建）。
 - `dispatch-runner.ts` — **C1 单 worker 会话「起 + 等回合结束 + 取产物」**。`runWorker(...)` 与 B4 的区别：
   B4 fire-and-forget 即返回；派发需**等 worker 跑完并取回产物文本**，故自己组合那 5 步，并在
   `registerInnerSession` 之后、`send` 之前挂 `agent_end` 监听（包成 Promise，resolve 于
