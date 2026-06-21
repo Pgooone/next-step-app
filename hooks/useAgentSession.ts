@@ -120,6 +120,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const eventSourceRef = useRef<EventSource | null>(null);
   const sessionIdRef = useRef<string | null>(session?.id ?? null);
   const agentRunningRef = useRef(false);
+  // T1（A3 性能）：本回合是否调用过 propose_edit。agent_end 据此 gate 刷新 artifact store，
+  // 让对话框 diff 卡片即时出现（修「每次要刷新/等一会才显示」，根因=agent_end 从不刷 store）。
+  const proposedThisTurnRef = useRef(false);
   const handleAgentEventRef = useRef<((event: AgentEvent) => void) | null>(null);
   const initialScrollDoneRef = useRef(false);
   const lastUserMsgRef = useRef<HTMLDivElement | null>(null);
@@ -250,6 +253,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setAgentRunning(true);
         setAgentPhase({ kind: "waiting_model" });
         dispatch({ type: "start" });
+        proposedThisTurnRef.current = false; // T1：每回合开始清零
         break;
       case "agent_end":
         setAgentRunning(false);
@@ -265,6 +269,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
               if (d.state?.systemPrompt !== undefined) setSystemPrompt(d.state.systemPrompt ?? null);
             })
             .catch(() => {});
+        }
+        // T1（A3 性能）：本回合调过 propose_edit 且有打开的 artifact → 静默刷新，
+        // 让对话框 diff 卡片即时出现（refresh 已设计为不重置 viewMode/不亮 loading）。
+        if (proposedThisTurnRef.current && useArtifactStore.getState().selectedArtifactId) {
+          void useArtifactStore.getState().refresh();
         }
         onAgentEnd?.();
         break;
@@ -292,6 +301,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "tool_execution_start": {
         const id = event.toolCallId as string;
         const name = event.toolName as string;
+        if (name === "propose_edit") proposedThisTurnRef.current = true; // T1：本回合有提议 → agent_end 刷 store
         setAgentPhase((prev) => {
           const tools = prev?.kind === "running_tools" ? [...prev.tools] : [];
           if (!tools.some((t) => t.id === id)) tools.push({ id, name });
