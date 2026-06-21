@@ -159,6 +159,14 @@ export function AppShell() {
     if (diffFocusNonce > 0) setRightPanelOpen(true);
   }, [diffFocusNonce]);
 
+  // A3（T4）：点对话框 diff 块经 requestBlockFocus +1 此 nonce → 展开右侧面板（D-UI-07 仅展开、
+  // 不强制全屏）。与 diffFocusNonce 同款解耦范式（标量信号、>0 才响应、单调无需清理）；
+  // 滚动高亮到原文该块由 ArtifactPanel 的 focusBlockNonce effect 负责（T3）。
+  const focusBlockNonce = useArtifactStore((s) => s.focusBlockNonce);
+  useEffect(() => {
+    if (focusBlockNonce > 0) setRightPanelOpen(true);
+  }, [focusBlockNonce]);
+
   const handleAtMention = useCallback((relativePath: string) => {
     chatInputRef.current?.insertText("`" + relativePath + "`");
   }, []);

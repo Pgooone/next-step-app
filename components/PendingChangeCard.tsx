@@ -42,6 +42,9 @@ export function PendingChangeCard() {
   const refresh = useArtifactStore((s) => s.refresh);
   // D 键/「查看 Diff」用 requestDiffFocus：切并排 Diff + 发信号让 AppShell 展开右面板（D-D4-3 选 B）。
   const requestDiffFocus = useArtifactStore((s) => s.requestDiffFocus);
+  // 行点击用 requestBlockFocus（A3，T2 加）：切 inline + 写 focusBlockId/nonce+1 →
+  // AppShell 展面板（本卡 T4 接线）+ ArtifactPanel 滚动高亮到原文该块（T3 effect）。
+  const requestBlockFocus = useArtifactStore((s) => s.requestBlockFocus);
 
   if (!selectedArtifactId || pendingChanges.length === 0) return null;
 
@@ -67,6 +70,7 @@ export function PendingChangeCard() {
           change={pc}
           onResolved={refresh}
           onJumpDiff={requestDiffFocus}
+          onJumpToBlock={requestBlockFocus}
         />
       ))}
     </div>
@@ -79,11 +83,13 @@ function ChangeCard({
   change,
   onResolved,
   onJumpDiff,
+  onJumpToBlock,
 }: {
   artifactId: string;
   change: PendingChange;
   onResolved: () => void | Promise<void>;
   onJumpDiff: () => void;
+  onJumpToBlock: (blockId: string) => void;
 }) {
   // 聚焦块 = YNRD 作用对象；默认首个 pending 块（无 pending 块则 0）。
   const firstPendingIdx = change.diffBlocks.findIndex((b) => b.state === "pending");
@@ -296,6 +302,7 @@ function ChangeCard({
             focused={i === focusIdx}
             busy={busy}
             onFocus={() => setFocusIdx(i)}
+            onJump={() => onJumpToBlock(b.id)}
             onConfirm={() => void resolve("confirm", b.id)}
             onReject={() => void resolve("reject", b.id)}
           />
@@ -315,6 +322,7 @@ function BlockRow({
   focused,
   busy,
   onFocus,
+  onJump,
   onConfirm,
   onReject,
 }: {
@@ -322,6 +330,8 @@ function BlockRow({
   focused: boolean;
   busy: boolean;
   onFocus: () => void;
+  /** 行点击（非 ✓/✗）跳转到原文该块（A3）：发 requestBlockFocus 信号。 */
+  onJump: () => void;
   onConfirm: () => void;
   onReject: () => void;
 }) {
@@ -331,7 +341,8 @@ function BlockRow({
   const preview = block.lines.find((l) => l.trim() !== "") ?? block.lines[0] ?? "";
   return (
     <div
-      onClick={onFocus}
+      // 行点击：保留原有聚焦（YNRD 作用对象）+ 发 A3 跳转信号。✓/✗ 按钮已 stopPropagation 不误触。
+      onClick={() => { onFocus(); onJump(); }}
       style={{
         display: "flex",
         alignItems: "center",
