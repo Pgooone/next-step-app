@@ -12,10 +12,16 @@ import { parseToc, slugify, type TocItem } from "@/lib/artifact-view/toc";
 import { buildSegments, type Segment } from "@/lib/artifact-view/anchor";
 import {
   INLINE_HL_LIMIT,
-  shouldDegradeToDiff,
   countPendingBlocks,
 } from "@/lib/artifact-view/degrade";
+import { useResolveBlock } from "@/hooks/useResolveBlock";
 import type { DiffBlock } from "@/lib/domain/pending-change-service";
+
+/** 全屏态放宽后的行内高亮块数上限（D-UI-05）；非全屏仍用 INLINE_HL_LIMIT(25)。 */
+const FULLSCREEN_INLINE_HL_LIMIT = 80;
+
+/** 单块 resolve 函数签名（useResolveBlock 返回值）；内联段就地 ✓/✗ 与对话框卡片（T4）共用。 */
+type ResolveBlockFn = (changeId: string, blockId: string, action: "confirm" | "reject") => Promise<boolean>;
 
 /**
  * ArtifactPanel（D3，§5.4）：右侧面板里渲染受管 artifact 的「Notion 式只改一段」视图。
@@ -59,13 +65,19 @@ function Markdown({ children }: { children: string }) {
   );
 }
 
-export function ArtifactPanel({ onDeleted }: { onDeleted?: () => void } = {}) {
+export function ArtifactPanel({
+  onDeleted,
+  isFullscreen = false,
+}: { onDeleted?: () => void; isFullscreen?: boolean } = {}) {
   const artifact = useArtifactStore((s) => s.artifact);
   const loading = useArtifactStore((s) => s.loading);
   const error = useArtifactStore((s) => s.error);
   const viewMode = useArtifactStore((s) => s.viewMode);
   const setViewMode = useArtifactStore((s) => s.setViewMode);
   const setEditTarget = useArtifactStore((s) => s.setEditTarget);
+  // A3 跳转信号（T2 已加，标量字段无 useShallow 风险）：focusBlockNonce 变化→滚到对应 data-block-id 段。
+  // 只订阅 nonce 触发 effect；focusBlockId 在 effect 内用 getState() 读最新值（与 nonce 同 set 更新）。
+  const focusBlockNonce = useArtifactStore((s) => s.focusBlockNonce);
   // D5 版本管理态。
   const versions = useArtifactStore(useShallow((s) => s.versions));
   const selectedVersion = useArtifactStore((s) => s.selectedVersion);
@@ -83,6 +95,18 @@ export function ArtifactPanel({ onDeleted }: { onDeleted?: () => void } = {}) {
   // store.pendingChanges，pending 集不变时数组相等、返回同一引用，循环消除（D-D3-10，match
   // DispatchPanel/ProjectSwitcher/AgentManager 派生 selector 先例）。
   const pendingBlocks = useArtifactStore(useShallow(selectPendingBlocks));
+  // 内联段就地 ✓/✗ 需 blockId→changeId（T3）。订阅完整 pendingChanges（useShallow：元素是稳定的
+  // PendingChange 引用，pending 集不变时数组相等、返回同一引用，安全；D-D3-10）。
+  // ⚠️ 不建返回 {block,changeId} 包装数组的 selector（每次新建包装对象→useShallow 逐元素 Object.is
+  // 恒不等→无限重渲染），改用下方 useMemo 就地从稳定的 pendingChanges 构造 Map。
+  const pendingChanges = useArtifactStore(useShallow((s) => s.pendingChanges));
+  const changeIdByBlock = useMemo(
+    () => new Map<string, string>(pendingChanges.flatMap((pc) => pc.diffBlocks.map((b) => [b.id, pc.id] as const))),
+    [pendingChanges],
+  );
+  // 内联段就地 ✓/✗ 的共用 resolve（与对话框卡片 T4 共用同一 hook，避免 fetch 漂移）。
+  // artifact 为 null 时传空串占位（内联视图仅在 artifact 存在时渲染，不会真调用）。
+  const resolveBlock = useResolveBlock(artifact?.id ?? "");
 
   const contentRef = useRef<HTMLDivElement>(null);
   // rollback 二次确认（D-D5-5 两步按钮，非原生 confirm）。
@@ -136,6 +160,33 @@ export function ArtifactPanel({ onDeleted }: { onDeleted?: () => void } = {}) {
     if (currentVersion != null) void listVersions();
   }, [currentVersion, listVersions]);
 
+  // A3 跳转消费端「滚动+脉冲」（T3）：focusBlockNonce 变化（点对话框 diff 块）→ 滚到原文对应
+  // data-block-id 段并短暂高亮脉冲。照抄 TocSidebar.jump 的 querySelector+scrollIntoView 范式。
+  // deps 只取 nonce（同一块连点也能重触发）；focusBlockId 用 getState() 读最新值（与 nonce 同 set 更新）。
+  // 锚不到（unaligned / diff 视图 / 历史版）→ querySelector 落空、no-op，不报错。
+  useEffect(() => {
+    if (focusBlockNonce === 0) return;
+    const id = useArtifactStore.getState().focusBlockId;
+    if (!id) return;
+    const el = contentRef.current?.querySelector(`[data-block-id="${CSS.escape(id)}"]`);
+    if (!(el instanceof HTMLElement)) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    // 自包含脉冲：直接写 inline boxShadow/outline 再定时清除（不依赖 globals.css class，scope 干净、
+    // 不触发 saved-pop 的 scale 布局跳变）。
+    const prevShadow = el.style.boxShadow;
+    const prevTransition = el.style.transition;
+    el.style.transition = "box-shadow 0.25s ease";
+    el.style.boxShadow = "0 0 0 3px rgba(234,179,8,0.6)";
+    const timer = window.setTimeout(() => {
+      el.style.boxShadow = prevShadow;
+      // 过渡跑完再还原 transition，避免残留 inline 样式。
+      window.setTimeout(() => {
+        el.style.transition = prevTransition;
+      }, 300);
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [focusBlockNonce]);
+
   // D-D5-4：看历史版（selectedVersion 非 null 且 ≠ 当前版）= 只读快照、无 pending 高亮、无 Diff。
   const viewingHistory =
     selectedVersion != null && artifact != null && selectedVersion !== artifact.currentVersion;
@@ -144,10 +195,11 @@ export function ArtifactPanel({ onDeleted }: { onDeleted?: () => void } = {}) {
 
   const toc = useMemo(() => parseToc(displayContent), [displayContent]);
 
-  // AC④：pending 块数 > INLINE_HL_LIMIT 自动降级为并排 Diff（即使用户没点切换）。
-  // 看历史版时不叠 pending（viewingHistory 直接走只读渲染分支）。
+  // AC④：pending 块数 > 阈值自动降级为并排 Diff（即使用户没点切换）。
+  // 全屏态阈值放宽到 80（D-UI-05），非全屏维持 25；看历史版不叠 pending（走只读分支）。
   const pendingCount = countPendingBlocks(pendingBlocks);
-  const degraded = shouldDegradeToDiff(pendingCount);
+  const effectiveLimit = isFullscreen ? FULLSCREEN_INLINE_HL_LIMIT : INLINE_HL_LIMIT;
+  const degraded = pendingCount > effectiveLimit;
   const effectiveMode: "inline" | "diff" = degraded ? "diff" : viewMode;
 
   // AC⑥：划选 artifact 正文 → 写 editTarget.quoteText（ChatWindow 引用条读取）。
@@ -294,7 +346,7 @@ export function ArtifactPanel({ onDeleted }: { onDeleted?: () => void } = {}) {
             <button
               onClick={() => setViewMode("inline")}
               disabled={degraded}
-              title={degraded ? `变更超过 ${INLINE_HL_LIMIT} 块，已自动降级为并排 Diff` : "行内高亮视图"}
+              title={degraded ? `变更超过 ${effectiveLimit} 块，已自动降级为并排 Diff` : "行内高亮视图"}
               style={segBtnStyle(effectiveMode === "inline", degraded)}
             >
               行内
@@ -345,13 +397,19 @@ export function ArtifactPanel({ onDeleted }: { onDeleted?: () => void } = {}) {
                     borderBottom: "1px solid var(--border)",
                   }}
                 >
-                  变更块数（{pendingCount}）超过 {INLINE_HL_LIMIT}，已自动切换为并排 Diff。
+                  变更块数（{pendingCount}）超过 {effectiveLimit}，已自动切换为并排 Diff。
                 </div>
               )}
               {effectiveMode === "diff" ? (
                 <DiffBlocksView blocks={pendingBlocks} />
               ) : (
-                <InlineHighlightView content={artifact.content} pendingBlocks={pendingBlocks} />
+                <InlineHighlightView
+                  content={artifact.content}
+                  pendingBlocks={pendingBlocks}
+                  changeIdByBlock={changeIdByBlock}
+                  isFullscreen={isFullscreen}
+                  resolveBlock={resolveBlock}
+                />
               )}
             </>
           )}
@@ -412,11 +470,23 @@ function TocSidebar({ items, contentRef }: { items: TocItem[]; contentRef: React
  * plain 段原样 markdown 渲染、hl 段套 add/del/mod 配色（del 显删除线旧行）。
  * 无法锚定的块（unaligned）顶部提示切到并排 Diff。
  */
-function InlineHighlightView({ content, pendingBlocks }: { content: string; pendingBlocks: DiffBlock[] }) {
+function InlineHighlightView({
+  content,
+  pendingBlocks,
+  changeIdByBlock,
+  isFullscreen,
+  resolveBlock,
+}: {
+  content: string;
+  pendingBlocks: DiffBlock[];
+  changeIdByBlock: Map<string, string>;
+  isFullscreen: boolean;
+  resolveBlock: ResolveBlockFn;
+}) {
   const setViewMode = useArtifactStore((s) => s.setViewMode);
   const { segs, unaligned } = useMemo(
-    () => buildSegments(content, pendingBlocks),
-    [content, pendingBlocks],
+    () => buildSegments(content, pendingBlocks, changeIdByBlock),
+    [content, pendingBlocks, changeIdByBlock],
   );
 
   return (
@@ -445,18 +515,47 @@ function InlineHighlightView({ content, pendingBlocks }: { content: string; pend
         seg.type === "plain" ? (
           seg.text.trim() === "" ? null : <Markdown key={i}>{seg.text}</Markdown>
         ) : (
-          <HlSegment key={i} seg={seg} />
+          <HlSegment key={i} seg={seg} isFullscreen={isFullscreen} resolveBlock={resolveBlock} />
         ),
       )}
     </div>
   );
 }
 
-/** 单个高亮段：套 KIND_STYLE 配色 + 角标；del/mod 的被删旧行以删除线红字展示。 */
-function HlSegment({ seg }: { seg: Extract<Segment, { type: "hl" }> }) {
+/**
+ * 单个高亮段：套 KIND_STYLE 配色 + 角标；del/mod 的被删旧行以删除线红字展示。
+ * 根 div 带 `data-block-id`（A3 跳转主落点，两态都有）。全屏态（isFullscreen）且块仍 pending 且
+ * 有 changeId 时，角标区给出就地 ✓/✗（仅经 resolveBlock → resolve API，红线②不绕过）；已决态显状态标。
+ * 非全屏态不显示 ✓/✗（保持侧栏态现状）。本组件只在「跟随最新版」分支渲染，故无需再判历史版只读。
+ */
+function HlSegment({
+  seg,
+  isFullscreen,
+  resolveBlock,
+}: {
+  seg: Extract<Segment, { type: "hl" }>;
+  isFullscreen: boolean;
+  resolveBlock: ResolveBlockFn;
+}) {
   const s = KIND_STYLE[seg.block.kind];
+  const [busy, setBusy] = useState(false);
+  const resolved = seg.block.state !== "pending";
+  // 就地 ✓/✗ 仅全屏态、块 pending、有 changeId（能定位所属 PendingChange）时显示。
+  const canResolveHere = isFullscreen && !resolved && seg.changeId != null;
+
+  const doResolve = async (action: "confirm" | "reject") => {
+    if (busy || seg.changeId == null) return;
+    setBusy(true);
+    try {
+      await resolveBlock(seg.changeId, seg.block.id, action);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div
+      data-block-id={seg.block.id}
       style={{
         position: "relative",
         margin: "2px 0",
@@ -466,20 +565,50 @@ function HlSegment({ seg }: { seg: Extract<Segment, { type: "hl" }> }) {
         borderRadius: 4,
       }}
     >
-      <span
-        style={{
-          display: "inline-block",
-          marginBottom: 2,
-          padding: "1px 6px",
-          borderRadius: 4,
-          fontSize: 10,
-          fontWeight: 600,
-          color: "#fff",
-          background: s.tag,
-        }}
-      >
-        {seg.block.tag ?? s.tagText}
-      </span>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+        <span
+          style={{
+            display: "inline-block",
+            padding: "1px 6px",
+            borderRadius: 4,
+            fontSize: 10,
+            fontWeight: 600,
+            color: "#fff",
+            background: s.tag,
+          }}
+        >
+          {seg.block.tag ?? s.tagText}
+        </span>
+        {/* 就地 ✓/✗（全屏态、pending、有 changeId）；onClick stopPropagation 防触发外层（A3 跳转等）。 */}
+        {canResolveHere && (
+          <span style={{ display: "flex", gap: 4 }}>
+            <button
+              onClick={(e) => { e.stopPropagation(); void doResolve("confirm"); }}
+              disabled={busy}
+              title="确认此块"
+              aria-label="确认此块"
+              style={iconBtn("#16a34a")}
+            >
+              ✓
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); void doResolve("reject"); }}
+              disabled={busy}
+              title="拒绝此块"
+              aria-label="拒绝此块"
+              style={iconBtn("#dc2626")}
+            >
+              ✗
+            </button>
+          </span>
+        )}
+        {/* 已决态（全屏态下）显状态标，半透明。 */}
+        {isFullscreen && resolved && (
+          <span style={{ color: "var(--text-dim)", fontSize: 10, opacity: 0.7 }}>
+            {seg.block.state === "confirmed" ? "已确认" : "已拒绝"}
+          </span>
+        )}
+      </div>
       {seg.removed.length > 0 && (
         <div style={{ margin: "2px 0" }}>
           {seg.removed.map((ln, i) => (
@@ -519,6 +648,7 @@ function DiffBlocksView({ blocks }: { blocks: DiffBlock[] }) {
         return (
           <div
             key={b.id}
+            data-block-id={b.id}
             style={{
               borderLeft: `3px solid ${s.border}`,
               border: "1px solid var(--border)",
@@ -623,6 +753,22 @@ function solidBtn(color: string): React.CSSProperties {
     color,
     border: `1px solid ${color}`,
     borderRadius: 5,
+  };
+}
+
+/** 就地 ✓/✗ 图标按钮（与 PendingChangeCard.iconBtn 同款，T3 内联段就地确认用）。 */
+function iconBtn(color: string): React.CSSProperties {
+  return {
+    width: 20,
+    height: 18,
+    lineHeight: 1,
+    fontSize: 11,
+    cursor: "pointer",
+    background: "transparent",
+    color,
+    border: `1px solid ${color}`,
+    borderRadius: 4,
+    padding: 0,
   };
 }
 

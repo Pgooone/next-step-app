@@ -8,7 +8,7 @@
 
 - [x] **T1 · A3-性能 propose 后自动刷新**（独立、最先做）—— ✅ 实现+逻辑门禁绿，commit `06e77f8`；真浏览器随 T3/T4 整体验
 - [x] **T2 · 承重墙数据层**（anchor 补 changeId 可选第三参 + store 加 focusBlockId/Nonce/requestBlockFocus）—— ✅ 实现+逻辑门禁绿；**未建 selectPendingBlocksWithChange**（避 D-D3-10：新建 {block,changeId} 包装对象 selector 每次引用不同→useShallow 失效无限重渲染；changeId 映射改由 T3 ArtifactPanel useMemo 从稳定 pendingChanges 就地构造）
-- [ ] **T3 · A2 内联渲染 + 就地确认 + A3 锚点消费**（ArtifactPanel）
+- [x] **T3 · A2 内联渲染 + 就地确认 + A3 锚点消费**（ArtifactPanel）—— ✅ 实现+lead 独立验收（diff+门禁；resolve 运行时契约核实与服务端/卡片三方一致）；新建 `hooks/useResolveBlock.ts`；就地✓✗ 需 T5 全屏标志、跳转需 T4 源端→真浏览器随 T4/T5 整体验
 - [ ] **T4 · A3 源端 + AppShell 接线**（PendingChangeCard + AppShell）
 - [ ] **T5 · A1 全屏 gsap 外壳**（AppShell + globals.css + gsap-setup + package.json）
 
