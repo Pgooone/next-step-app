@@ -22,7 +22,8 @@ npm run lint
 
 ## V1.1 各轮（已完成）
 
-V1.1 已完成多轮：**第一轮·基础迭代**（M1~M8，下表）+ **bug-fix 轮**（5 缺陷）+ **P0**（profile 会话接拦截）+ **第二轮·V2「提议工具」模型**（文档型 Agent 用 `create_artifact`/`propose_edit` 产文档 → 块级确认 → 物化真实 `.md`，取代旧 guard；已真模型 DeepSeek 端到端验证）。详见 `docs/第二轮-V2提议工具/` + `docs/第一轮-基础迭代/新手引导.md`。
+V1.1 已完成多轮：**第一轮·基础迭代**（M1~M8，下表）+ **bug-fix 轮**（5 缺陷）+ **P0**（profile 会话接拦截）+ **第二轮·V2「提议工具」模型**（文档型 Agent 用 `create_artifact`/`propose_edit` 产文档 → 块级确认 → 物化真实 `.md`，取代旧 guard；已真模型 DeepSeek 端到端验证）+ **第三轮·受管文档入口并入 file panel** + **第四轮·删除受管文档** + **第五轮·会话 re-attach 重建保 doc 工具** + **第六轮·Agent 模式（doc/coding），编码型放开 bash 等内置工具**。详见各 `docs/第N轮-*/`（+ `docs/第一轮-基础迭代/新手引导.md`）。
+> 待拍板未开工：**第七轮·通用多 Agent 配置（软件工厂蓝图）**（`docs/QA/开发/通用多Agent配置-sf-mini反推.md`）。
 
 第一轮源自 `docs/第一轮-基础迭代/需求文档.md`，共 **1 bug + 5 功能 + 1 外观**：
 
