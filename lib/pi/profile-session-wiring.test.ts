@@ -408,6 +408,29 @@ describe("startProfileSession 装受限工具集（V2 doc-session）", () => {
     }
   });
 
+  it("方案A coding 模式：mode='coding' + tools 含 bash → 工具集含 bash/write/edit、不套受限集（无 3 提议工具）", async () => {
+    const artifactService = new ArtifactService(registry);
+    const pendingStore = new PendingChangeStore(registry, artifactService);
+    const profile = store.create(projectId, {
+      name: "编码助手",
+      tools: ["read", "bash", "edit", "write"],
+      mode: "coding",
+    });
+    const faux = makeFauxWithResponses([() => fauxAssistantMessage([fauxText("ok")])]);
+    try {
+      const captured = await startDoc(profile, faux, { artifactService, pendingStore });
+      const active = captured.inner!.getActiveToolNames();
+      // coding 模式：profile.tools 直接生效（受限集未套）
+      for (const t of ["bash", "write", "edit", "read"]) expect(active).toContain(t);
+      // 无受限集 → 无 3 提议工具
+      for (const t of ["create_artifact", "propose_edit", "list_artifacts"]) {
+        expect(active).not.toContain(t);
+      }
+    } finally {
+      faux.unregister();
+    }
+  });
+
   it("闭环：agent 调 create_artifact → 落 v1 + 物化真实文件（author=profile.name）", async () => {
     const artifactService = new ArtifactService(registry);
     const pendingStore = new PendingChangeStore(registry, artifactService);
@@ -625,6 +648,28 @@ describe("reattachProfileSession（re-attach 重建受限 doc 工具集，T1/D-B
       expect(sp).toContain("ROLE-X");
       // memory.md 也注入（与初次 startProfileSession 等价，systemPrompt=现算覆盖、非叠加）
       expect(sp).toContain("MEM-Y");
+    } finally {
+      faux.unregister();
+    }
+  });
+
+  it("方案A coding 模式：mode='coding' re-attach 后工具集含 bash、不套受限集", async () => {
+    const artifactService = new ArtifactService(registry);
+    const pendingStore = new PendingChangeStore(registry, artifactService);
+    const profile = store.create(projectId, {
+      name: "编码助手",
+      tools: ["read", "bash", "edit", "write"],
+      mode: "coding",
+    });
+    writeDocs(profile, "我是 ROLE-X 角色", "");
+    const faux = makeFaux();
+    try {
+      const { captured } = await reattach(profile, faux, { artifactService, pendingStore });
+      const active = captured.inner!.getActiveToolNames();
+      expect(active).toContain("bash");
+      for (const t of ["create_artifact", "propose_edit", "list_artifacts"]) {
+        expect(active).not.toContain(t);
+      }
     } finally {
       faux.unregister();
     }

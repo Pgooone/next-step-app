@@ -24,6 +24,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       skills?: unknown;
       tools?: unknown;
       thinkingLevel?: unknown;
+      mode?: unknown;
     };
     const input = {
       name: typeof body.name === "string" ? body.name : "",
@@ -34,6 +35,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       ...(typeof body.thinkingLevel === "string"
         ? { thinkingLevel: body.thinkingLevel as "off" | "low" | "medium" | "high" }
         : {}),
+      ...(typeof body.mode === "string" ? { mode: body.mode as "doc" | "coding" } : {}),
     };
     const profile = new AgentProfileStore().create(id, input);
     return NextResponse.json(profile, { status: 201 });

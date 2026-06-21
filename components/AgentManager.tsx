@@ -41,6 +41,7 @@ type FormState = {
   skills: string[];
   tools: string[];
   thinkingLevel: "off" | "low" | "medium" | "high";
+  mode: "doc" | "coding";
 };
 
 const EMPTY_FORM: FormState = {
@@ -50,6 +51,7 @@ const EMPTY_FORM: FormState = {
   skills: [],
   tools: [],
   thinkingLevel: "off",
+  mode: "doc",
 };
 
 function fromProfile(p: AgentProfile): FormState {
@@ -60,6 +62,7 @@ function fromProfile(p: AgentProfile): FormState {
     skills: p.skills,
     tools: p.tools,
     thinkingLevel: p.thinkingLevel,
+    mode: p.mode ?? "doc",
   };
 }
 
@@ -170,6 +173,7 @@ export function AgentManager({ projectId, projectRoot, onClose, onSessionStarted
         skills: form.skills,
         tools: form.tools,
         thinkingLevel: form.thinkingLevel,
+        mode: form.mode,
       });
       backToList();
       toast.success(`已创建 Agent「${name}」`);
@@ -198,6 +202,7 @@ export function AgentManager({ projectId, projectRoot, onClose, onSessionStarted
         skills: form.skills,
         tools: form.tools,
         thinkingLevel: form.thinkingLevel,
+        mode: form.mode,
       });
       backToList();
       toast.success(`已保存「${name}」配置`);
@@ -981,18 +986,81 @@ function AgentFields({
         )}
       </div>
 
-      {/* tools（内置编码工具固定集勾选） */}
+      {/* mode（文档型 / 编码型，方案A）：决定起会话工具集 */}
       <div>
-        <label style={labelStyle}>工具（内置编码工具）</label>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        <label style={labelStyle}>模式</label>
+        <div style={{ display: "flex", gap: 6 }}>
+          {(
+            [
+              { value: "doc", label: "文档型" },
+              { value: "coding", label: "编码型" },
+            ] as const
+          ).map((opt) => {
+            const on = form.mode === opt.value;
+            return (
+              <button
+                key={opt.value}
+                data-testid="agent-form-mode"
+                data-mode={opt.value}
+                data-selected={on}
+                onClick={() => setForm((f) => ({ ...f, mode: opt.value }))}
+                style={{
+                  flex: 1,
+                  padding: "6px 0",
+                  borderRadius: 6,
+                  border: on ? "1px solid var(--accent)" : "1px solid var(--border)",
+                  background: on ? "rgba(37,99,235,0.10)" : "var(--bg)",
+                  color: on ? "var(--accent)" : "var(--text-muted)",
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        <div
+          style={{
+            fontSize: 11,
+            lineHeight: 1.5,
+            marginTop: 4,
+            color: form.mode === "coding" ? "#dc2626" : "var(--text-dim)",
+          }}
+        >
+          {form.mode === "coding"
+            ? "编码型：使用下方勾选的内置工具（含 bash/write/edit），可直接读写磁盘、执行命令，不经提议确认。"
+            : "文档型：使用受限工具集（read/grep/find/ls + 提议工具），改受管文档须经按块确认；不支持 bash/write/edit。"}
+        </div>
+      </div>
+
+      {/* tools（内置编码工具固定集勾选）——仅 coding 模式生效；doc 模式置灰防呆 */}
+      <div>
+        <label style={labelStyle}>
+          工具（内置编码工具）
+          {form.mode === "doc" && (
+            <span style={{ fontWeight: 400, color: "var(--text-dim)" }}> · 文档型不使用</span>
+          )}
+        </label>
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 6,
+            opacity: form.mode === "doc" ? 0.45 : 1,
+          }}
+        >
           {CODING_TOOL_NAMES.map((t) => {
             const on = form.tools.includes(t);
+            const disabled = form.mode === "doc";
             return (
               <button
                 key={t}
                 data-testid="agent-form-tool"
                 data-tool-name={t}
                 data-selected={on}
+                data-disabled={disabled}
+                disabled={disabled}
                 onClick={() => setForm((f) => ({ ...f, tools: toggleTool(f.tools, t) }))}
                 style={{
                   padding: "4px 10px",
@@ -1002,7 +1070,7 @@ function AgentFields({
                   color: on ? "var(--accent)" : "var(--text-muted)",
                   fontSize: 11,
                   fontFamily: "var(--font-mono)",
-                  cursor: "pointer",
+                  cursor: disabled ? "not-allowed" : "pointer",
                 }}
               >
                 {t}

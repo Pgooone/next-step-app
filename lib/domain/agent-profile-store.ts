@@ -17,6 +17,17 @@ export type ThinkingLevel = "off" | "low" | "medium" | "high";
 const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "low", "medium", "high"];
 
 /**
+ * Agent 工作模式（方案A）：
+ * - `doc`（默认）：文档型——起会话套受限工具集（只读内置 + 提议工具，无 write/edit/bash），
+ *   改受管文档只能经 propose_edit → PendingChange → 按块确认（V2 红线）。
+ * - `coding`：编码型——起会话用档案 `tools`（可含 bash/write/edit），可直接读写盘/执行命令，
+ *   等价 dispatch worker / 主对话既有的"带 bash 会话"，不套受限集（不属"文档会话"语义、不破红线）。
+ */
+export type AgentMode = "doc" | "coding";
+
+const AGENT_MODES: readonly AgentMode[] = ["doc", "coding"];
+
+/**
  * 一个 Agent 档案 = 一份可派发的角色配置。权威类型见 docs/03:13-24。
  * agentMdPath / memoryPath 为相对 projectRoot 的路径（D-20），指向三件套中的两件。
  */
@@ -29,6 +40,7 @@ export type AgentProfile = {
   skills: string[];
   tools: string[];
   thinkingLevel: ThinkingLevel;
+  mode: AgentMode; // doc=文档型(受限工具集) / coding=编码型(含 bash/write/edit)，默认 doc
   agentMdPath: string; // 相对 projectRoot，如 .pi/agents/<id>/agent.md
   memoryPath: string; // 相对 projectRoot，如 .pi/agents/<id>/memory.md
 };
@@ -52,6 +64,7 @@ type AgentProfileInput = {
   skills?: string[];
   tools?: string[];
   thinkingLevel?: ThinkingLevel;
+  mode?: AgentMode;
 };
 
 /**
@@ -106,6 +119,11 @@ export class AgentProfileStore {
       throw new AgentProfileError("INVALID", `非法 thinkingLevel: ${thinkingLevel}`);
     }
 
+    const mode = input.mode ?? "doc";
+    if (!AGENT_MODES.includes(mode)) {
+      throw new AgentProfileError("INVALID", `非法 mode: ${mode}`);
+    }
+
     if (this.list(projectId).some((a) => a.name === name)) {
       throw new AgentProfileError("INVALID", `Agent 重名: ${name}`);
     }
@@ -120,6 +138,7 @@ export class AgentProfileStore {
       skills: input.skills ?? [],
       tools: input.tools ?? [],
       thinkingLevel,
+      mode,
       agentMdPath: join(".pi", "agents", id, "agent.md"),
       memoryPath: join(".pi", "agents", id, "memory.md"),
     };
@@ -156,6 +175,12 @@ export class AgentProfileStore {
       }
       next.thinkingLevel = patch.thinkingLevel;
     }
+    if (patch.mode !== undefined) {
+      if (!AGENT_MODES.includes(patch.mode)) {
+        throw new AgentProfileError("INVALID", `非法 mode: ${patch.mode}`);
+      }
+      next.mode = patch.mode;
+    }
 
     const agentDir = join(this.agentsDir(projectId), agentId);
     this.atomicWrite(join(agentDir, "agent.json"), `${JSON.stringify(next, null, 2)}\n`);
@@ -179,11 +204,15 @@ export class AgentProfileStore {
 
   private readProfile(jsonPath: string): AgentProfile {
     const raw = readFileSync(jsonPath, "utf-8");
+    let profile: AgentProfile;
     try {
-      return JSON.parse(raw) as AgentProfile;
+      profile = JSON.parse(raw) as AgentProfile;
     } catch {
       throw new AgentProfileError("INVALID", `agent.json 解析失败: ${jsonPath}`);
     }
+    // 向后兼容（方案A）：旧档案无 mode 字段 → 视为 doc（保持既有「受限文档会话」行为）。
+    if (profile.mode !== "coding") profile.mode = "doc";
+    return profile;
   }
 
   /** 「临时文件 + rename」原子落盘（仿 project-registry.ts writeAll）。 */

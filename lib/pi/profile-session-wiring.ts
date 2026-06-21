@@ -136,20 +136,29 @@ export async function startProfileSession(args: {
   // 提议工具不传后端 → 默认其文件后端（buildDocTools 内 new ProjectRegistry() 读默认 ~/.pi/projects.json），
   // 与 resolve/pending 路由指向同一批 .pi 文件，UI 读得到（doc-tools.ts）。
   // sourceActor = profile.name（PendingChangeCard 渲染「变更来自 <name>」，人类可读，非 UUID agentId）。
-  const { options: docOptions } = assembleDocSessionOptions({
-    projectId,
-    sourceActor: profile.name,
-    cwd,
-    ...docDepsOverride, // 生产为 undefined → 提议工具用默认文件后端；测试注入 hermetic service/store
-  });
+  // 方案A（agent mode）：按 profile.mode 决定是否套「文档受限工具集」。
+  //   - mode='doc'（默认/旧档案）：装受限集（read/grep/find/ls + 3 提议工具，无 write/edit/bash），
+  //     改受管文档只能经 propose_edit → PendingChange → 按块确认（V2 红线不变）。
+  //   - mode='coding'：不套受限集 → options.tools(=profile.tools，可含 bash/write/edit) 直接生效，
+  //     等价 dispatch worker / 主对话既有的「带 bash 编码会话」，可直接写盘、不经提议（不属文档会话、不破红线）。
+  //   见 docs/设计决策记录.md（agent mode 方案A）。
+  const docOptions =
+    profile.mode === "coding"
+      ? undefined
+      : assembleDocSessionOptions({
+          projectId,
+          sourceActor: profile.name,
+          cwd,
+          ...docDepsOverride, // 生产为 undefined → 提议工具用默认文件后端；测试注入 hermetic service/store
+        }).options;
   // ⚠️ spread 顺序是受限集生效的唯一支点（D-V2-04 / major4）：options(=assembleProfileSessionOptions)
-  // 含 `tools: profile.tools`，docOptions 也含 `tools`(7 项受限白名单)——两个 tools 键相撞，docOptions
-  // 必须排在 options **之后**覆盖掉 profile.tools，否则 profile.tools 若含 write/edit/bash 会泄漏、
-  // 受限集当场失效。（P0 guard 走 noTools 无 tools 键、顺序无关；本轮不同，故此处顺序不可调。）
+  // 含 `tools: profile.tools`；doc 模式 docOptions 也含 `tools`(7 项受限白名单)——两键相撞，docOptions
+  // 必须排在 options **之后**覆盖掉 profile.tools，否则含 write/edit/bash 会泄漏、受限集失效。
+  // coding 模式 docOptions=undefined（spread 空对象）→ profile.tools 即为最终工具集。
   // createOptionsOverride 仍排末位（测试覆盖 model/auth；不含 tools 键、不影响白名单）。
   const { session: inner } = await createAgentSession({
     ...options,
-    ...docOptions,
+    ...(docOptions ?? {}),
     ...createOptionsOverride,
   });
 
@@ -239,19 +248,24 @@ export async function reattachProfileSession<S = unknown>(args: {
     additionalSkillPaths: additionalSkillPaths ?? extraSkillDirs(projectRoot),
   });
 
-  // 受限工具集（与 startProfileSession 同款）：解构 .options、cwd 必填（major #1，照初版错层会泄漏写盘工具）。
-  const { options: docOptions } = assembleDocSessionOptions({
-    projectId,
-    sourceActor: profile.name,
-    cwd: projectRoot,
-    ...docDepsOverride,
-  });
+  // 受限工具集（与 startProfileSession 同款）：按 profile.mode 分流（方案A）。
+  // mode='coding' → 不套受限集，re-attach 后仍是「带 bash 编码会话」；mode='doc'（默认）→ 受限集。
+  // cwd 必填（major #1，照初版错层会泄漏写盘工具）。
+  const docOptions =
+    profile.mode === "coding"
+      ? undefined
+      : assembleDocSessionOptions({
+          projectId,
+          sourceActor: profile.name,
+          cwd: projectRoot,
+          ...docDepsOverride,
+        }).options;
 
   // spread 顺序 options → docOptions → createOptionsOverride 不可调（D-V2-04/红线②）：
-  // docOptions.tools(7 受限白名单)须覆盖 options.tools(profile.tools)。删冗余 sessionManager: sm（options 已含同一 sm）。
+  // doc 模式 docOptions.tools(7 受限白名单)须覆盖 options.tools(profile.tools)；coding 模式 docOptions=undefined。
   const { session: inner } = await createAgentSession({
     ...options,
-    ...docOptions,
+    ...(docOptions ?? {}),
     ...createOptionsOverride,
   });
 

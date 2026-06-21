@@ -30,6 +30,7 @@ export async function PATCH(
       skills?: unknown;
       tools?: unknown;
       thinkingLevel?: unknown;
+      mode?: unknown;
     };
     const patch: {
       name?: string;
@@ -38,6 +39,7 @@ export async function PATCH(
       skills?: string[];
       tools?: string[];
       thinkingLevel?: "off" | "low" | "medium" | "high";
+      mode?: "doc" | "coding";
     } = {};
     if (typeof body.name === "string") patch.name = body.name;
     if (typeof body.role === "string") patch.role = body.role;
@@ -47,6 +49,7 @@ export async function PATCH(
     if (typeof body.thinkingLevel === "string") {
       patch.thinkingLevel = body.thinkingLevel as "off" | "low" | "medium" | "high";
     }
+    if (typeof body.mode === "string") patch.mode = body.mode as "doc" | "coding";
     return NextResponse.json(new AgentProfileStore().update(id, agentId, patch));
   } catch (error) {
     return domainErrorResponse(error);

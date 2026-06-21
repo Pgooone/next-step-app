@@ -11,6 +11,7 @@ export type AgentProfileInput = {
   skills?: string[];
   tools?: string[];
   thinkingLevel?: "off" | "low" | "medium" | "high";
+  mode?: "doc" | "coding";
 };
 
 /**

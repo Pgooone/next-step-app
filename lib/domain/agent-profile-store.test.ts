@@ -199,4 +199,42 @@ describe("AgentProfileStore", () => {
       expect(after).toContain("新角色 NEW");
     });
   });
+
+  // 方案A：agent mode（doc/coding）字段
+  describe("mode 字段（方案A：doc/coding）", () => {
+    it("create 默认 mode='doc'", () => {
+      const p = store.create(projectId, { name: "d" });
+      expect(p.mode).toBe("doc");
+      expect(store.get(projectId, p.id).mode).toBe("doc");
+    });
+
+    it("create mode='coding' 持久化", () => {
+      const p = store.create(projectId, { name: "c", mode: "coding" });
+      expect(p.mode).toBe("coding");
+      expect(store.get(projectId, p.id).mode).toBe("coding");
+    });
+
+    it("update 改 mode 并持久化", () => {
+      const p = store.create(projectId, { name: "m" });
+      expect(store.update(projectId, p.id, { mode: "coding" }).mode).toBe("coding");
+      expect(store.get(projectId, p.id).mode).toBe("coding");
+    });
+
+    it("非法 mode 抛 INVALID（create 与 update）", () => {
+      // @ts-expect-error 故意传非法 mode
+      expectCode(() => store.create(projectId, { name: "x", mode: "bogus" }), "INVALID");
+      const p = store.create(projectId, { name: "y" });
+      // @ts-expect-error 故意传非法 mode
+      expectCode(() => store.update(projectId, p.id, { mode: "bogus" }), "INVALID");
+    });
+
+    it("向后兼容：旧 agent.json 无 mode 字段 → 读出为 'doc'", () => {
+      const p = store.create(projectId, { name: "legacy" });
+      const jsonPath = join(dir, ".pi", "agents", p.id, "agent.json");
+      const raw = JSON.parse(readFileSync(jsonPath, "utf-8")) as Record<string, unknown>;
+      delete raw.mode;
+      writeFileSync(jsonPath, JSON.stringify(raw, null, 2), "utf-8");
+      expect(store.get(projectId, p.id).mode).toBe("doc");
+    });
+  });
 });
