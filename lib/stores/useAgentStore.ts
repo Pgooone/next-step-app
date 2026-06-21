@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import type { AgentProfile } from "@/lib/domain/agent-profile-store";
+import { CODING_TOOL_NAMES } from "../pi/coding-tools";
 
 /** create / update 提交给后端的白名单字段（与 AgentProfileInput 对齐）。 */
 export type AgentProfileInput = {
@@ -15,18 +16,10 @@ export type AgentProfileInput = {
 };
 
 /**
- * profile 可选的内置编码工具固定集（D-30，源 rpc-manager.ts:299 / PRESET_FULL）。
- * MCP / 技能附加工具属会话级、配置期不可知，故只此固定集供勾选。
+ * profile 可选的内置编码工具固定集（D-30）。真相源在 `lib/pi/coding-tools.ts`
+ * （中性模块，client/server 共用、避免与 wiring 兜底漂移）；此处 re-export 保持既有引用不变。
  */
-export const CODING_TOOL_NAMES: readonly string[] = [
-  "read",
-  "bash",
-  "edit",
-  "write",
-  "grep",
-  "find",
-  "ls",
-];
+export { CODING_TOOL_NAMES };
 
 /**
  * 把单 string model 按首个 `/` 拆为 `{provider, modelId}`（modelId 可含 `/`，D-25）。

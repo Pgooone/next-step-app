@@ -37,6 +37,7 @@ import {
 import type { AgentProfile } from "../domain/agent-profile-store";
 import { applyProfileRuntime, assembleProfileSessionOptions } from "./agent-profile-session";
 import { assembleDocSessionOptions } from "./doc-session";
+import { CODING_TOOL_NAMES } from "./coding-tools";
 import type { DocToolDeps } from "./doc-tools";
 import { extraSkillDirs } from "./extra-skill-dirs";
 
@@ -151,14 +152,20 @@ export async function startProfileSession(args: {
           cwd,
           ...docDepsOverride, // 生产为 undefined → 提议工具用默认文件后端；测试注入 hermetic service/store
         }).options;
+  // 编码型 + profile.tools 为空 → 退回全套内置编码工具（含 bash）。否则内核把 `tools: []` 当
+  // 「白名单=零工具」（空数组非 undefined、不回退默认）→ agent 一个工具都没有（D-MODE-05 修复）。
+  // 与主对话「空 toolNames → 默认全集」对齐；doc 模式不受影响（其 tools 由 docOptions 覆盖）。
+  const codingToolsFallback =
+    profile.mode === "coding" && profile.tools.length === 0 ? { tools: [...CODING_TOOL_NAMES] } : {};
   // ⚠️ spread 顺序是受限集生效的唯一支点（D-V2-04 / major4）：options(=assembleProfileSessionOptions)
   // 含 `tools: profile.tools`；doc 模式 docOptions 也含 `tools`(7 项受限白名单)——两键相撞，docOptions
   // 必须排在 options **之后**覆盖掉 profile.tools，否则含 write/edit/bash 会泄漏、受限集失效。
-  // coding 模式 docOptions=undefined（spread 空对象）→ profile.tools 即为最终工具集。
+  // coding 模式 docOptions=undefined → profile.tools 即最终工具集（空时由 codingToolsFallback 兜底全集）。
   // createOptionsOverride 仍排末位（测试覆盖 model/auth；不含 tools 键、不影响白名单）。
   const { session: inner } = await createAgentSession({
     ...options,
     ...(docOptions ?? {}),
+    ...codingToolsFallback,
     ...createOptionsOverride,
   });
 
@@ -261,11 +268,15 @@ export async function reattachProfileSession<S = unknown>(args: {
           ...docDepsOverride,
         }).options;
 
+  // 编码型 + profile.tools 为空 → 退回全套内置编码工具（含 bash），与 startProfileSession 同款（D-MODE-05）。
+  const codingToolsFallback =
+    profile.mode === "coding" && profile.tools.length === 0 ? { tools: [...CODING_TOOL_NAMES] } : {};
   // spread 顺序 options → docOptions → createOptionsOverride 不可调（D-V2-04/红线②）：
-  // doc 模式 docOptions.tools(7 受限白名单)须覆盖 options.tools(profile.tools)；coding 模式 docOptions=undefined。
+  // doc 模式 docOptions.tools(7 受限白名单)须覆盖 options.tools(profile.tools)；coding 模式 docOptions=undefined（空 tools 由 fallback 兜底）。
   const { session: inner } = await createAgentSession({
     ...options,
     ...(docOptions ?? {}),
+    ...codingToolsFallback,
     ...createOptionsOverride,
   });
 

@@ -1003,7 +1003,17 @@ function AgentFields({
                 data-testid="agent-form-mode"
                 data-mode={opt.value}
                 data-selected={on}
-                onClick={() => setForm((f) => ({ ...f, mode: opt.value }))}
+                onClick={() =>
+                  setForm((f) => ({
+                    ...f,
+                    mode: opt.value,
+                    // 切到编码型且未勾任何工具时默认全选内置编码工具（让用户看得见、避免零工具 D-MODE-05）
+                    tools:
+                      opt.value === "coding" && f.tools.length === 0
+                        ? [...CODING_TOOL_NAMES]
+                        : f.tools,
+                  }))
+                }
                 style={{
                   flex: 1,
                   padding: "6px 0",

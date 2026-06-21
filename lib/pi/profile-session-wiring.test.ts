@@ -431,6 +431,24 @@ describe("startProfileSession 装受限工具集（V2 doc-session）", () => {
     }
   });
 
+  it("方案A coding 模式 + 空 tools → 退回全套编码工具（含 bash）、非零工具（D-MODE-05 修复）", async () => {
+    const artifactService = new ArtifactService(registry);
+    const pendingStore = new PendingChangeStore(registry, artifactService);
+    // 编码型但一个工具都没勾（profile.tools=[]）——修复前内核把空数组当零工具 → agent 无工具。
+    const profile = store.create(projectId, { name: "编码空", tools: [], mode: "coding" });
+    const faux = makeFauxWithResponses([() => fauxAssistantMessage([fauxText("ok")])]);
+    try {
+      const captured = await startDoc(profile, faux, { artifactService, pendingStore });
+      const active = captured.inner!.getActiveToolNames();
+      expect(active.length).toBeGreaterThan(0); // 非零工具（修复前为 0）
+      for (const t of ["read", "bash", "edit", "write"]) expect(active).toContain(t);
+      // coding 不套受限集 → 无 3 提议工具
+      expect(active).not.toContain("propose_edit");
+    } finally {
+      faux.unregister();
+    }
+  });
+
   it("闭环：agent 调 create_artifact → 落 v1 + 物化真实文件（author=profile.name）", async () => {
     const artifactService = new ArtifactService(registry);
     const pendingStore = new PendingChangeStore(registry, artifactService);
