@@ -76,6 +76,18 @@ export function getOwner(cwd: string, sid: string): string | null {
   return readMap(cwd).bySession[sid] ?? null;
 }
 
+/**
+ * 反查某 agent 名下**全部** profile 会话 id（bySession 是 sid→agentId 单向映射，setOwner 只增不删旧项，
+ * 故一个 agent 可有多条会话——如先起会话再 @转交复用同档案）。
+ * 只命中 bySession（profile 会话）——主对话存 mainSessionId 不在此、dispatch worker 不写 bySession，零误伤。
+ * 用于「改 mode 后逐出该 agent 存活会话」（方案B，见 [[evictAgentSessions]]）。
+ */
+export function sessionsForAgent(cwd: string, agentId: string): string[] {
+  return Object.entries(readMap(cwd).bySession)
+    .filter(([, a]) => a === agentId)
+    .map(([sid]) => sid);
+}
+
 /** 标记某会话归属某 agent（原子落盘）。 */
 export function setOwner(cwd: string, sid: string, agentId: string): SessionMap {
   const map = readMap(cwd);

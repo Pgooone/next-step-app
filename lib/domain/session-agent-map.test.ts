@@ -8,6 +8,7 @@ import {
   pruneMissing,
   readMap,
   removeOwner,
+  sessionsForAgent,
   setMain,
   setOwner,
   type SessionMap,
@@ -85,6 +86,30 @@ describe("session-agent-map · 增删 owner / main", () => {
     setMain(cwd, "main-1");
     setMain(cwd, null);
     expect(getMain(cwd)).toBeNull();
+  });
+});
+
+describe("session-agent-map · sessionsForAgent 反查（方案B 逐出用）", () => {
+  it("找全某 agent 名下全部会话（一 agent 多会话）", () => {
+    setOwner(cwd, "s1", "agent-A");
+    setOwner(cwd, "s2", "agent-A");
+    setOwner(cwd, "s3", "agent-B");
+    expect(sessionsForAgent(cwd, "agent-A").sort()).toEqual(["s1", "s2"]);
+    expect(sessionsForAgent(cwd, "agent-B")).toEqual(["s3"]);
+  });
+
+  it("不含主对话（mainSessionId 不在 bySession，零误伤）", () => {
+    setMain(cwd, "main-1");
+    setOwner(cwd, "s1", "agent-A");
+    expect(sessionsForAgent(cwd, "agent-A")).toEqual(["s1"]);
+    // 即便查的 id 恰等于 main id 也不会误命中（main 不进 bySession）
+    expect(sessionsForAgent(cwd, "main-1")).toEqual([]);
+  });
+
+  it("无该 agent / 空映射 → 返回空数组", () => {
+    expect(sessionsForAgent(cwd, "ghost")).toEqual([]);
+    setOwner(cwd, "s1", "agent-A");
+    expect(sessionsForAgent(cwd, "other")).toEqual([]);
   });
 });
 
