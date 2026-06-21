@@ -22,6 +22,11 @@ export type Segment =
       text: string;
       /** 被删除的旧行（del 块 = 自身 lines；mod 块 = oldLines；add 块 = []）。 */
       removed: string[];
+      /**
+       * 该块所属 PendingChange 的 id（供 T3 内联段就地 ✓/✗ 调 resolve）；
+       * 由 buildSegments 的可选入参 changeIdByBlock 注入，未传时 undefined。
+       */
+      changeId?: string;
     };
 
 /** 在 hay 中从 from 起查找与 needle 完全相等的连续子序列起点；找不到返回 -1。 */
@@ -39,10 +44,15 @@ export function findSubsequence(hay: string[], needle: string[], from: number): 
 /**
  * 把当前版本正文 + pending 块切成有序的渲染段。
  * 返回 segs（按正文顺序）与 unaligned（无法在正文定位的块，调用方据此提示切并排 Diff）。
+ *
+ * @param changeIdByBlock 可选 blockId → 所属 changeId 映射；命中时把 changeId 注入对应 hl 段。
+ *   纯增量、向后兼容：旧的 2 参调用照常工作（changeId 为 undefined）。调用方（T3 ArtifactPanel）
+ *   从稳定的 pendingChanges 用 useMemo 就地构造此 Map，避免 D-D3-10 无限重渲染。
  */
 export function buildSegments(
   content: string,
   pendingBlocks: DiffBlock[],
+  changeIdByBlock?: Map<string, string>,
 ): { segs: Segment[]; unaligned: DiffBlock[] } {
   const docLines = content.split("\n");
   const owner = new Array<DiffBlock | null>(docLines.length).fill(null);
@@ -73,7 +83,7 @@ export function buildSegments(
   const segs: Segment[] = [];
   const pushDelAt = (idx: number) => {
     for (const b of delAt[idx] ?? []) {
-      segs.push({ type: "hl", block: b, text: "", removed: b.lines });
+      segs.push({ type: "hl", block: b, text: "", removed: b.lines, changeId: changeIdByBlock?.get(b.id) });
     }
   };
 
@@ -88,7 +98,7 @@ export function buildSegments(
       segs.push({ type: "plain", text });
     } else {
       const removed = o.kind === "mod" ? (o.oldLines ?? []) : [];
-      segs.push({ type: "hl", block: o, text, removed });
+      segs.push({ type: "hl", block: o, text, removed, changeId: changeIdByBlock?.get(o.id) });
     }
     i = j;
   }

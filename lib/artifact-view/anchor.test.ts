@@ -97,4 +97,17 @@ describe("buildSegments", () => {
     // 两个 DUP 分别归属 b1、b2（游标前移避免都落到第一个 DUP）
     expect(hlOwners).toEqual([b1, b2]);
   });
+
+  it("changeIdByBlock：命中块的 hl 段带 changeId；不传时为 undefined（T2 承重墙）", () => {
+    const content = "a\nNEW\nb";
+    const b = block("add", ["NEW"]);
+    // 传入映射 → hl 段携带 changeId
+    const withMap = buildSegments(content, [b], new Map([[b.id, "chg-1"]]));
+    const hl = withMap.segs.find((s) => s.type === "hl");
+    expect(hl && hl.type === "hl" && hl.changeId).toBe("chg-1");
+    // 不传第三参 → 向后兼容，changeId 为 undefined
+    const noMap = buildSegments(content, [b]);
+    const hl2 = noMap.segs.find((s) => s.type === "hl");
+    expect(hl2 && hl2.type === "hl" && hl2.changeId).toBeUndefined();
+  });
 });

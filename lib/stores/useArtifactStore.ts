@@ -52,6 +52,16 @@ interface ArtifactState {
    * 故经此信号解耦：卡片只发信号、AppShell 只消费，nonce 单调无需清理）。
    */
   diffFocusNonce: number;
+  /**
+   * 「点对话框 diff 块跳转到原文」的目标块 id（T2/A3）。配合 focusBlockNonce 解耦：
+   * 卡片只发信号、ArtifactPanel 据此 scrollIntoView 到对应 data-block-id 段。无打开/未跳转为 null。
+   */
+  focusBlockId: string | null;
+  /**
+   * 跳转信号单调递增计数（T2/A3）：requestBlockFocus 每次 +1。复刻 diffFocusNonce 解耦范式，
+   * 同一块连点也能重新触发；标量字段、不返回新数组，订阅侧无 D-D3-10 useShallow 风险。
+   */
+  focusBlockNonce: number;
 
   // ---- D5 版本管理（§5.6）----
   /** 当前 artifact 的版本元数据列表（含 content，按 version 升序）；未拉取/未打开为空数组。 */
@@ -82,6 +92,11 @@ interface ArtifactState {
   setEditTarget: (target: EditTarget | null) => void;
   /** 请求聚焦并排 Diff（D 键）：切 viewMode='diff' 并 +1 diffFocusNonce 触发 AppShell 展开面板。 */
   requestDiffFocus: () => void;
+  /**
+   * 请求跳转到原文对应块（A3，点对话框 diff 块）：切 viewMode='inline'（跳转落点是行内高亮段）、
+   * 写 focusBlockId、+1 focusBlockNonce。复刻 requestDiffFocus 范式，ArtifactPanel/AppShell 各自消费。
+   */
+  requestBlockFocus: (blockId: string) => void;
 
   /** 拉当前 artifact 的版本列表（GET .../versions）。无打开的 artifact 时为空操作。 */
   listVersions: () => Promise<void>;
@@ -113,6 +128,8 @@ export const useArtifactStore = create<ArtifactState>((set, get) => ({
   error: null,
   editTarget: null,
   diffFocusNonce: 0,
+  focusBlockId: null,
+  focusBlockNonce: 0,
   versions: [],
   selectedVersion: null,
   historyContent: null,
@@ -185,6 +202,9 @@ export const useArtifactStore = create<ArtifactState>((set, get) => ({
   setEditTarget: (target) => set({ editTarget: target }),
 
   requestDiffFocus: () => set((s) => ({ viewMode: "diff", diffFocusNonce: s.diffFocusNonce + 1 })),
+
+  requestBlockFocus: (blockId) =>
+    set((s) => ({ viewMode: "inline", focusBlockId: blockId, focusBlockNonce: s.focusBlockNonce + 1 })),
 
   listVersions: async () => {
     const artifactId = get().selectedArtifactId;
