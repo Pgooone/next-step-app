@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SF-Mini 重构原型 · 导航</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { background: radial-gradient(1100px 600px at 80% -10%, rgba(56,189,248,.12), transparent 60%), radial-gradient(900px 500px at -10% 110%, rgba(139,92,246,.12), transparent 60%), #070b16; }
+  .glass { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); backdrop-filter: blur(8px); }
+</style>
+</head>
+<body class="text-slate-200 min-h-screen">
+<div class="max-w-5xl mx-auto px-6 py-10">
+
+  <!-- 头部 -->
+  <div class="flex items-center gap-3 mb-2">
+    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 to-violet-500 grid place-items-center text-[#070b16] font-black">SF</div>
+    <div>
+      <h1 class="text-xl font-black">多 Agent 软件工厂 · 重构原型</h1>
+      <p class="text-sm text-slate-500">确定性流水线引擎 → 真正的多 Agent 协作软件工厂</p>
+    </div>
+  </div>
+
+  <div class="glass rounded-xl p-4 my-6 text-sm text-slate-400 leading-relaxed">
+    这是一套<span class="text-slate-200 font-medium">纯静态 mock 原型</span>，用来在写后端之前快速验证「多 Agent 协作」的目标体验。
+    场景设定为一个正在跑的项目 <span class="text-cyan-300">智能客服系统重构 v2</span>，当前推进到<span class="text-cyan-300">阶段 3 · 设计</span>。
+    全部假数据、可点击、不接后端。每个界面区块都标注了对应的重构文档出处（<span class="font-mono text-xs text-slate-500">子页X §Y</span>）。
+    <div class="mt-2 text-xs text-slate-500">📄 完整「文档每一项 ↔ 原型组件」对照表见同目录 <span class="font-mono">原型规划-文档映射.md</span></div>
+  </div>
+
+  <!-- 里程碑 -->
+  <h2 class="text-xs uppercase tracking-wider text-slate-500 mb-3">原型路线图</h2>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+
+    <a href="board.html" class="glass rounded-xl p-5 hover:bg-white/[.07] hover:border-cyan-400/40 transition group relative overflow-hidden">
+      <div class="absolute top-3 right-3 text-[10px] px-2 py-0.5 rounded-full bg-emerald-400/15 text-emerald-300 border border-emerald-400/30">已交付 · 可点击</div>
+      <div class="text-2xl mb-2">🗂️</div>
+      <div class="text-base font-bold group-hover:text-cyan-200">M1 · 多 Agent 协作看板</div>
+      <div class="text-sm text-slate-500 mt-1">五区栅格：全局控制条 / Agent 泳道 / 任务图+工件 diff / 事件流·黑板·Critic / HITL 待审。点 Agent 卡片可钻入观测台。</div>
+      <div class="text-xs text-cyan-400 mt-3 font-medium">进入看板 →</div>
+    </a>
+
+    <div class="glass rounded-xl p-5 opacity-70">
+      <div class="text-[10px] px-2 py-0.5 rounded-full bg-slate-400/10 text-slate-400 border border-slate-400/20 inline-block mb-2">规划中</div>
+      <div class="text-2xl mb-2">🔬</div>
+      <div class="text-base font-bold">M2 · 单 Agent 观测台（整页）</div>
+      <div class="text-sm text-slate-500 mt-1">AgentRun 时间线：输入工件→提示词快照→工具调用→产出+diff→Critic 分；可暂停/改输入/重跑/分叉。现已在 M1 抽屉里示例「系统架构师」。</div>
+    </div>
+
+    <div class="glass rounded-xl p-5 opacity-70">
+      <div class="text-[10px] px-2 py-0.5 rounded-full bg-slate-400/10 text-slate-400 border border-slate-400/20 inline-block mb-2">规划中</div>
+      <div class="text-2xl mb-2">🏭</div>
+      <div class="text-base font-bold">M3 · 13 阶段全景主线</div>
+      <div class="text-sm text-slate-500 mt-1">一条端到端 demo：资料→需求→设计→开发→…→反馈，点每个阶段看负责 Agent 与产出工件，强调「13 阶段全打通」。</div>
+    </div>
+
+    <div class="glass rounded-xl p-5 opacity-70">
+      <div class="text-[10px] px-2 py-0.5 rounded-full bg-slate-400/10 text-slate-400 border border-slate-400/20 inline-block mb-2">规划中</div>
+      <div class="text-2xl mb-2">🧬</div>
+      <div class="text-base font-bold">M4 / M5 · 专题页与工件全链路</div>
+      <div class="text-sm text-slate-500 mt-1">TaskGraph DAG 专页 / 黑板 A2A 专页 / 能力进化台；资料双标签解析、需求三件套 ORD→CRD→PRD、RTM 矩阵、diff 全链路。</div>
+    </div>
+  </div>
+
+  <!-- 目标系统一览 -->
+  <h2 class="text-xs uppercase tracking-wider text-slate-500 mt-8 mb-3">目标系统一览 · 13 阶段主路径</h2>
+  <div class="glass rounded-xl p-4 flex flex-wrap gap-1.5" id="stages"></div>
+
+  <h2 class="text-xs uppercase tracking-wider text-slate-500 mt-6 mb-3">Agent 团队（角色化专家）</h2>
+  <div class="glass rounded-xl p-4 flex flex-wrap gap-2" id="roles"></div>
+
+  <p class="text-xs text-slate-600 mt-8">纯静态原型 · Tailwind CDN · mock 数据 · 不接后端 · 验证用途</p>
+</div>
+
+<script>
+  const STAGES=[['📥','资料',1],['📝','需求',1],['🎨','设计',2],['💻','开发',0],['🧐','审查',0],['🧪','单测',0],['🔗','集测',0],['🚀','部署',0],['🖥','系测',0],['🎯','收敛',0],['📦','发布',0],['🛠','运维',0],['💬','反馈',0]];
+  document.getElementById('stages').innerHTML=STAGES.map(([e,n,s],i)=>{
+    const c=s===2?'text-cyan-200 border-cyan-400/50 bg-cyan-400/10':s===1?'text-emerald-300 border-emerald-400/30 bg-emerald-400/5':'text-slate-600 border-white/5';
+    return `<div class="flex items-center gap-1"><span class="px-2 py-1 rounded-md border ${c} text-[11px] whitespace-nowrap">${i+1} ${e}${n}${s===1?' ✓':s===2?' ●':''}</span>${i<12?'<span class="text-slate-700 text-[10px]">›</span>':''}</div>`;
+  }).join('');
+
+  const ROLES=[['🧭','Planner 总编排'],['🎯','阶段负责人'],['📥','资料分析师'],['📝','需求分析师'],['🧩','产品经理'],['🔗','追溯 RTM'],['🏛','系统架构师'],['🗂','交互设计师'],['🎨','视觉设计师'],['🖼','原型工程师'],['💻','工程师'],['🧐','Critic 评审'],['♻️','能力进化']];
+  document.getElementById('roles').innerHTML=ROLES.map(([e,n])=>`<span class="text-xs glass rounded-lg px-2.5 py-1.5 flex items-center gap-1.5">${e} ${n}</span>`).join('');
+</script>
+</body>
+</html>

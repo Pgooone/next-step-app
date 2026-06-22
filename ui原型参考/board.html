@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SF-Mini · 多 Agent 协作看板（原型）</title>
+<!-- 纯静态原型：仅依赖 Tailwind CDN（需联网加载一次）。数据全为 mock，不接后端。 -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          ink: '#070b16', panel: '#0d1320', edge: 'rgba(255,255,255,0.08)',
+        },
+        fontFamily: { mono: ['ui-monospace','SFMono-Regular','Menlo','monospace'] },
+      }
+    }
+  }
+</script>
+<style>
+  body { background: radial-gradient(1200px 600px at 80% -10%, rgba(56,189,248,.10), transparent 60%), radial-gradient(900px 500px at -10% 110%, rgba(139,92,246,.10), transparent 60%), #070b16; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  .glass { background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.08); backdrop-filter: blur(8px); }
+  .pulse-dot { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.25} }
+  .ev-in { animation: evin .35s ease-out; }
+  @keyframes evin { from{opacity:0; transform:translateY(-6px)} to{opacity:1; transform:none} }
+  .doc-tag { font-size: 10px; letter-spacing:.02em; }
+  .drawer { transition: transform .28s cubic-bezier(.4,0,.2,1); }
+</style>
+</head>
+<body class="text-slate-200 font-sans min-h-screen overflow-hidden">
+
+<!-- ============ 顶部全局控制条 · 子页F §2 顶部 / 子页C §3 自治度 ============ -->
+<header class="glass border-b border-edge px-4 h-14 flex items-center gap-4 shrink-0">
+  <div class="flex items-center gap-2">
+    <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-400 to-violet-500 grid place-items-center text-ink font-black text-sm">SF</div>
+    <div class="leading-tight">
+      <div class="text-sm font-bold">多 Agent 软件工厂 <span class="text-slate-500 font-normal">· 协作看板</span></div>
+      <div class="text-[11px] text-slate-500">项目：智能客服系统重构 v2</div>
+    </div>
+  </div>
+
+  <!-- 13 阶段进度条 · 总纲§4 / 子页C§2 -->
+  <div class="flex-1 flex items-center gap-1 overflow-x-auto px-2" id="stageBar"></div>
+
+  <!-- 自治度 4 档 · 子页C §3 -->
+  <div class="flex items-center gap-1 glass rounded-lg p-0.5" id="autonomy" title="自治度（逐项目/阶段/Agent 可调） · 子页C §3">
+    <button data-lv="manual" class="aut-btn px-2.5 py-1 rounded-md text-xs">全手动</button>
+    <button data-lv="low"    class="aut-btn px-2.5 py-1 rounded-md text-xs">低</button>
+    <button data-lv="mid"    class="aut-btn px-2.5 py-1 rounded-md text-xs">中</button>
+    <button data-lv="high"   class="aut-btn px-2.5 py-1 rounded-md text-xs">高</button>
+  </div>
+
+  <button id="pauseAll" onclick="togglePauseAll()" class="glass rounded-lg px-3 py-1.5 text-xs font-medium hover:bg-white/10 flex items-center gap-1.5">
+    <span id="pauseIcon">⏸</span><span id="pauseTxt">暂停全部</span>
+  </button>
+
+  <div class="glass rounded-lg px-2.5 py-1.5 text-xs flex items-center gap-1.5" title="当前模型">
+    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>deepseek-v4-pro
+  </div>
+  <button class="relative glass rounded-lg w-8 h-8 grid place-items-center hover:bg-white/10" title="通知中心 · 功能V1§19">
+    🔔<span class="absolute -top-1 -right-1 bg-rose-500 text-[9px] rounded-full w-4 h-4 grid place-items-center">3</span>
+  </button>
+</header>
+
+<!-- ============ 主区：五区栅格 ============ -->
+<main class="grid h-[calc(100vh-3.5rem-2.75rem)]" style="grid-template-columns: 320px 1fr 380px;">
+
+  <!-- ---------- 左：Agent 泳道 · 子页F §2 左 / 子页C §1 角色清单 ---------- -->
+  <section class="border-r border-edge flex flex-col min-h-0">
+    <div class="px-3 py-2 flex items-center justify-between shrink-0">
+      <div class="text-xs font-bold text-slate-300">Agent 泳道</div>
+      <div class="doc-tag text-slate-500 glass px-1.5 py-0.5 rounded">子页F §2 · 子页C §1</div>
+    </div>
+    <div class="flex-1 overflow-y-auto px-2.5 pb-3 space-y-1.5" id="agentLanes"></div>
+  </section>
+
+  <!-- ---------- 中：任务图 DAG + 工件区 ---------- -->
+  <section class="flex flex-col min-h-0 border-r border-edge">
+    <!-- 任务图 · 子页D §3 TaskGraph / 子页A 流水线+评审 -->
+    <div class="shrink-0 border-b border-edge">
+      <div class="px-3 py-2 flex items-center justify-between">
+        <div class="text-xs font-bold text-slate-300">Planner 任务图 <span class="text-slate-500 font-normal">· 阶段 3 设计</span></div>
+        <div class="doc-tag text-slate-500 glass px-1.5 py-0.5 rounded">子页D §3 · 子页A</div>
+      </div>
+      <div class="px-4 pb-4 pt-1 overflow-x-auto">
+        <div class="flex items-center gap-2 min-w-max" id="taskGraph"></div>
+      </div>
+    </div>
+    <!-- 工件区 + diff 逐块确认 · 子页C §5 -->
+    <div class="flex-1 min-h-0 flex flex-col">
+      <div class="px-3 py-2 flex items-center justify-between shrink-0">
+        <div class="text-xs font-bold text-slate-300">当前工件 <span class="text-slate-500 font-normal">· 系统架构设计 v2</span>
+          <span class="ml-1 text-[10px] text-amber-300/80">diff v1→v2</span></div>
+        <div class="doc-tag text-slate-500 glass px-1.5 py-0.5 rounded">子页C §5 · 功能V1 §8/§13</div>
+      </div>
+      <div class="flex-1 overflow-y-auto px-3 pb-4 space-y-2" id="artifact"></div>
+    </div>
+  </section>
+
+  <!-- ---------- 右：事件流 / 黑板 / Critic · 子页F §2 右 ---------- -->
+  <section class="flex flex-col min-h-0">
+    <div class="shrink-0 flex items-center gap-1 px-2.5 pt-2.5">
+      <button data-tab="events"     onclick="switchTab('events')"     class="tab-btn flex-1 text-xs py-1.5 rounded-md">事件流</button>
+      <button data-tab="blackboard" onclick="switchTab('blackboard')" class="tab-btn flex-1 text-xs py-1.5 rounded-md">黑板 A2A</button>
+      <button data-tab="critic"     onclick="switchTab('critic')"     class="tab-btn flex-1 text-xs py-1.5 rounded-md">Critic 评审</button>
+    </div>
+    <div class="px-2.5 pt-1 pb-0.5 flex justify-end"><div class="doc-tag text-slate-500 glass px-1.5 py-0.5 rounded">子页D §5 · P2 · 子页F §2 右</div></div>
+
+    <!-- 事件流 · SSE 七语义事件 + 新增 agentrun.*/critic.review -->
+    <div id="tab-events" class="tab-pane flex-1 overflow-y-auto px-2.5 pb-3 space-y-1 font-mono"></div>
+    <!-- 黑板 A2A · P2 / 子页D §4 -->
+    <div id="tab-blackboard" class="tab-pane hidden flex-1 overflow-y-auto px-2.5 pb-3 space-y-2"></div>
+    <!-- Critic 评审 · P2 / 子页C §1.3 -->
+    <div id="tab-critic" class="tab-pane hidden flex-1 overflow-y-auto px-2.5 pb-3 space-y-3"></div>
+  </section>
+</main>
+
+<!-- ============ 底部：HITL 待审 + 对话输入 · 子页F §2 底 / 功能V1 §13 ============ -->
+<footer class="glass border-t border-edge h-11 px-3 flex items-center gap-3 shrink-0">
+  <div class="text-xs text-slate-400 flex items-center gap-1.5 shrink-0">
+    <span class="w-1.5 h-1.5 rounded-full bg-amber-400 pulse-dot"></span>待审 <span id="hitlCount" class="font-bold text-amber-300">3</span>
+  </div>
+  <div class="flex items-center gap-1.5 overflow-x-auto flex-1" id="hitlChips"></div>
+  <div class="flex items-center gap-1.5 shrink-0">
+    <input class="bg-white/5 border border-edge rounded-lg px-3 py-1.5 text-xs w-72 placeholder:text-slate-600"
+           placeholder="指挥 / 引导 Agent…（可划选工件片段定向编辑 · 功能V1 §8）" />
+    <span class="doc-tag text-slate-500 glass px-1.5 py-0.5 rounded">YNRD 快捷键</span>
+  </div>
+</footer>
+
+<!-- ============ Agent 详情抽屉 · 子页F §3 单 Agent 观测台 ============ -->
+<div id="overlay" onclick="closeDrawer()" class="fixed inset-0 bg-black/50 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity z-40"></div>
+<aside id="drawer" class="drawer fixed top-0 right-0 h-full w-[560px] max-w-[92vw] glass border-l border-edge z-50 translate-x-full flex flex-col">
+  <div id="drawerBody" class="flex-1 overflow-y-auto"></div>
+</aside>
+
+<script>
+/* =================== Mock 数据（全部假数据，纯验证想法） =================== */
+const STAGES = [
+  {k:'material',n:'资料',e:'📥',s:'done'},   {k:'requirement',n:'需求',e:'📝',s:'done'},
+  {k:'design',n:'设计',e:'🎨',s:'active'},   {k:'develop',n:'开发',e:'💻',s:'todo'},
+  {k:'review',n:'审查',e:'🧐',s:'todo'},     {k:'unit-test',n:'单测',e:'🧪',s:'todo'},
+  {k:'integration',n:'集测',e:'🔗',s:'todo'},{k:'deploy',n:'部署',e:'🚀',s:'todo'},
+  {k:'system-test',n:'系测',e:'🖥',s:'todo'},{k:'converge',n:'收敛',e:'🎯',s:'todo'},
+  {k:'release',n:'发布',e:'📦',s:'todo'},    {k:'operate',n:'运维',e:'🛠',s:'todo'},
+  {k:'feedback',n:'反馈',e:'💬',s:'todo'},
+];
+
+const AGENTS = [
+  {id:'planner', e:'🧭', role:'Planner 总编排', group:'编排/规划', stage:'设计', status:'done',     critic:0.95, pending:0, last:'已拆解设计阶段任务图（5 节点）'},
+  {id:'lead',    e:'🎯', role:'设计阶段负责人', group:'编排/规划', stage:'设计', status:'running',  critic:null, pending:1, last:'委派架构师/交互/视觉/原型四专家'},
+  {id:'arch',    e:'🏛', role:'系统架构师',     group:'专家执行', stage:'设计', status:'running',  critic:0.86, pending:1, last:'产出 系统架构设计 v2（+3 diff 块）'},
+  {id:'ixd',     e:'🗂', role:'交互设计师',     group:'专家执行', stage:'设计', status:'waiting-hitl',critic:0.84, pending:2, last:'信息架构 v1 待人审（2 可用性问题）'},
+  {id:'visual',  e:'🎨', role:'视觉设计师',     group:'专家执行', stage:'设计', status:'blocked',  critic:null, pending:0, last:'等待系统架构定稿（被阻塞）'},
+  {id:'proto',   e:'🖼', role:'原型工程师',     group:'专家执行', stage:'设计', status:'idle',     critic:null, pending:0, last:'排队中（默认产 HTML 静态原型）'},
+  {id:'rtm',     e:'🔗', role:'追溯 Agent(RTM)',group:'专家执行', stage:'需求', status:'running',  critic:0.91, pending:0, last:'重算 PRD↔DSG 覆盖率：0.82 ⚠'},
+  {id:'critic',  e:'🧐', role:'Critic 评审',    group:'质量/元', stage:'设计', status:'running',  critic:null, pending:0, last:'评审 信息架构 v1 → 0.84（<0.85）'},
+  {id:'pm',      e:'🧩', role:'产品经理',       group:'专家执行', stage:'需求', status:'done',     critic:0.88, pending:0, last:'PRD 定稿（12 功能 + 6 非功能）'},
+  {id:'reqa',    e:'📝', role:'需求分析师',     group:'专家执行', stage:'需求', status:'done',     critic:0.90, pending:0, last:'ORD→CRD 定稿（8 条客户需求）'},
+  {id:'mat',     e:'📥', role:'资料分析师',     group:'专家执行', stage:'资料', status:'done',     critic:0.93, pending:0, last:'结构化资料 + 五维就绪度 0.91'},
+  {id:'meta',    e:'♻️', role:'能力进化 Agent', group:'质量/元', stage:'—',   status:'idle',     critic:null, pending:0, last:'监听返工信号，待提议技能改进'},
+];
+
+const STATUS = {
+  running:     {t:'运行中', c:'emerald', dot:true},
+  'waiting-hitl':{t:'待人审', c:'amber', dot:true},
+  blocked:     {t:'阻塞',   c:'rose',  dot:false},
+  done:        {t:'完成',   c:'slate', dot:false},
+  idle:        {t:'空闲',   c:'zinc',  dot:false},
+};
+
+const TASKGRAPH = [
+  {n:'系统架构设计', s:'done'},
+  {n:'数据接口设计', s:'running'},
+  {n:'信息架构/线框', s:'waiting-hitl'},
+  {n:'视觉设计规范', s:'blocked'},
+  {n:'原型 UI（HTML）', s:'todo'},
+];
+
+const DIFF = [
+  {op:'add', title:'## 5. 消息队列选型', body:'引入 Redis Streams 承载会话事件，支持断线回放与水平扩展。'},
+  {op:'mod', title:'## 3. 服务拆分（修改）', body:'网关 / 会话 / 知识库 / 工单 四服务 → 拆出独立「路由编排」服务，降低耦合。'},
+  {op:'del', title:'## 7. 待定项（删除）', body:'~~是否自建向量库待定~~ → 已决策复用现有 RTM 索引。'},
+];
+
+let EVENTS = [
+  {t:'agent.handoff', a:'架构师 → 交互设计师', d:'移交 系统架构 v2，请基于服务拆分做信息架构', c:'violet'},
+  {t:'critic.review', a:'Critic', d:'信息架构 v1 评分 0.84 ⚠（门限 0.85，2 问题）', c:'amber'},
+  {t:'hitl.request',  a:'交互设计师', d:'信息架构 v1 待人审（diff 3 块）', c:'amber'},
+  {t:'tool.call',     a:'架构师·artifact_write', d:'系统架构设计 v2 ✓  1.2s · 3.4k tok', c:'cyan'},
+  {t:'task.update',   a:'数据接口设计', d:'进度 60%（4/7 接口已定义）', c:'sky'},
+  {t:'artifact.created',a:'交互设计师', d:'信息架构 v1 已落库', c:'emerald'},
+  {t:'agentrun.start',a:'RTM Agent', d:'重算 PRD↔DSG 覆盖率', c:'slate'},
+  {t:'stage.gate',    a:'门禁', d:'需求 → 设计 阶段门已通过 ✅', c:'emerald'},
+];
+const EVENT_POOL = [
+  {t:'agentrun.delta', a:'架构师', d:'生成「数据接口设计」第 5 节…', c:'cyan'},
+  {t:'tool.call', a:'RTM·rtm_recompute', d:'覆盖率 0.82 → 0.85 ✓  0.4s', c:'cyan'},
+  {t:'message.delta', a:'Critic', d:'…建议为删除类操作补二次确认…', c:'slate'},
+  {t:'critic.review', a:'Critic', d:'信息架构 v2 评分 0.88 ✅ 通过', c:'emerald'},
+  {t:'rework.started', a:'编排', d:'信息架构 第 2 轮返工（max 2）', c:'amber'},
+  {t:'artifact.created', a:'架构师', d:'数据接口设计 v1 已落库', c:'emerald'},
+  {t:'agent.handoff', a:'交互 → 视觉设计师', d:'信息架构定稿，解除视觉阻塞', c:'violet'},
+];
+
+const BLACKBOARD = [
+  {from:'系统架构师', to:'交互设计师', intent:'请基于服务拆分做信息架构', ref:'系统架构 v2', c:'cyan'},
+  {from:'交互设计师', to:'Critic',     intent:'请评审信息架构 v1', ref:'信息架构 v1', c:'sky'},
+  {from:'Critic',     to:'设计负责人', intent:'信息架构有 2 处可用性问题，建议返工', ref:'critic#84', c:'amber'},
+  {from:'RTM Agent',  to:'@全体',      intent:'PRD↔DSG 覆盖率 0.82 < 0.85，缺 2 条上溯边', ref:'rtm/report', c:'rose'},
+  {from:'Planner',    to:'设计负责人', intent:'原型 UI 节点依赖视觉规范，建议并行起草线框', ref:'taskgraph', c:'violet'},
+];
+
+const AGENTRUNS = {
+  arch: {
+    e:'🏛', role:'系统架构师', status:'running', stage:'阶段 3 · 设计', autonomy:'中',
+    persona:'你是资深系统架构师。基于已定稿 PRD（功能 + 非功能）产出系统架构、服务拆分、数据与接口设计；输出 Markdown + 可选 Mermaid，遵循高内聚低耦合，并为每个决策标注上溯的 PRD 编号。',
+    tools:['read_artifact','artifact_write','emit_task_event','stage_gate_check','delegate'],
+    metrics:{dur:'2m14s', tok:'18.2k', rework:1, pass:'50%'},
+    runs:[
+      {id:2, status:'running', title:'Run #2 · 系统架构设计 v2（当前）', score:0.86,
+       input:['PRD-F-001…012','PRD-NFR-001…006','CR-001…008'],
+       prompt:'基于以下定稿 PRD 产出系统架构设计 v2，重点解决会话事件的可扩展性…',
+       calls:[
+         {n:'read_artifact(PRD)', ok:true, meta:'0.3s'},
+         {n:'artifact_write(系统架构 v2)', ok:true, meta:'1.2s · 3.4k tok'},
+         {n:'emit_task_event(60%)', ok:true, meta:'0.1s'},
+       ],
+       out:'系统架构设计 v2（新增消息队列选型 + 服务拆分修订，diff 3 块待确认）'},
+      {id:1, status:'done', title:'Run #1 · 系统架构设计 v1', score:0.79,
+       input:['PRD-F-001…012','CR-001…008'],
+       prompt:'基于 PRD 产出系统架构设计 v1…',
+       calls:[
+         {n:'read_artifact(PRD)', ok:true, meta:'0.3s'},
+         {n:'artifact_write(系统架构 v1)', ok:true, meta:'1.0s · 2.9k tok'},
+       ],
+       out:'系统架构设计 v1（Critic 0.79 < 0.85 → 触发返工）'},
+    ],
+  },
+};
+
+/* =================== 渲染 =================== */
+const COLOR = c => ({emerald:'text-emerald-300 bg-emerald-400/10 border-emerald-400/30',
+  amber:'text-amber-300 bg-amber-400/10 border-amber-400/30', rose:'text-rose-300 bg-rose-400/10 border-rose-400/30',
+  slate:'text-slate-300 bg-slate-400/10 border-slate-400/20', zinc:'text-zinc-400 bg-zinc-400/5 border-zinc-400/20',
+  cyan:'text-cyan-300 bg-cyan-400/10 border-cyan-400/30', sky:'text-sky-300 bg-sky-400/10 border-sky-400/30',
+  violet:'text-violet-300 bg-violet-400/10 border-violet-400/30'}[c] || '');
+
+function renderStages(){
+  document.getElementById('stageBar').innerHTML = STAGES.map((s,i)=>{
+    const on = s.s==='active', done = s.s==='done';
+    const cls = done ? 'text-emerald-300 border-emerald-400/30 bg-emerald-400/5'
+              : on   ? 'text-cyan-200 border-cyan-400/50 bg-cyan-400/10 shadow-[0_0_12px_rgba(56,189,248,.3)]'
+                     : 'text-slate-600 border-white/5';
+    return `<div class="shrink-0 flex items-center gap-1">
+      <div class="flex items-center gap-1 px-2 py-1 rounded-md border ${cls} text-[11px] whitespace-nowrap" title="${s.k}">
+        <span>${s.e}</span><span>${s.n}</span>${done?'<span class="text-emerald-400">✓</span>':on?'<span class="pulse-dot">●</span>':''}
+      </div>${i<STAGES.length-1?'<span class="text-slate-700 text-[10px]">›</span>':''}</div>`;
+  }).join('');
+}
+
+function renderAgents(){
+  const groups = {};
+  AGENTS.forEach(a=>{ (groups[a.group]=groups[a.group]||[]).push(a); });
+  document.getElementById('agentLanes').innerHTML = Object.entries(groups).map(([g,list])=>`
+    <div class="text-[10px] uppercase tracking-wider text-slate-600 px-1 pt-2 pb-0.5">${g}</div>
+    ${list.map(a=>{
+      const st = STATUS[a.status];
+      return `<button onclick="openAgent('${a.id}')" class="w-full text-left glass rounded-lg p-2.5 hover:bg-white/[.07] hover:border-white/20 transition group">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-lg bg-white/5 grid place-items-center text-lg shrink-0">${a.e}</div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1.5">
+              <span class="text-[13px] font-semibold truncate">${a.role}</span>
+            </div>
+            <div class="text-[11px] text-slate-500 truncate">${a.last}</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-1.5 mt-2">
+          <span class="text-[10px] px-1.5 py-0.5 rounded border ${COLOR(st.c)} flex items-center gap-1">
+            ${st.dot?'<span class="w-1 h-1 rounded-full bg-current pulse-dot"></span>':''}${st.t}
+          </span>
+          <span class="text-[10px] text-slate-500">${a.stage}</span>
+          ${a.critic!=null?`<span class="text-[10px] ml-auto ${a.critic>=0.85?'text-emerald-400':'text-amber-400'}">Critic ${a.critic}</span>`:'<span class="ml-auto"></span>'}
+          ${a.pending?`<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-400/15 text-amber-300 border border-amber-400/30">${a.pending} 待审</span>`:''}
+        </div>
+      </button>`;
+    }).join('')}
+  `).join('');
+}
+
+function renderTaskGraph(){
+  const sc = {done:'emerald', running:'cyan', 'waiting-hitl':'amber', blocked:'rose', todo:'zinc'};
+  document.getElementById('taskGraph').innerHTML = TASKGRAPH.map((t,i)=>{
+    const c = COLOR(sc[t.s]);
+    return `<div class="flex items-center gap-2">
+      <div class="px-3 py-2 rounded-lg border ${c} text-[11px] whitespace-nowrap text-center min-w-[88px]">
+        <div class="font-medium">${t.n}</div>
+        <div class="opacity-70 mt-0.5">${STATUS[t.s]?STATUS[t.s].t:'待执行'}</div>
+      </div>${i<TASKGRAPH.length-1?'<span class="text-slate-600">→</span>':''}</div>`;
+  }).join('');
+}
+
+function renderArtifact(){
+  const map = {add:{c:'emerald',sign:'+',t:'新增'}, mod:{c:'amber',sign:'~',t:'修改'}, del:{c:'rose',sign:'−',t:'删除'}};
+  document.getElementById('artifact').innerHTML = DIFF.map((b,i)=>{
+    const m = map[b.op];
+    return `<div id="blk${i}" class="glass rounded-lg border ${COLOR(m.c)} overflow-hidden">
+      <div class="flex items-center gap-2 px-3 py-1.5 border-b border-white/5">
+        <span class="font-mono text-xs">${m.sign}</span>
+        <span class="text-[10px] px-1.5 py-0.5 rounded ${COLOR(m.c)}">${m.t}块</span>
+        <span class="text-xs font-medium truncate">${b.title}</span>
+        <div class="ml-auto flex items-center gap-1" id="blkact${i}">
+          <button onclick="resolveBlock(${i},'ok')" class="w-6 h-6 grid place-items-center rounded hover:bg-emerald-400/20 text-emerald-400" title="接受 (Y)">✓</button>
+          <button onclick="resolveBlock(${i},'no')" class="w-6 h-6 grid place-items-center rounded hover:bg-rose-400/20 text-rose-400" title="拒绝 (N)">✕</button>
+        </div>
+      </div>
+      <div class="px-3 py-2 text-xs text-slate-400 leading-relaxed">${b.body}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderEvents(){
+  document.getElementById('tab-events').innerHTML = EVENTS.map(ev=>`
+    <div class="ev-in flex gap-2 items-start text-[11px] py-1 px-2 rounded hover:bg-white/5">
+      <span class="px-1.5 py-0.5 rounded border ${COLOR(ev.c)} shrink-0 mt-0.5">${ev.t}</span>
+      <div class="min-w-0"><div class="text-slate-300">${ev.a}</div><div class="text-slate-500 truncate">${ev.d}</div></div>
+    </div>`).join('');
+}
+
+function renderBlackboard(){
+  document.getElementById('tab-blackboard').innerHTML = BLACKBOARD.map(m=>`
+    <div class="glass rounded-lg p-2.5">
+      <div class="flex items-center gap-1.5 text-[11px]">
+        <span class="font-medium text-slate-200">${m.from}</span>
+        <span class="text-slate-600">→</span>
+        <span class="font-medium ${m.to.startsWith('@')?'text-violet-300':'text-slate-200'}">${m.to}</span>
+        <span class="ml-auto text-[10px] px-1.5 py-0.5 rounded border ${COLOR(m.c)}">A2A</span>
+      </div>
+      <div class="text-xs text-slate-400 mt-1.5">${m.intent}</div>
+      <div class="text-[10px] text-slate-600 mt-1 font-mono">ref: ${m.ref}</div>
+    </div>`).join('');
+}
+
+function renderCritic(){
+  document.getElementById('tab-critic').innerHTML = `
+    <div class="glass rounded-lg p-3 border ${COLOR('amber')}">
+      <div class="flex items-center justify-between">
+        <div class="text-xs font-semibold">信息架构 v1 <span class="text-slate-500 font-normal">· 交互设计师</span></div>
+        <div class="text-2xl font-black text-amber-300">0.84</div>
+      </div>
+      <div class="text-[10px] text-slate-500">门限 0.85 · 未通过 ⚠ · 第 2/2 轮（超限将升级 HITL）</div>
+      <div class="mt-2 h-1.5 rounded-full bg-white/5 overflow-hidden"><div class="h-full bg-amber-400" style="width:84%"></div></div>
+    </div>
+    <div class="glass rounded-lg p-3">
+      <div class="text-[11px] font-semibold text-slate-300 mb-1.5">问题清单</div>
+      <ul class="text-xs text-slate-400 space-y-1.5">
+        <li class="flex gap-2"><span class="text-rose-400">1.</span>主流程缺少异常分支入口（如知识库未命中）</li>
+        <li class="flex gap-2"><span class="text-rose-400">2.</span>删除类关键操作无二次确认</li>
+      </ul>
+    </div>
+    <div class="glass rounded-lg p-3">
+      <div class="text-[11px] font-semibold text-slate-300 mb-1.5">修改建议</div>
+      <ul class="text-xs text-slate-400 space-y-1.5">
+        <li class="flex gap-2"><span class="text-emerald-400">→</span>补充异常态线框（兜底话术 + 转人工入口）</li>
+        <li class="flex gap-2"><span class="text-emerald-400">→</span>为删除/清空类操作加确认弹层</li>
+      </ul>
+    </div>
+    <div class="glass rounded-lg p-3">
+      <div class="text-[11px] font-semibold text-slate-300 mb-2">返工轨迹</div>
+      <div class="flex items-center gap-2 text-[11px]">
+        <span class="px-2 py-1 rounded ${COLOR('rose')}">轮1 · 0.78</span>
+        <span class="text-slate-600">→</span>
+        <span class="px-2 py-1 rounded ${COLOR('amber')}">轮2 · 0.84</span>
+        <span class="text-slate-600">→</span>
+        <span class="px-2 py-1 rounded ${COLOR('zinc')}">轮3 超限→HITL</span>
+      </div>
+    </div>`;
+}
+
+function renderHitl(){
+  const items = [
+    {a:'交互设计师', t:'信息架构 v1', n:'diff 3 块'},
+    {a:'系统架构师', t:'数据接口设计 v1', n:'新工件'},
+    {a:'交互设计师', t:'二次确认弹层方案', n:'返工产物'},
+  ];
+  document.getElementById('hitlChips').innerHTML = items.map((it,i)=>`
+    <div id="hitl${i}" class="shrink-0 glass rounded-lg pl-2.5 pr-1 py-1 flex items-center gap-2 text-[11px]">
+      <span class="text-slate-300">${it.a}·${it.t}</span>
+      <span class="text-slate-600">${it.n}</span>
+      <button onclick="resolveHitl(${i},'ok')" class="w-5 h-5 grid place-items-center rounded hover:bg-emerald-400/20 text-emerald-400" title="批准 Y">✓</button>
+      <button onclick="resolveHitl(${i},'no')" class="w-5 h-5 grid place-items-center rounded hover:bg-rose-400/20 text-rose-400" title="驳回 N">✕</button>
+    </div>`).join('');
+}
+
+/* =================== 交互 =================== */
+let autonomy='mid', paused=false, evTimer=null;
+
+function setAutonomy(lv){
+  autonomy=lv;
+  document.querySelectorAll('.aut-btn').forEach(b=>{
+    const on=b.dataset.lv===lv;
+    b.className=`aut-btn px-2.5 py-1 rounded-md text-xs ${on?'bg-cyan-400/20 text-cyan-200 font-semibold':'text-slate-400 hover:text-slate-200'}`;
+  });
+  const tips={manual:'全手动：每步都要你确认',low:'低：阶段内自治，跳转+敏感工具需批',mid:'中：护栏内自治，门/Critic 标记才介入',high:'高：端到端全自治，只守硬安全门'};
+  pushEvent({t:'autonomy.set', a:'你', d:tips[lv], c:'violet'});
+}
+
+function togglePauseAll(){
+  paused=!paused;
+  document.getElementById('pauseIcon').textContent=paused?'▶':'⏸';
+  document.getElementById('pauseTxt').textContent=paused?'继续全部':'暂停全部';
+  pushEvent({t:paused?'control.pause':'control.resume', a:'你', d:paused?'已暂停全部 Agent':'已继续全部 Agent', c:paused?'amber':'emerald'});
+}
+
+function switchTab(name){
+  document.querySelectorAll('.tab-pane').forEach(p=>p.classList.add('hidden'));
+  document.getElementById('tab-'+name).classList.remove('hidden');
+  document.querySelectorAll('.tab-btn').forEach(b=>{
+    const on=b.dataset.tab===name;
+    b.className=`tab-btn flex-1 text-xs py-1.5 rounded-md ${on?'bg-white/10 text-slate-100 font-semibold':'text-slate-400 hover:text-slate-200'}`;
+  });
+}
+
+function resolveBlock(i,act){
+  const el=document.getElementById('blkact'+i);
+  el.innerHTML=`<span class="text-[10px] ${act==='ok'?'text-emerald-400':'text-rose-400'}">${act==='ok'?'✓ 已接受':'✕ 已拒绝'}</span>`;
+  document.getElementById('blk'+i).style.opacity=.55;
+  pushEvent({t:'hitl.resolve', a:'你', d:`diff 块「${DIFF[i].title}」${act==='ok'?'已写回新版本':'已丢弃'}`, c:act==='ok'?'emerald':'slate'});
+}
+
+function resolveHitl(i,act){
+  document.getElementById('hitl'+i).style.display='none';
+  let n=+document.getElementById('hitlCount').textContent-1;
+  document.getElementById('hitlCount').textContent=n<0?0:n;
+  pushEvent({t:'hitl.decision', a:'你', d:`${act==='ok'?'批准':'驳回'}了一项待审动作`, c:act==='ok'?'emerald':'amber'});
+}
+
+function pushEvent(ev){
+  EVENTS.unshift(ev);
+  if(EVENTS.length>40) EVENTS.pop();
+  renderEvents();
+}
+
+function tickEvents(){
+  if(paused) return;
+  const e=EVENT_POOL[Math.floor(Date.now()/2500)%EVENT_POOL.length];
+  pushEvent({...e});
+}
+
+/* ---------- Agent 详情抽屉 · 子页F §3 ---------- */
+function openAgent(id){
+  const data = AGENTRUNS[id];
+  const a = AGENTS.find(x=>x.id===id);
+  const body = document.getElementById('drawerBody');
+  if(!data){
+    body.innerHTML = `
+      <div class="p-5">
+        <button onclick="closeDrawer()" class="text-slate-500 text-xs mb-3">← 关闭</button>
+        <div class="flex items-center gap-3">
+          <div class="w-12 h-12 rounded-xl bg-white/5 grid place-items-center text-2xl">${a.e}</div>
+          <div><div class="text-lg font-bold">${a.role}</div>
+          <div class="text-xs text-slate-500">${a.stage} · ${STATUS[a.status].t}</div></div>
+        </div>
+        <div class="glass rounded-lg p-4 mt-4 text-sm text-slate-400">
+          ${a.last}
+          <div class="text-[11px] text-slate-600 mt-3">该角色的 AgentRun 时间线（输入→提示词→工具调用→产出+diff→Critic 分）在原型下一步细化。
+          点击「系统架构师」可看完整示例。</div>
+        </div>
+        <div class="doc-tag text-slate-600 mt-3">子页F §3 · 子页C §4</div>
+      </div>`;
+    showDrawer(); return;
+  }
+  body.innerHTML = `
+  <!-- 顶部身份区 · 子页F §3.1 -->
+  <div class="p-4 border-b border-edge glass sticky top-0 z-10">
+    <button onclick="closeDrawer()" class="text-slate-500 text-xs mb-2 hover:text-slate-300">← 关闭观测台</button>
+    <div class="flex items-center gap-3">
+      <div class="w-11 h-11 rounded-xl bg-white/5 grid place-items-center text-xl">${data.e}</div>
+      <div class="flex-1">
+        <div class="text-base font-bold flex items-center gap-2">${data.role}
+          <span class="text-[10px] px-1.5 py-0.5 rounded border ${COLOR('emerald')} flex items-center gap-1"><span class="w-1 h-1 rounded-full bg-current pulse-dot"></span>${STATUS[data.status].t}</span>
+        </div>
+        <div class="text-xs text-slate-500">${data.stage} · 自治档 <span class="text-cyan-300">${data.autonomy}</span></div>
+      </div>
+    </div>
+    <div class="flex flex-wrap gap-1.5 mt-3">
+      ${['⏸ 暂停','▶ 继续','🧭 引导','➕ 追加','🔁 重跑','🔀 切模型'].map(b=>`<button class="text-[11px] glass rounded-md px-2 py-1 hover:bg-white/10">${b}</button>`).join('')}
+    </div>
+  </div>
+
+  <div class="p-4 space-y-4">
+    <!-- 指标 · 子页F §3.7 -->
+    <div class="grid grid-cols-4 gap-2">
+      ${[['耗时',data.metrics.dur],['tokens',data.metrics.tok],['返工',data.metrics.rework+' 次'],['通过率',data.metrics.pass]].map(([k,v])=>`
+        <div class="glass rounded-lg p-2 text-center"><div class="text-sm font-bold text-slate-200">${v}</div><div class="text-[10px] text-slate-500">${k}</div></div>`).join('')}
+    </div>
+
+    <!-- 人设与配置 · 子页F §3.2 -->
+    <div class="glass rounded-lg p-3">
+      <div class="text-[11px] font-semibold text-slate-300 mb-1.5 flex items-center justify-between">人设 / system prompt <span class="doc-tag text-slate-600">子页F §3.2</span></div>
+      <div class="text-xs text-slate-400 leading-relaxed">${data.persona}</div>
+      <div class="flex flex-wrap gap-1 mt-2">${data.tools.map(t=>`<span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-slate-400">${t}</span>`).join('')}</div>
+    </div>
+
+    <!-- AgentRun 时间线（核心）· 子页F §3.3 -->
+    <div>
+      <div class="text-[11px] font-semibold text-slate-300 mb-2 flex items-center justify-between">AgentRun 时间线 <span class="doc-tag text-slate-600">子页F §3.3 · 子页C §4</span></div>
+      <div class="space-y-3">
+        ${data.runs.map(r=>`
+          <div class="glass rounded-lg overflow-hidden border ${r.status==='running'?COLOR('cyan'):'border-white/5'}">
+            <div class="px-3 py-2 flex items-center justify-between border-b border-white/5">
+              <span class="text-xs font-medium">${r.title}</span>
+              <span class="text-[11px] ${r.score>=0.85?'text-emerald-400':'text-amber-400'}">Critic ${r.score}</span>
+            </div>
+            <div class="p-3 space-y-2.5 text-xs">
+              <div><div class="text-[10px] text-slate-500 mb-1">① 输入工件</div>
+                <div class="flex flex-wrap gap-1">${r.input.map(x=>`<span class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-sky-300">${x}</span>`).join('')}</div></div>
+              <div><div class="text-[10px] text-slate-500 mb-1">② 提示词快照</div>
+                <div class="text-slate-400 bg-black/20 rounded p-2 text-[11px] leading-relaxed">${r.prompt}</div></div>
+              <div><div class="text-[10px] text-slate-500 mb-1">③ 工具调用序列</div>
+                <div class="space-y-1">${r.calls.map(c=>`<div class="flex items-center gap-2 font-mono text-[11px]"><span class="${c.ok?'text-emerald-400':'text-rose-400'}">${c.ok?'✓':'✕'}</span><span class="text-slate-300">${c.n}</span><span class="text-slate-600 ml-auto">${c.meta}</span></div>`).join('')}</div></div>
+              <div><div class="text-[10px] text-slate-500 mb-1">④ 产出工件 + diff</div>
+                <div class="text-slate-300 bg-emerald-400/5 border border-emerald-400/20 rounded p-2 text-[11px]">${r.out}</div></div>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>
+  </div>`;
+  showDrawer();
+}
+function showDrawer(){ document.getElementById('drawer').classList.remove('translate-x-full');
+  const o=document.getElementById('overlay'); o.classList.remove('opacity-0','pointer-events-none'); }
+function closeDrawer(){ document.getElementById('drawer').classList.add('translate-x-full');
+  const o=document.getElementById('overlay'); o.classList.add('opacity-0','pointer-events-none'); }
+
+/* =================== init =================== */
+document.querySelectorAll('.aut-btn').forEach(b=>b.onclick=()=>setAutonomy(b.dataset.lv));
+renderStages(); renderAgents(); renderTaskGraph(); renderArtifact();
+renderEvents(); renderBlackboard(); renderCritic(); renderHitl();
+setAutonomy('mid'); switchTab('events');
+evTimer=setInterval(tickEvents, 2500);
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeDrawer(); });
+</script>
+</body>
+</html>
