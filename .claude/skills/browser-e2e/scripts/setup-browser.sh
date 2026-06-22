@@ -9,19 +9,33 @@ PW_DIR=/tmp/pw
 CDEPS=/tmp/cdeps/root
 FONTCONF=/tmp/fc-fonts.conf
 CACHE="${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}"
+CHROME_SHARED="$HOME/.local/bin/chrome-shared"   # 持久化的共用 Chrome 入口（自带库/字体 env 解析，Playwright 与 chrome-devtools MCP 共用）
 log(){ echo "[setup-browser] $*" >&2; }
 
-# 1) 定位缓存里的 chromium headless shell（自动适配任意 build，不写死 1223）
-find_shell(){ find "$CACHE" -type f -name chrome-headless-shell 2>/dev/null | head -1; }
-SHELL_BIN="$(find_shell || true)"
-
-# 2) playwright 驱动库（装在 /tmp/pw，不污染仓库）
+# playwright 驱动库（装在 /tmp/pw，run-e2e.sh 在那 node 驱动脚本；/tmp 资产、重启重装）
 if [ ! -d "$PW_DIR/node_modules/playwright" ]; then
   log "installing playwright into $PW_DIR ..."
   mkdir -p "$PW_DIR"; ( cd "$PW_DIR" && npm i playwright >/dev/null 2>&1 ) || log "npm i playwright 失败（可能已离线缓存）"
 fi
 
-# 3) chromium 二进制：缓存没有就 playwright install（会联网下载）
+# ★ 持久化快路径（2026-06-21 起，容器=Debian 11 / Chrome for Testing 149）：
+#   持久 env 脚本 ~/.local/bin/ns-browser-env.sh + 包装脚本 chrome-shared 都在 → 直接复用、秒过。
+#   chrome-shared 内部已 export LD_LIBRARY_PATH(~/.cache/chrome-deps/root)/FONTCONFIG_FILE 再 exec
+#   ~/.cache/ms-playwright 下的 headless-shell，故这里只需给出 PW_EXECUTABLE，无需再设库/字体 env。
+#   （持久化资产丢失才落到下方 fallback 重建。）
+if [ -x "$CHROME_SHARED" ] && "$CHROME_SHARED" --version >/dev/null 2>&1; then
+  log "持久化就绪，复用 $CHROME_SHARED（$("$CHROME_SHARED" --version 2>/dev/null)）"
+  echo "export PLAYWRIGHT_BROWSERS_PATH='$CACHE'"
+  echo "export PW_EXECUTABLE='$CHROME_SHARED'"
+  exit 0
+fi
+log "⚠ 未找到持久化 chrome-shared → 进入重建 fallback（⚠ Debian 11 下默认 apt 取不到库，完整重建配方见 references/gotchas.md 与记忆 next-step-browser-e2e）"
+
+# 1) 定位缓存里的 chromium headless shell（自动适配任意 build，不写死 1223）
+find_shell(){ find "$CACHE" -type f -name chrome-headless-shell 2>/dev/null | head -1; }
+SHELL_BIN="$(find_shell || true)"
+
+# chromium 二进制：缓存没有就 playwright install（会联网下载）
 if [ -z "$SHELL_BIN" ]; then
   log "缓存无 chromium，尝试 playwright install chromium ..."
   ( cd "$PW_DIR" && PLAYWRIGHT_BROWSERS_PATH="$CACHE" ./node_modules/.bin/playwright install chromium >/dev/null 2>&1 ) || true

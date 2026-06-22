@@ -1,6 +1,7 @@
 // 驱动脚本模板 —— 复制本文件，按你这张卡的流程改「操作 + 断言 + 截图」段。
 // 自包含（helper 内联，避免 import 路径问题）。需要 env：PW_EXECUTABLE（由 setup-browser.sh 给）。
 // 跑法：bash ../scripts/run-e2e.sh <本文件绝对路径>   （它会起 dev server 并在 /tmp/pw 下 node 本脚本）
+// URL 默认读 E2E_URL（run-e2e.sh 按 PORT 自动设好）；下面「建/选项目」段是 Next-Step 专属示例，换别的应用请改成你自己的前置。
 import { chromium } from "playwright";
 import fs from "node:fs";
 import os from "node:os";
@@ -32,7 +33,7 @@ const listAgentDirs = (root) => { try { return fs.readdirSync(path.join(root, ".
 
 // ---- 主流程 ----
 const R = { steps: {}, disk: {} };
-// 建临时项目（避免污染真实数据）
+// 建临时项目（避免污染真实数据）—— ⚠ Next-Step 专属（/api/projects）；换别的应用删掉本段或替换为你的前置准备
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "e2e-"));
 const proj = await (await api("POST", "/api/projects", { name: "e2e-tmp", root })).json();
 log("temp project", proj.id, root);
