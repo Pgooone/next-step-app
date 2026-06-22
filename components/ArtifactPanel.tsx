@@ -10,12 +10,13 @@ import {
 } from "@/lib/stores/useArtifactStore";
 import { parseToc, slugify, type TocItem } from "@/lib/artifact-view/toc";
 import { buildLineDiffSegments } from "@/lib/artifact-view/anchor";
+import { computeVersionDiffBlocks } from "@/lib/artifact-view/version-diff";
 import {
   INLINE_HL_LIMIT,
   countPendingBlocks,
 } from "@/lib/artifact-view/degrade";
 import { useResolveBlock } from "@/hooks/useResolveBlock";
-import type { DiffBlock, PendingChange } from "@/lib/domain/pending-change-service";
+import type { DiffBlock } from "@/lib/domain/pending-change-service";
 
 /** 全屏态放宽后的行内高亮块数上限（D-UI-05）；非全屏仍用 INLINE_HL_LIMIT(25)。 */
 const FULLSCREEN_INLINE_HL_LIMIT = 80;
@@ -116,6 +117,9 @@ export function ArtifactPanel({
   // 删除二次确认（第四轮，复刻 rollback 两步范式）。
   const [confirmDelete, setConfirmDelete] = useState(false);
   const deleteConfirmRef = useRef<HTMLSpanElement>(null);
+  // 看历史版的逃生口（第二轮 T2 / D-R2-07）：true=对比上一版只读 diff（默认）、false=只读全文。
+  // 瞬态局部态、切版本时重置回「对比」默认——纯 useState、彻底绕开 D-D3-10 selector 坑。
+  const [historyCompare, setHistoryCompare] = useState(true);
 
   // 确认态打开时支持 Esc / 外点关闭（BUG-04，与 PendingChangeCard 全部✓/✗ 范式一致）。
   useEffect(() => {
@@ -161,6 +165,11 @@ export function ArtifactPanel({
     if (currentVersion != null) void listVersions();
   }, [currentVersion, listVersions]);
 
+  // 切换查看的版本（或回到最新）时，逃生口重置回「对比上一版」默认（D-R2-07）。
+  useEffect(() => {
+    setHistoryCompare(true);
+  }, [selectedVersion]);
+
   // A3 跳转消费端「滚动+脉冲」（T3）：focusBlockNonce 变化（点对话框 diff 块）→ 滚到原文对应
   // data-block-id 段并短暂高亮脉冲。照抄 TocSidebar.jump 的 querySelector+scrollIntoView 范式。
   // deps 只取 nonce（同一块连点也能重触发）；focusBlockId 用 getState() 读最新值（与 nonce 同 set 更新）。
@@ -196,6 +205,27 @@ export function ArtifactPanel({
 
   const toc = useMemo(() => parseToc(displayContent), [displayContent]);
 
+  // 版本间 diff 的「前驱版内容」（第二轮 T2 / D-R2-04）：versions[] 按 version 升序，取选中版在
+  // 序列里的**前一个元素**作 base（**非**「版号-1」，防版本号空洞）；选中版是序列首元素（通常 v1、
+  // 无前驱）→ null（走「只读全文 + 首版无对比基准」）。
+  const historyBaseContent = useMemo(() => {
+    if (!viewingHistory) return null;
+    const sorted = [...versions].sort((a, b) => a.version - b.version);
+    const idx = sorted.findIndex((v) => v.version === selectedVersion);
+    if (idx <= 0) return null; // 未找到或为首元素 → 无前驱
+    return sorted[idx - 1].content;
+  }, [viewingHistory, versions, selectedVersion]);
+
+  // 版本间 diff 块（只读、纯客户端重算，D-R2-01/02）。仅在「看历史版 + 逃生口=对比 + 有前驱」时算，
+  // base=前驱版 content、target=选中版 content（historyContent / displayContent）。
+  const versionDiffBlocks = useMemo(
+    () =>
+      viewingHistory && historyCompare && historyBaseContent != null
+        ? computeVersionDiffBlocks(historyBaseContent, displayContent)
+        : [],
+    [viewingHistory, historyCompare, historyBaseContent, displayContent],
+  );
+
   // AC④：pending 块数 > 阈值自动降级为并排 Diff（即使用户没点切换）。
   // 全屏态阈值放宽到 80（D-UI-05），非全屏维持 25；看历史版不叠 pending（走只读分支）。
   const pendingCount = countPendingBlocks(pendingBlocks);
@@ -203,8 +233,9 @@ export function ArtifactPanel({
   const degraded = pendingCount > effectiveLimit;
   const effectiveMode: "inline" | "diff" = degraded ? "diff" : viewMode;
   // 内联混合渲染只在「单条 replace」时走（D-R7B-02 保 LCS 自洽）；多条 / op=patch 退回并排 Diff。
-  const singleReplace =
-    pendingChanges.length === 1 && pendingChanges[0].diff.kind === "replace" ? pendingChanges[0] : null;
+  // 解构出 diff 单独窄化，使下方 .diff.oldContent/newContent 访问类型成立（discriminated union）。
+  const only = pendingChanges.length === 1 ? pendingChanges[0] : null;
+  const singleReplace = only && only.diff.kind === "replace" ? { ...only, diff: only.diff } : null;
 
   // AC⑥：划选 artifact 正文 → 写 editTarget.quoteText（ChatWindow 引用条读取）。
   const handleQuote = () => {
@@ -271,6 +302,26 @@ export function ArtifactPanel({
         {viewingHistory && (
           <>
             <span style={{ color: "var(--text-dim)" }}>历史版本（只读）</span>
+            {/* 逃生口（D-R2-07）：对比上一版 ⇄ 只读全文（默认对比）。仅有前驱版时显示——
+                首版无对比基准，主体区直接走只读全文 + 提示，开关无意义故隐藏。 */}
+            {historyBaseContent != null && (
+              <div style={{ display: "flex", borderRadius: 5, overflow: "hidden", border: "1px solid var(--border)" }}>
+                <button
+                  onClick={() => setHistoryCompare(true)}
+                  title="与紧邻上一版做只读行内对比"
+                  style={segBtnStyle(historyCompare, false)}
+                >
+                  对比上一版
+                </button>
+                <button
+                  onClick={() => setHistoryCompare(false)}
+                  title="只读查看该版完整正文"
+                  style={segBtnStyle(!historyCompare, false)}
+                >
+                  只读全文
+                </button>
+              </div>
+            )}
             {confirmRollback ? (
               <span ref={rollbackConfirmRef} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{ color: "#ca8a04" }}>回滚到 v{selectedVersion}？将生成新版</span>
@@ -385,10 +436,47 @@ export function ArtifactPanel({
         {toc.length > 0 && <TocSidebar items={toc} contentRef={contentRef} />}
         <div ref={contentRef} style={{ flex: 1, overflow: "auto", background: "var(--bg)" }}>
           {viewingHistory ? (
-            // D-D5-4：历史版纯只读渲染（无 pending 高亮、无 Diff、无降级）。
-            <div style={{ padding: "16px 24px", maxWidth: 900 }}>
-              <Markdown>{displayContent}</Markdown>
-            </div>
+            // 看历史版（第二轮 T2 / D-R2-07，推翻 D-D5-4「纯只读全文」）：默认展示该版 vs 紧邻上一版的
+            // **只读**行内 diff（复用形态C混合、无 ✓/✗ 无状态标）；逃生口切「只读全文」或首版无前驱时退回纯只读。
+            historyBaseContent == null ? (
+              // 首版（无前驱）：只读全文 + 提示。
+              <div style={{ padding: "16px 24px", maxWidth: 900 }}>
+                <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 12 }}>
+                  首版，无对比基准。
+                </div>
+                <Markdown>{displayContent}</Markdown>
+              </div>
+            ) : !historyCompare ? (
+              // 逃生口切「只读全文」：纯只读渲染（等价旧 D-D5-4 路径）。
+              <div style={{ padding: "16px 24px", maxWidth: 900 }}>
+                <Markdown>{displayContent}</Markdown>
+              </div>
+            ) : versionDiffBlocks.length > effectiveLimit ? (
+              // 降级护栏（D-R2-03）：版本 diff 块非 pending、countPendingBlocks 恒 0，故按总块数另判；
+              // 超阈值降级为并排 Diff（只读，DiffBlockCard 不传 resolve 三件套）。
+              <>
+                <div
+                  style={{
+                    padding: "8px 16px",
+                    fontSize: 12,
+                    color: "#ca8a04",
+                    background: "rgba(234,179,8,0.1)",
+                    borderBottom: "1px solid var(--border)",
+                  }}
+                >
+                  变更块数（{versionDiffBlocks.length}）超过 {effectiveLimit}，已自动切换为并排 Diff。
+                </div>
+                <DiffBlocksView blocks={versionDiffBlocks} />
+              </>
+            ) : (
+              // 版本间只读行内 diff：base=前驱版、target=选中版；不传 changeIdByBlock/resolveBlock/
+              // isFullscreen → DiffBlockCard 恒只读、无 ✓/✗、无状态标（D-R2-02）。
+              <InlineDiffView
+                oldContent={historyBaseContent}
+                newContent={displayContent}
+                diffBlocks={versionDiffBlocks}
+              />
+            )
           ) : (
             <>
               {degraded && (
@@ -409,7 +497,9 @@ export function ArtifactPanel({
               ) : singleReplace ? (
                 // 单条 replace：整篇混合内联（equal=markdown / change=与「查看 Diff」同款卡片）。
                 <InlineDiffView
-                  change={singleReplace}
+                  oldContent={singleReplace.diff.oldContent}
+                  newContent={singleReplace.diff.newContent}
+                  diffBlocks={singleReplace.diffBlocks}
                   changeIdByBlock={changeIdByBlock}
                   isFullscreen={isFullscreen}
                   resolveBlock={resolveBlock}
@@ -478,31 +568,35 @@ function TocSidebar({ items, contentRef }: { items: TocItem[]; contentRef: React
 }
 
 /**
- * 内联混合视图（D-UI-10 用户拍板 C；第七轮·第二轮纠偏）：单条 replace 的 PendingChange
- * 按 LCS ops 真实顺序渲染整篇——未改动 equal 段走 markdown 富渲染、改动块走与「查看 Diff」
- * 同款 `DiffBlockCard`（带颜色边框的 git 卡片）。靠 T1 的 buildLineDiffSegments 驱动，无 unaligned。
- * base 用 `change.diff.oldContent`（非 artifact.content，D-R7B-02 保 LCS 自洽）。
+ * 内联混合视图（D-UI-10 用户拍板 C；第七轮·第二轮纠偏）：对一对 `(oldContent,newContent)` +
+ * 其聚块 `diffBlocks`，按 LCS ops 真实顺序渲染整篇——未改动 equal 段走 markdown 富渲染、改动块走
+ * 与「查看 Diff」同款 `DiffBlockCard`（带颜色边框的 git 卡片）。靠 buildLineDiffSegments 驱动，无 unaligned。
+ *
+ * 参数化（第二轮 T2 / D-R2-02）：接受裸 `(oldContent,newContent,diffBlocks)`，可选 `changeIdByBlock/
+ * isFullscreen/resolveBlock` 三件套——**pending 行内 diff** 传齐三件套（保就地 ✓/✗ 行为不变）；
+ * **版本间只读 diff** 一律不传 → DiffBlockCard 的 `canResolveHere`（恒 false）/ 状态标（不显）双双关闭，
+ * 纯只读、零改 DiffBlockCard 内部。
+ * 注：pending 调用方须以 `change.diff.oldContent/newContent`（非 artifact.content，D-R7B-02 保 LCS 自洽）喂入。
  */
 function InlineDiffView({
-  change,
+  oldContent,
+  newContent,
+  diffBlocks,
   changeIdByBlock,
   isFullscreen,
   resolveBlock,
 }: {
-  change: PendingChange;
-  changeIdByBlock: Map<string, string>;
-  isFullscreen: boolean;
-  resolveBlock: ResolveBlockFn;
+  oldContent: string;
+  newContent: string;
+  diffBlocks: DiffBlock[];
+  changeIdByBlock?: Map<string, string>;
+  isFullscreen?: boolean;
+  resolveBlock?: ResolveBlockFn;
 }) {
   const segs = useMemo(
-    () =>
-      change.diff.kind === "replace"
-        ? buildLineDiffSegments(change.diff.oldContent, change.diff.newContent, change.diffBlocks, changeIdByBlock)
-        : [],
-    [change, changeIdByBlock],
+    () => buildLineDiffSegments(oldContent, newContent, diffBlocks, changeIdByBlock),
+    [oldContent, newContent, diffBlocks, changeIdByBlock],
   );
-  // 调用方保证 diff.kind==='replace'；内部 narrow 兜底（非 replace 不渲染）。
-  if (change.diff.kind !== "replace") return null;
 
   return (
     <div style={{ padding: "16px 24px", maxWidth: 900 }}>
