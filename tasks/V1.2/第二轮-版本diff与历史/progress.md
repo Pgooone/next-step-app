@@ -5,12 +5,14 @@
 > 两功能：①版本间行内 diff（选历史版即看该版 vs 上一版，只读无 ☑️❌）；②Diff 历史时间线（甲·铺满主体区覆盖正文、手风琴就地展开）。**零新增存储、纯只读重算、不碰红线**。
 
 ## 总进度
-- [ ] **T1** · 客户端安全聚块函数 `lib/artifact-view/version-diff.ts` + 单测（承重墙·先行）
-- [ ] **T2** · 需求1 版本间行内 diff（改 `ArtifactPanel.tsx` viewingHistory 分支）—— UI 卡·真浏览器
-- [ ] **T3** · 需求2 Diff 历史时间线（`[Diff历史]` 按钮 + 时间线视图 + 手风琴）—— UI 卡·真浏览器
-- [ ] **T4** · 双层验收 + 回写 + 逐卡 commit + push（push 由用户授权）
+- [x] **T1** · 客户端安全聚块函数 `lib/artifact-view/version-diff.ts` + 单测（承重墙·先行）—— commit `9340c69`（16 单测、对照 computeReplaceDiffBlocks 一致）
+- [x] **T2** · 需求1 版本间行内 diff（改 `ArtifactPanel.tsx` viewingHistory 分支）—— commit `723e532`（真浏览器 AC1/2/3/v1/全屏 PASS）
+- [x] **T3** · 需求2 Diff 历史时间线（`[Diff历史]` 按钮 + 时间线视图 + 手风琴）—— commit `c71c082`（真浏览器 AC4/5/6 PASS；含 border shorthand 警告修复）
+- [x] **T4** · 双层验收完成（逻辑层 lead 全量门禁 + 真浏览器 chrome-devtools 独立 E2E）；回写本进度；逐卡 commit 已落。**push 待用户授权**。
 
-> 门禁：`lint` ✓ / `test` ✓ / **build 受 Google Fonts 环境限制失败（预存、非本轮回归，`app/layout.tsx` 未碰）**——build 不作判据，UI 卡铁律走真浏览器（`GET /` 200 + `pageErrors=0`）。
+> 立项文档 commit `69bef82`。门禁：`lint` ✓ / `tsc` 仅 2 个预存无关错（session-grouping/useAgentStore 的 AgentProfile.mode、非本轮）/ `test` 384 过 + 1 已知 `doctor-checks` 冷缓存 flake（暖缓存复跑通过）/ **build 受 Google Fonts 环境限制失败（预存、非本轮回归，`app/layout.tsx` 未碰）**——build 不作判据，UI 卡走真浏览器（`GET /` 200 + `pageErrors=0`）。
+>
+> **真浏览器验收（chrome-devtools，lead 亲验）**：AC1 v2vs v1 行内 diff（del+mod+add，blockIds v-0/v-1/v-2）/ AC2 0 个✓/✗+无状态标（普通+全屏）/ AC3 逃生口只读全文 / v1 首版无对比基准 / AC4 时间线（rollback/apply 可辨、切换段+TOC 隐藏）/ AC5 手风琴就地回看+多次开合不崩 / AC6 30 块>25 降级并排 / pageErrors=0；既有 TOC/回滚/删除/引用零回归。验收截图 5 张存 `next-step-V1.2/../第二轮验收截图/`（git 外）。
 
 ---
 
