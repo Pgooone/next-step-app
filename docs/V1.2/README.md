@@ -30,6 +30,15 @@
 - 用户拍板 QA：`QA/第二轮-版本diff与历史决策.md`（D-V1.2-10~14）；lead ADR `设计决策记录.md`（D-R2-01~07）
 - 调研留痕：ultracode 工作流 `next-step-v1.2-r2-investigate`（5 路精读 → 综合 → 对抗式核实，verdict GO）
 
+### 第三轮 · TOC diff 与文档性能（`第三轮-TOC-diff与文档性能/`）
+
+主题：①**TOC 体现版本 diff**（版本对比时左侧目录用「改动章节下方纯色细实线」标出增/删/改，无圆点·留间距，删除章节红线暗色占位）；②**file panel 大文档性能优化**（实测瓶颈是 ~600ms react-markdown 渲染、滚动已流畅、实例数非放大器 → **仅 memo 化**，不虚拟化）。
+
+- 先读 `第三轮-TOC-diff与文档性能/需求文档.md` → `概要设计.md` → `详细设计.md`（含算法 + chrome-devtools 性能 baseline + 任务 T0~T4）
+- 任务卡与进度：`../../tasks/V1.2/第三轮-TOC-diff与文档性能/progress.md`
+- 用户拍板 QA：`QA/第三轮-TOC-diff与文档性能决策.md`（D-V1.2-15~18）；lead ADR `设计决策记录.md`（D-R3-01~08）
+- 调研留痕：ultracode 工作流 `next-step-v1.2-r3-investigate`（4 路精读 → 综合 → 对抗式核实 GO·需修正 4 处，已纳入）+ lead chrome-devtools 实测 baseline
+
 ## 与 V1.1「第八轮」的关系
 
 本轮 = V1.1 时期规划的「**第八轮·通用多 Agent 配置（软件工厂蓝图）**」（当时调研完成、形态待拍板、未开工）整体迁移至 V1.2、**重新立项为「第一轮」**。V1.1 侧（根 `CLAUDE.md`、`next-step-V1.1/README.md`、`next-step-V1.1/docs/QA/00-索引.md`）已标注「已迁至 V1.2」，不再承接。调研留痕原文随工作副本复制在 `../QA/开发/通用多Agent配置-sf-mini反推.md`（V1.1 时期产物，作设计输入参考）。
