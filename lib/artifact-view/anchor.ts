@@ -5,7 +5,7 @@
  * 消除 unaligned 概念）。`block.id` 与 diffBlocks 同序一一对应、对齐不漂移。
  */
 import type { DiffBlock } from "@/lib/domain/pending-change-service";
-import { lcsDiff, splitLines } from "../domain/pending-change-service";
+import { lcsDiff, splitLines } from "../domain/lcs";
 
 /** 一段顺序渲染单元：equal（未改动正文，原样）或 change（一个改动块 add/del/mod）。 */
 export type LineDiffSegment =

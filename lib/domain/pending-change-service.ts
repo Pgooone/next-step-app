@@ -11,6 +11,7 @@ import {
 import { join } from "node:path";
 import { ProjectRegistry } from "./project-registry";
 import { ArtifactService, type Artifact } from "./artifact-service";
+import { splitLines, lcsDiff, type DiffOp } from "./lcs";
 
 /**
  * 一个 diff 块 = 「只改了某一段」的最小单元。权威类型见 docs/03:79-86。
@@ -64,63 +65,11 @@ export class PendingChangeError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// 切块纯函数（手写极简行级 diff，无第三方依赖；文档型 artifact 行数有限，DP-LCS 足够）
+// 切块纯函数（聚块 → DiffBlock）。行级 LCS 算法（splitLines/lcsDiff/DiffOp）已抽到
+// 无 node 依赖的 ./lcs，与内联渲染端 anchor.ts 共用同一实现（D-R7B-04）；这样既保证
+// block.id 与 ops 对齐不漂移，又避免 server-only 链（node:fs）经 anchor 的值导入被拖进
+// 客户端 bundle（第七轮·第二轮 bugfix）。
 // ---------------------------------------------------------------------------
-
-/**
- * 把文本按行切分（保留空文件 → 空数组语义）。
- * 末尾换行不额外产出一个空行项（"a\n" → ["a"]，与编辑器「a 后有换行」直觉一致）。
- */
-export function splitLines(content: string): string[] {
-  if (content === "") return [];
-  const lines = content.split("\n");
-  if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
-  return lines;
-}
-
-type DiffOp =
-  | { type: "equal"; line: string }
-  | { type: "del"; line: string }
-  | { type: "add"; line: string };
-
-/**
- * 经典 LCS（最长公共子序列）行级 diff：返回 equal/del/add 的有序序列。
- * 删除排在新增之前（del 段后紧跟 add 段时由调用方合并为 mod 块）。
- */
-export function lcsDiff(oldLines: string[], newLines: string[]): DiffOp[] {
-  const m = oldLines.length;
-  const n = newLines.length;
-  // dp[i][j] = oldLines[i..] 与 newLines[j..] 的 LCS 长度
-  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
-  for (let i = m - 1; i >= 0; i--) {
-    for (let j = n - 1; j >= 0; j--) {
-      dp[i][j] =
-        oldLines[i] === newLines[j]
-          ? dp[i + 1][j + 1] + 1
-          : Math.max(dp[i + 1][j], dp[i][j + 1]);
-    }
-  }
-
-  const ops: DiffOp[] = [];
-  let i = 0;
-  let j = 0;
-  while (i < m && j < n) {
-    if (oldLines[i] === newLines[j]) {
-      ops.push({ type: "equal", line: oldLines[i] });
-      i++;
-      j++;
-    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
-      ops.push({ type: "del", line: oldLines[i] });
-      i++;
-    } else {
-      ops.push({ type: "add", line: newLines[j] });
-      j++;
-    }
-  }
-  while (i < m) ops.push({ type: "del", line: oldLines[i++] });
-  while (j < n) ops.push({ type: "add", line: newLines[j++] });
-  return ops;
-}
 
 function makeBlock(
   kind: DiffBlock["kind"],
@@ -142,7 +91,7 @@ function makeBlock(
  * - 仅 del 段 → del 块；仅 add 段 → add 块。
  * - equal 段不产出块（未改动的行不进 PendingChange）。
  */
-export function groupOpsToBlocks(ops: DiffOp[]): DiffBlock[] {
+function groupOpsToBlocks(ops: DiffOp[]): DiffBlock[] {
   const blocks: DiffBlock[] = [];
   let k = 0;
   while (k < ops.length) {
