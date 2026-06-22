@@ -4,11 +4,15 @@
 > 详细规格见 `../../../docs/V1.2/第一轮-多Agent管理/详细设计.md`（§1~§4 各模块 + §0.1 红线铁律 + §5 验收要点）。
 
 ## 总进度
-- [ ] **批次 1** · 玻璃 token（`app/globals.css`）—— 模块 A（基座）
-- [ ] **批次 2** · AgentCard + AgentList（`components/AgentManager.tsx`）—— 模块 B+C
-- [ ] **批次 3** · DispatchPanel 选择卡 + 技术债（`DispatchPanel.tsx` + AgentManager 4 处）—— 模块 D
-- [ ] 真浏览器双层验收（lead 独立 + team e2e；含**基线/前后对比图**）
-- [ ] 回写 docs/progress + 记忆 + push（push 由用户定）
+- [x] **批次 1** · 玻璃 token（`app/globals.css`）—— 模块 A（commit `949f851`）
+- [x] **批次 2** · AgentCard + AgentList（`components/AgentManager.tsx`）—— 模块 B+C（commit `9f0fc0e`）
+- [x] **批次 3** · DispatchPanel 选择行 + 技术债（`DispatchPanel.tsx` + AgentManager 4 处 rgba→`--accent-soft`）—— 模块 D
+- [x] **视觉迭代**（用户反馈驱动）：第二轮玻璃精修（弃）→ **第三轮 Swiss 极简专业重做**（D-V1.2-9，用 ui-ux-pro-max 技能，收掉玻璃、转干净专业）
+- [x] 真浏览器验收：**lead 亲 Read 亮/暗 × AgentManager/Dispatch 截图独立复核 PASS**（布局/6字段/字段条件/退化/亮暗/两界面一致/pageErrors=[]）
+- [ ] commit + 回写 + push（push 由用户授权）
+
+> 门禁：lint ✓ / test 368 过 + 1 无关 flake（doctor-checks 冷缓存超时）/ **build 受 Google Fonts 环境限制失败（`fonts.googleapis.com` 取 Noto Sans Mono 不通，sandbox off 也失败，预存、非本轮回归；`app/layout.tsx` 未碰）**。
+> 视觉演进：玻璃（批次1+2 commit `949f851`/`9f0fc0e`）→ 第二轮强化（弃）→ **Swiss**（D-V1.2-9，待 commit）。
 
 ---
 
