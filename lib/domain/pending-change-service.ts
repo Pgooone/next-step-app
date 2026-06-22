@@ -71,7 +71,7 @@ export class PendingChangeError extends Error {
  * 把文本按行切分（保留空文件 → 空数组语义）。
  * 末尾换行不额外产出一个空行项（"a\n" → ["a"]，与编辑器「a 后有换行」直觉一致）。
  */
-function splitLines(content: string): string[] {
+export function splitLines(content: string): string[] {
   if (content === "") return [];
   const lines = content.split("\n");
   if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
@@ -87,7 +87,7 @@ type DiffOp =
  * 经典 LCS（最长公共子序列）行级 diff：返回 equal/del/add 的有序序列。
  * 删除排在新增之前（del 段后紧跟 add 段时由调用方合并为 mod 块）。
  */
-function lcsDiff(oldLines: string[], newLines: string[]): DiffOp[] {
+export function lcsDiff(oldLines: string[], newLines: string[]): DiffOp[] {
   const m = oldLines.length;
   const n = newLines.length;
   // dp[i][j] = oldLines[i..] 与 newLines[j..] 的 LCS 长度
@@ -142,7 +142,7 @@ function makeBlock(
  * - 仅 del 段 → del 块；仅 add 段 → add 块。
  * - equal 段不产出块（未改动的行不进 PendingChange）。
  */
-function groupOpsToBlocks(ops: DiffOp[]): DiffBlock[] {
+export function groupOpsToBlocks(ops: DiffOp[]): DiffBlock[] {
   const blocks: DiffBlock[] = [];
   let k = 0;
   while (k < ops.length) {
