@@ -70,13 +70,54 @@ describe("computeTocDiff", () => {
     ]);
   });
 
-  it("嵌套：h3 子章节正文改动冒泡标父 h2 为 mod", () => {
+  it("嵌套：h3 子章节正文改动只标 h3、不冒泡到父 h2（决策 C 精确归属）", () => {
     const oldC = "## 父\n父正文\n### 子\n旧子正文\n## 邻\n邻正文\n";
     const newC = "## 父\n父正文\n### 子\n新子正文\n## 邻\n邻正文\n";
     expect(shape(computeTocDiff(oldC, newC))).toEqual([
-      { text: "父", kind: "mod", side: "target" }, // 子区间被父区间包含 → 冒泡
-      { text: "子", kind: "mod", side: "target" }, // 子自身区间也含改动行
+      { text: "父", kind: null, side: "target" }, // 父最内层区间到 h3「子」止、不含子行 → 不冒泡
+      { text: "子", kind: "mod", side: "target" }, // 改动行只归属最内层「子」
       { text: "邻", kind: null, side: "target" }, // 邻章节未受影响
+    ]);
+  });
+
+  it("父 h2 自身直接正文改动 → 标 h2（子章节不受影响）", () => {
+    // 改的是父自己的直接正文（h3「子」之前那段），不在子区间内。
+    const oldC = "## 父\n旧父正文\n### 子\n子正文\n## 邻\n邻正文\n";
+    const newC = "## 父\n新父正文\n### 子\n子正文\n## 邻\n邻正文\n";
+    expect(shape(computeTocDiff(oldC, newC))).toEqual([
+      { text: "父", kind: "mod", side: "target" }, // 父最内层区间含其直接正文行 → mod
+      { text: "子", kind: null, side: "target" }, // 子区间正文未变
+      { text: "邻", kind: null, side: "target" },
+    ]);
+  });
+
+  it("在某章后新增整段子章节 → 前一章不被误标（前导空行掩码）", () => {
+    // A 章后新增整段 B 章；LCS 常把 B 的新增边界落在 A 末尾空行上，前导空行掩码须让 A 不被误标 mod。
+    const oldC = "## A\nA 正文\nA 第二行\n";
+    const newC = "## A\nA 正文\nA 第二行\n\n## B\nB 正文\n";
+    expect(shape(computeTocDiff(oldC, newC))).toEqual([
+      { text: "A", kind: null, side: "target" }, // 仅 B 新增，A 未改 → null
+      { text: "B", kind: "add", side: "target" },
+    ]);
+  });
+
+  it("在某章后删除整段子章节 → 前一章不被误标（前导空行掩码）", () => {
+    const oldC = "## A\nA 正文\nA 第二行\n\n## B\nB 正文\n";
+    const newC = "## A\nA 正文\nA 第二行\n";
+    expect(shape(computeTocDiff(oldC, newC))).toEqual([
+      { text: "A", kind: null, side: "target" }, // 仅 B 删除，A 未改 → null
+      { text: "B", kind: "del", side: "base" },
+    ]);
+  });
+
+  it("文档根标题不因后代章节改动而 mod（精确归属、不冒泡到根）", () => {
+    // 根 h1 自身直接正文未改，仅子章节 ## 子二 的正文改 → 根应为 null、只标子二。
+    const oldC = "# 根\n根直接正文\n## 子一\n子一正文\n## 子二\n旧子二正文\n";
+    const newC = "# 根\n根直接正文\n## 子一\n子一正文\n## 子二\n新子二正文\n";
+    expect(shape(computeTocDiff(oldC, newC))).toEqual([
+      { text: "根", kind: null, side: "target" }, // 根直接正文未改、后代改动不冒泡 → null
+      { text: "子一", kind: null, side: "target" },
+      { text: "子二", kind: "mod", side: "target" },
     ]);
   });
 

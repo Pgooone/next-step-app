@@ -8,9 +8,10 @@ import {
   useArtifactStore,
   selectPendingBlocks,
 } from "@/lib/stores/useArtifactStore";
-import { parseToc, slugify, type TocItem } from "@/lib/artifact-view/toc";
+import { parseToc, slugify } from "@/lib/artifact-view/toc";
 import { buildLineDiffSegments } from "@/lib/artifact-view/anchor";
 import { computeVersionDiffBlocks } from "@/lib/artifact-view/version-diff";
+import { computeTocDiff, type TocDiffItem } from "@/lib/artifact-view/toc-diff";
 import {
   INLINE_HL_LIMIT,
   countPendingBlocks,
@@ -216,8 +217,6 @@ export function ArtifactPanel({
   // 渲染用内容：看历史版用 historyContent 快照，否则用当前版 content。
   const displayContent = viewingHistory ? (historyContent ?? "") : (artifact?.content ?? "");
 
-  const toc = useMemo(() => parseToc(displayContent), [displayContent]);
-
   // 「取某版的前驱版内容」共用 helper（第二轮 T2/T3 / D-R2-04）：versions[] 按 version 升序，取目标
   // 版在序列里的**前一个元素** content 作 base（**非**「版号-1」，防版本号空洞）；目标版是序列首元素
   // （通常 v1、无前驱）或未找到 → null。T2（viewingHistory 版本下拉）与 T3（时间线手风琴）共用同一套
@@ -248,6 +247,30 @@ export function ArtifactPanel({
         : [],
     [viewingHistory, historyCompare, historyBaseContent, displayContent],
   );
+
+  // 左侧目录数据（第三轮 T2 / 需求A）：版本对比态用 computeTocDiff 算带 diff 标记的目录序列，
+  // 否则退化为现有 parseToc 映射成无 diffKind 的等价项（side='target'、line=0），TocSidebar 据此
+  // 渲染同现状（零回归）。
+  //
+  // ⚠️ 就地从**已订阅的** historyBaseContent/displayContent 用 useMemo 算——**绝不**新建返回新数组的
+  // store selector（D-D3-10：派生 selector 每次返回新数组引用 → useSyncExternalStore 快照恒不等 →
+  // 无限重渲染、只真浏览器暴露）。computeTocDiff/parseToc 都只值导入 lcs.ts/toc.ts（D-R7B-07，零 node 依赖）。
+  //
+  // 对比条件与 versionDiffBlocks 完全对齐（viewingHistory && historyCompare && historyBaseContent != null）：
+  // 逃生口切「只读全文」(historyCompare=false) 时正文走纯只读 Markdown 无 diff，TOC 也须随之退回无标记，
+  // 否则会出现「正文只读全文、目录却带 diff 色线」的不一致。
+  const tocItems = useMemo<TocDiffItem[]>(() => {
+    if (viewingHistory && historyCompare && historyBaseContent != null) {
+      return computeTocDiff(historyBaseContent, displayContent);
+    }
+    // 非对比态：parseToc → 无 diffKind 的等价项（与旧 toc 行为一致）。
+    return parseToc(displayContent).map((it) => ({
+      ...it,
+      line: 0,
+      side: "target",
+      diffKind: null,
+    }));
+  }, [viewingHistory, historyCompare, historyBaseContent, displayContent]);
 
   // AC④：pending 块数 > 阈值自动降级为并排 Diff（即使用户没点切换）。
   // 全屏态阈值放宽到 80（D-UI-05），非全屏维持 25；看历史版不叠 pending（走只读分支）。
@@ -477,7 +500,7 @@ export function ArtifactPanel({
 
       {/* 主体：左 TOC + 右内容（AC①）。Diff 历史时间线模式下 TOC 无意义（时间线非文档正文），隐藏。 */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-        {toc.length > 0 && !historyMode && <TocSidebar items={toc} contentRef={contentRef} />}
+        {tocItems.length > 0 && !historyMode && <TocSidebar items={tocItems} contentRef={contentRef} />}
         <div ref={contentRef} style={{ flex: 1, overflow: "auto", background: "var(--bg)" }}>
           {historyMode ? (
             // Diff 历史时间线（第二轮 T3 / D-R2-05/06，甲）：主体区铺满版本时间线、覆盖正文；
@@ -575,8 +598,28 @@ export function ArtifactPanel({
   );
 }
 
-/** TOC 侧栏（AC①）：点击标题滚到对应 id 的标题元素。 */
-function TocSidebar({ items, contentRef }: { items: TocItem[]; contentRef: React.RefObject<HTMLDivElement | null> }) {
+/** TOC diff 类型符号（靠形状区分、满足色盲无障碍 color-not-only，T2b 乙）：+ 新增 / ~ 修改 / − 删除。 */
+const TOC_DIFF_SYMBOL: Record<NonNullable<TocDiffItem["diffKind"]>, string> = {
+  add: "+",
+  mod: "~",
+  del: "−", // U+2212 minus sign（比 ASCII '-' 更端正、与 del 删除线语义呼应）
+};
+/** 符号列宽（含与标题的 1 字距）：标记条 marginLeft 与之对齐，使色条左缘正对标题文字起点。 */
+const TOC_SYMBOL_COL_WIDTH = 14;
+
+/**
+ * TOC 侧栏（AC① + 第三轮 T2 需求A + T2b 乙·标记条+类型符号）：点击标题滚到对应 id 的标题元素。
+ *
+ * 接受带可选 `diffKind`/`side` 的目录项（{@link TocDiffItem}）：
+ * - 版本对比态（diffKind 非 null）→ 行首一个极小单色**类型符号**（`+`/`~`/`−`，靠形状区分、色盲也能辨）
+ *   + 标题下方一条**内缩、加粗 3px、圆角**的色条（add 绿 / mod 黄 / del 红，不顶满侧栏宽、左对齐文字、
+ *   右侧留 padding），**无圆点/图标**（D-R3-05 / D-UI-乙）。
+ * - `del` 条目（side==='base'）：渲染层无对应 data-slug 落点 → 文本暗色（opacity 0.55）、**不可点击**
+ *   （onClick no-op、cursor default、无 hover 变色），符号 `−`、标记条红色。
+ * - `diffKind===null`（未变 / 非对比态）→ 文本同现状；行首留**等宽符号占位**（无符号但缩进对齐保持
+ *   一致，标题不因有无符号而错位），无标记条（零回归）。
+ */
+function TocSidebar({ items, contentRef }: { items: TocDiffItem[]; contentRef: React.RefObject<HTMLDivElement | null> }) {
   const jump = (slug: string) => {
     const el = contentRef.current?.querySelector(`[data-slug="${CSS.escape(slug)}"]`);
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -592,31 +635,74 @@ function TocSidebar({ items, contentRef }: { items: TocItem[]; contentRef: React
         padding: "8px 0",
       }}
     >
-      {items.map((it, i) => (
-        <button
-          key={i}
-          onClick={() => jump(it.slug)}
-          title={it.text}
-          style={{
-            display: "block",
-            width: "100%",
-            textAlign: "left",
-            padding: `3px 12px 3px ${8 + (it.level - 1) * 12}px`,
-            background: "none",
-            border: "none",
-            color: "var(--text-muted)",
-            fontSize: 12,
-            cursor: "pointer",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
-        >
-          {it.text}
-        </button>
-      ))}
+      {items.map((it, i) => {
+        const isDel = it.diffKind === "del";
+        // del 条目无落点 → 不可点；其余（add/mod/null，side==='target'）走现有 slug 跳转。
+        const clickable = !isDel;
+        const baseColor = isDel ? "var(--text-dim)" : "var(--text-muted)";
+        const kindColor = it.diffKind ? KIND_STYLE[it.diffKind].border : undefined;
+        return (
+          <button
+            key={i}
+            onClick={clickable ? () => jump(it.slug) : undefined}
+            title={it.text}
+            style={{
+              display: "block",
+              width: "100%",
+              textAlign: "left",
+              // 标记条占位时下方多留间距（marginBottom），避免色条与下一行挤在一起。
+              padding: `3px 12px 3px ${8 + (it.level - 1) * 12}px`,
+              marginBottom: it.diffKind ? 4 : 0,
+              background: "none",
+              border: "none",
+              color: baseColor,
+              // del 文本暗色（占位、不可点）。
+              opacity: isDel ? 0.55 : 1,
+              fontSize: 12,
+              cursor: clickable ? "pointer" : "default",
+            }}
+            // del 不绑 hover 变色（保持暗色不可点观感）；其余维持现有 hover（只改文本色、不动符号/色条）。
+            onMouseEnter={clickable ? (e) => { e.currentTarget.style.color = "var(--text)"; } : undefined}
+            onMouseLeave={clickable ? (e) => { e.currentTarget.style.color = baseColor; } : undefined}
+          >
+            {/* 行：类型符号（占等宽列、未变也留占位避免标题错位）+ 标题文本（单行省略号）。 */}
+            <span style={{ display: "flex", alignItems: "baseline" }}>
+              <span
+                aria-hidden
+                style={{
+                  display: "inline-block",
+                  width: TOC_SYMBOL_COL_WIDTH,
+                  flexShrink: 0,
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 10,
+                  lineHeight: 1,
+                  color: kindColor ?? "transparent",
+                }}
+              >
+                {it.diffKind ? TOC_DIFF_SYMBOL[it.diffKind] : ""}
+              </span>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flex: 1 }}>
+                {it.text}
+              </span>
+            </span>
+            {/* 标记条：标题下方一条内缩（左对齐文字起点、右侧留 padding 不顶满）、加粗 3px、圆角的色条。 */}
+            {it.diffKind && (
+              <span
+                aria-hidden
+                style={{
+                  display: "block",
+                  height: 3,
+                  borderRadius: 2,
+                  background: kindColor,
+                  marginTop: 3,
+                  marginLeft: TOC_SYMBOL_COL_WIDTH, // 左缘对齐标题文字起点
+                  marginRight: 28, // 右侧留出 padding，不顶满侧栏宽
+                }}
+              />
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }
