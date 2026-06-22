@@ -1016,13 +1016,16 @@ export function AppShell() {
             )}
           </div>
           {/* A1（T5）全屏切换：进/退全屏浮层（D-UI-08 退出三路之一 = 浮层头部按钮）。
-              桌面段才有意义，移动端经 .panel-fullscreen-btn 隐藏（globals.css）；点 backdrop / Esc 亦可退。 */}
+              桌面段才有意义，移动端经 .panel-fullscreen-btn 隐藏（globals.css）；点 backdrop / Esc 亦可退。
+              marginRight 须 ≥ 固定 toggle 宽度(36)：侧栏态面板头右缘紧贴视口右缘，而右上角「Hide file
+              panel」固定钮(position:fixed top0 right0 36×36 zIndex300)会盖住面板头最右 36px——本钮右移
+              让开该角，否则真鼠标点不到（B-R7-1，lead 真浏览器 elementFromPoint 实测被 toggle 拦截）。 */}
           <button
             className="panel-fullscreen-btn"
             onClick={toggleFullscreen}
             title={rightPanelFullscreen ? "退出全屏" : "全屏查看"}
             aria-label={rightPanelFullscreen ? "退出全屏" : "全屏查看"}
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, marginRight: 6, flexShrink: 0, background: "transparent", border: "none", borderRadius: 4, color: "var(--text-dim)", cursor: "pointer", padding: 0 }}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, marginRight: 42, flexShrink: 0, background: "transparent", border: "none", borderRadius: 4, color: "var(--text-dim)", cursor: "pointer", padding: 0 }}
             onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
             onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.background = "transparent"; }}
           >

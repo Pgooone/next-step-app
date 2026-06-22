@@ -108,3 +108,20 @@
 ---
 
 > 注：本轮按项目流程先出详细设计 + QA + 任务卡，等用户复审/greenlight 再开 T1。实现用 agent team 串行（lead 验收即 commit + 派下一卡，记忆 `v2-impl-handoff-cadence`）。
+
+---
+
+## 真浏览器集中验收（lead 亲跑 Playwright，2026-06-22）
+
+dev :30141（next/font 离线优雅降级 fallback、不阻塞）；fixture = tsx 脚本直调领域服务在允许根造 项目+artifact(add/mod/del 三块)+非空会话（非 DeepSeek）。
+
+**⚠️ 关键教训**：改 CSS 后 Turbopack `.next` 缓存会**服旧样式**——首轮「全屏没生效」是缓存假象（served CSS `fsRuleCount:0`）；**清 `.next` 重启后** lead 计算样式实测全屏面板正确 `position:fixed/width:1100px/x:316` + backdrop，**T5 CSS/FLIP 代码本身无误**。（验 UI 改 CSS 必先重启/清缓存。）
+
+**B-R7-1（真 bug，已修 + 真鼠标复验）**：全屏「进入」钮 `.panel-fullscreen-btn` 侧栏态被右上角固定「Hide file panel」toggle（position:fixed top0 right0 zIndex300 36×36）完全遮挡，`elementFromPoint(钮心)`=toggle、真鼠标 click 超时 → 真用户打不开全屏。修：`marginRight 6→42` 左移让开该角（AppShell.tsx）。lead 真鼠标复验 `enterRealClick:OK` + 进全屏 `position:fixed/width:1100`。
+
+**逐项真机 PASS**（lead 亲验，r7e2e 旁证）：
+- P0 无崩 / 无 D-D3-10 无限重渲染（pageErrors []）
+- A1 全屏 FLIP 浮层（清缓存后 1100px/x316 + backdrop）+ 退出三路（按钮/backdrop/Esc 真键鼠）
+- A2 内联三色（绿 4ade80 / 黄 eab308 / 红 f87171）+ 就地 ✓ **真物化**（POST `/resolve` 200 → 块 confirmed，红线守住）
+- A3 点对话框 diff 块 → 面板重开 + 滚动高亮（focusVisible）
+- **仅逻辑/未真机**：T1 propose 后自动刷新（未跑 DeepSeek 真 propose_edit；agent_end gate refresh 逻辑已验、refresh 机制已由就地 ✓ 旁证）
