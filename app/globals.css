@@ -332,10 +332,36 @@ html.dark .glass-card {
     width: 42vw;
     min-width: 300px;
   }
+  /* A1（T5）全屏：留边居中悬浮浮层 + gsap FLIP 驱动。transition:none 让位 gsap，避免 CSS
+     transition(width) 与 tween 双驱动抖动；> * width:100%!important 覆盖上面的 42vw 钉宽
+     （容器恰 2 个直接子 div：tab 区 + 内容区）。zIndex 640 > backdrop 630 > 顶栏下拉 500/转交气泡 600。 */
+  .right-panel-container.right-panel-fullscreen {
+    position: fixed;
+    top: 56px;
+    right: 24px;
+    bottom: 24px;
+    left: auto;
+    width: min(1100px, calc(100vw - 312px));
+    min-width: 0;
+    z-index: 640;
+    border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border);
+    transition: none;
+    overflow: hidden;
+  }
+  .right-panel-container.right-panel-fullscreen > * {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
 }
 
 /* Mobile sidebar: slide in/out as overlay */
 @media (max-width: 640px) {
+  /* A1（T5）：移动端不套全屏浮层，隐藏全屏切换按钮（保持现有 width:100% 右栏分支）。 */
+  .panel-fullscreen-btn {
+    display: none !important;
+  }
   .chat-stats-center {
     display: none !important;
   }

@@ -14,6 +14,7 @@ import { DispatchPanel } from "./DispatchPanel";
 import { ArtifactPanel } from "./ArtifactPanel";
 import { BranchNavigator } from "./BranchNavigator";
 import { useArtifactStore } from "@/lib/stores/useArtifactStore";
+import { gsap, useGSAP, Flip } from "@/lib/gsap-setup";
 import { useShallow } from "zustand/react/shallow";
 import { useSessionMapStore, selectMapForProject } from "@/lib/stores/useSessionMapStore";
 import { useAgentStore, selectAgentsForProject, agentColor } from "@/lib/stores/useAgentStore";
@@ -150,6 +151,12 @@ export function AppShell() {
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  // A1（T5）：file panel 全屏（留边居中悬浮浮层）。本地瞬态、不进 store、不持久化（刷新归零）。
+  const [rightPanelFullscreen, setRightPanelFullscreen] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
+  // FLIP 受控取态（D-UI-09）：切换瞬间先存起始矩形，跨过 setState 后在 useGSAP 里 Flip.from。
+  const flipStateRef = useRef<Flip.FlipState | null>(null);
 
   // PendingChangeCard 的 D 键经 requestDiffFocus +1 此 nonce → 展开右侧面板（聚焦并排 Diff，AC④/D-D4-3）。
   // 卡片在 ChatWindow 内够不到此处 rightPanelOpen 本地 state，故经 store 单调信号解耦；nonce 初值 0、
@@ -166,6 +173,60 @@ export function AppShell() {
   useEffect(() => {
     if (focusBlockNonce > 0) setRightPanelOpen(true);
   }, [focusBlockNonce]);
+
+  // A1 全屏切换（D-UI-09 受控取态）：切换前先 Flip.getState 存 ref（量当前矩形），再 setState；
+  // 真正的 Flip.from 在下面 useGSAP（deps=[rightPanelFullscreen]）里执行——React 切 class 后才补间。
+  // 进全屏前确保面板已展开（起始矩形可量）。
+  const prefersReducedMotion = () =>
+    typeof window !== "undefined" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const toggleFullscreen = useCallback(() => {
+    if (panelRef.current) flipStateRef.current = Flip.getState(panelRef.current);
+    setRightPanelFullscreen((v) => {
+      const next = !v;
+      if (next) setRightPanelOpen(true); // 进全屏：保证面板可见（FLIP 起点）
+      return next;
+    });
+  }, []);
+
+  // FLIP 动画 + backdrop 淡入淡出。受控范式：getState 在 toggleFullscreen 已存 ref，这里只 from。
+  // 首跑（挂载，flipStateRef 为 null）跳过补间。reduced-motion 直接 set 终态、不补间（对齐 useTheme.ts）。
+  useGSAP(
+    () => {
+      const reduce = prefersReducedMotion();
+      if (backdropRef.current) {
+        if (reduce) {
+          gsap.set(backdropRef.current, { autoAlpha: rightPanelFullscreen ? 1 : 0 });
+        } else {
+          gsap.to(backdropRef.current, {
+            autoAlpha: rightPanelFullscreen ? 1 : 0,
+            duration: 0.28,
+            ease: "power2.out",
+          });
+        }
+      }
+      // 仅在有起始态（即由用户切换触发、非挂载首跑）且未 reduced-motion 时跑 FLIP。
+      if (flipStateRef.current && !reduce) {
+        Flip.from(flipStateRef.current, {
+          duration: 0.42,
+          ease: "power2.inOut",
+          absolute: true,
+        });
+      }
+      flipStateRef.current = null; // 用后即清，避免下次误用旧态
+    },
+    { dependencies: [rightPanelFullscreen], scope: panelRef },
+  );
+
+  // 退出全屏的 Esc 监听（D-UI-08 三路之一）：仅全屏态挂、退出/卸载即移除（BUG-04 Esc gap 教训）。
+  useEffect(() => {
+    if (!rightPanelFullscreen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") toggleFullscreen();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [rightPanelFullscreen, toggleFullscreen]);
 
   const handleAtMention = useCallback((relativePath: string) => {
     chatInputRef.current?.insertText("`" + relativePath + "`");
@@ -905,9 +966,18 @@ export function AppShell() {
         </div>
       </div>
 
-      {/* Right panel: file viewer — always mounted, width animated via CSS */}
+      {/* A1（T5）：点 backdrop 退出全屏（D-UI-08 三路之一）。常驻挂载、由 gsap autoAlpha 控制显隐
+          （autoAlpha=opacity+visibility：隐藏时 visibility:hidden 不挡点击/可让退出淡出播完），
+          初始 opacity:0+visibility:hidden 保证首帧/SSR 隐藏。复刻 AgentManager 遮罩视觉，zIndex 630<浮层 640。 */}
       <div
-        className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}`}
+        ref={backdropRef}
+        onClick={toggleFullscreen}
+        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 630, opacity: 0, visibility: "hidden" }}
+      />
+      {/* Right panel: file viewer — always mounted, width animated via CSS；全屏态切 right-panel-fullscreen */}
+      <div
+        ref={panelRef}
+        className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelFullscreen ? " right-panel-fullscreen" : ""}`}
         style={{
           display: "flex",
           flexDirection: "column",
@@ -945,13 +1015,35 @@ export function AppShell() {
               />
             )}
           </div>
-
+          {/* A1（T5）全屏切换：进/退全屏浮层（D-UI-08 退出三路之一 = 浮层头部按钮）。
+              桌面段才有意义，移动端经 .panel-fullscreen-btn 隐藏（globals.css）；点 backdrop / Esc 亦可退。 */}
+          <button
+            className="panel-fullscreen-btn"
+            onClick={toggleFullscreen}
+            title={rightPanelFullscreen ? "退出全屏" : "全屏查看"}
+            aria-label={rightPanelFullscreen ? "退出全屏" : "全屏查看"}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, marginRight: 6, flexShrink: 0, background: "transparent", border: "none", borderRadius: 4, color: "var(--text-dim)", cursor: "pointer", padding: 0 }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.background = "transparent"; }}
+          >
+            {rightPanelFullscreen ? (
+              // minimize 图标
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" /><line x1="14" y1="10" x2="21" y2="3" /><line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
+            ) : (
+              // maximize 图标
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" /><line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
+            )}
+          </button>
         </div>
 
         {/* Content — 产物视图优先（D-D3-7），否则文件视图 */}
         <div style={{ flex: 1, overflow: "hidden" }}>
           {selectedArtifactId ? (
-            <ArtifactPanel onDeleted={() => setExplorerRefreshKey((k) => k + 1)} />
+            <ArtifactPanel onDeleted={() => setExplorerRefreshKey((k) => k + 1)} isFullscreen={rightPanelFullscreen} />
           ) : activeFileTab?.filePath ? (
             <FileViewer filePath={activeFileTab.filePath} cwd={activeCwd ?? undefined} />
           ) : (

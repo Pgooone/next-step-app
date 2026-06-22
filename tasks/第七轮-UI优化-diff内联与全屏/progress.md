@@ -10,7 +10,7 @@
 - [x] **T2 · 承重墙数据层**（anchor 补 changeId 可选第三参 + store 加 focusBlockId/Nonce/requestBlockFocus）—— ✅ 实现+逻辑门禁绿；**未建 selectPendingBlocksWithChange**（避 D-D3-10：新建 {block,changeId} 包装对象 selector 每次引用不同→useShallow 失效无限重渲染；changeId 映射改由 T3 ArtifactPanel useMemo 从稳定 pendingChanges 就地构造）
 - [x] **T3 · A2 内联渲染 + 就地确认 + A3 锚点消费**（ArtifactPanel）—— ✅ 实现+lead 独立验收（diff+门禁；resolve 运行时契约核实与服务端/卡片三方一致）；新建 `hooks/useResolveBlock.ts`；就地✓✗ 需 T5 全屏标志、跳转需 T4 源端→真浏览器随 T4/T5 整体验
 - [x] **T4 · A3 源端 + AppShell 接线**（PendingChangeCard + AppShell）—— ✅ 实现+lead 验收（BlockRow onClick→onFocus()+onJump()，block.id 在 ChangeCard 行 `onJump={()=>onJumpToBlock(b.id)}` 绑定→requestBlockFocus(b.id)；AppShell focusBlockNonce→setRightPanelOpen，仅展开不全屏 D-UI-07）；去重#3 放弃（PendingChangeCard.resolve 契约已三方一致、避回归不强改，D-R7-05 订正）；YNRD/全部/Esc 无回归
-- [ ] **T5 · A1 全屏 gsap 外壳**（AppShell + globals.css + gsap-setup + package.json）
+- [x] **T5 · A1 全屏 gsap 外壳**（AppShell + globals.css + gsap-setup + package.json）—— ✅ 实现+lead 验收（gsap@3.15+@gsap/react@2.1 装；FLIP 受控取态 getState→setState→useGSAP Flip.from；reduced-motion 直切；Esc 仅全屏挂卸；backdrop 常驻 autoAlpha；isFullscreen 传 ArtifactPanel；globals.css 全屏 class transition:none+>* width/min-width 100%!important 让位 gsap；移动端隐藏全屏钮）；逻辑门禁绿（test 375/375、tsc 零新错）；**真浏览器待集中验**
 
 依赖：T2 → T3 → T4 串行（数据→渲染→源端，A2/A3-跳转同验）；T1 独立先行；T5 可与 T2~T4 并行、建议紧接 T3 收尾。
 每张 UI 卡按项目硬规矩走真浏览器验收（browser-e2e skill）。每卡门禁绿即细粒度 commit（记忆 `next-step-commit-per-task`）。
