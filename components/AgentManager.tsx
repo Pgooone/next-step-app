@@ -287,6 +287,7 @@ export function AgentManager({ projectId, projectRoot, onClose, onSessionStarted
           maxHeight: "86vh",
           display: "flex",
           flexDirection: "column",
+          // Swiss：纯色面板，去环境底径向渐变
           background: "var(--bg)",
           border: "1px solid var(--border)",
           borderRadius: 12,
@@ -436,7 +437,7 @@ function AgentList({
           alignItems: "center",
           justifyContent: "center",
           gap: 8,
-          borderRadius: 12,
+          borderRadius: 10,
           borderStyle: "dashed",
           color: "var(--text-muted)",
           cursor: "pointer",
@@ -491,8 +492,8 @@ function AgentCard({ p, onOpen }: { p: AgentProfile; onOpen: (p: AgentProfile) =
       className="glass-card agent-card"
       style={{
         minHeight: 132,
-        borderRadius: 12,
-        padding: 12,
+        borderRadius: 10,
+        padding: 13,
         display: "flex",
         flexDirection: "column",
         alignItems: "flex-start",
@@ -507,7 +508,7 @@ function AgentCard({ p, onOpen }: { p: AgentProfile; onOpen: (p: AgentProfile) =
       <div style={{ display: "flex", gap: 10, alignItems: "flex-start", minWidth: 0, width: "100%" }}>
         <div
           className="agent-avatar"
-          style={{ width: 40, height: 40, fontSize: 18, background: agentColor(p.name) }}
+          style={{ width: 40, height: 40, fontSize: 16, background: agentColor(p.name) }}
         >
           {agentInitial(p.name)}
         </div>
@@ -541,7 +542,7 @@ function AgentCard({ p, onOpen }: { p: AgentProfile; onOpen: (p: AgentProfile) =
             <span
               className="agent-badge--mono"
               style={{
-                fontSize: 10,
+                fontSize: 11,
                 color: "var(--text-dim)",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -557,19 +558,20 @@ function AgentCard({ p, onOpen }: { p: AgentProfile; onOpen: (p: AgentProfile) =
         </div>
       </div>
 
-      {/* role 摘要（两行 line-clamp，空则整段不渲染） */}
+      {/* role 摘要（单行 ellipsis，保证所有卡同结构、等高；空则整段不渲染） */}
       {roleText && (
         <p
           style={{
             margin: 0,
-            fontSize: 11.5,
+            width: "100%",
+            fontSize: 12,
             lineHeight: 1.5,
             color: "var(--text-muted)",
-            display: "-webkit-box",
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: "vertical",
+            whiteSpace: "nowrap",
             overflow: "hidden",
+            textOverflow: "ellipsis",
           }}
+          title={p.role}
         >
           {p.role}
         </p>
@@ -1056,7 +1058,7 @@ function AgentFields({
                     padding: "4px 10px",
                     borderRadius: 14,
                     border: on ? "1px solid var(--accent)" : "1px solid var(--border)",
-                    background: on ? "rgba(37,99,235,0.10)" : "var(--bg)",
+                    background: on ? "var(--accent-soft)" : "var(--bg)",
                     color: on ? "var(--accent)" : "var(--text-muted)",
                     fontSize: 11,
                     cursor: "pointer",
@@ -1103,7 +1105,7 @@ function AgentFields({
                   padding: "6px 0",
                   borderRadius: 6,
                   border: on ? "1px solid var(--accent)" : "1px solid var(--border)",
-                  background: on ? "rgba(37,99,235,0.10)" : "var(--bg)",
+                  background: on ? "var(--accent-soft)" : "var(--bg)",
                   color: on ? "var(--accent)" : "var(--text-muted)",
                   fontSize: 12,
                   cursor: "pointer",
@@ -1160,7 +1162,7 @@ function AgentFields({
                   padding: "4px 10px",
                   borderRadius: 6,
                   border: on ? "1px solid var(--accent)" : "1px solid var(--border)",
-                  background: on ? "rgba(37,99,235,0.10)" : "var(--bg)",
+                  background: on ? "var(--accent-soft)" : "var(--bg)",
                   color: on ? "var(--accent)" : "var(--text-muted)",
                   fontSize: 11,
                   fontFamily: "var(--font-mono)",
@@ -1192,7 +1194,7 @@ function AgentFields({
                   padding: "6px 0",
                   borderRadius: 6,
                   border: on ? "1px solid var(--accent)" : "1px solid var(--border)",
-                  background: on ? "rgba(37,99,235,0.10)" : "var(--bg)",
+                  background: on ? "var(--accent-soft)" : "var(--bg)",
                   color: on ? "var(--accent)" : "var(--text-muted)",
                   fontSize: 12,
                   cursor: "pointer",
