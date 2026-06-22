@@ -9,13 +9,13 @@ import {
   selectPendingBlocks,
 } from "@/lib/stores/useArtifactStore";
 import { parseToc, slugify, type TocItem } from "@/lib/artifact-view/toc";
-import { buildSegments, type Segment } from "@/lib/artifact-view/anchor";
+import { buildLineDiffSegments } from "@/lib/artifact-view/anchor";
 import {
   INLINE_HL_LIMIT,
   countPendingBlocks,
 } from "@/lib/artifact-view/degrade";
 import { useResolveBlock } from "@/hooks/useResolveBlock";
-import type { DiffBlock } from "@/lib/domain/pending-change-service";
+import type { DiffBlock, PendingChange } from "@/lib/domain/pending-change-service";
 
 /** 全屏态放宽后的行内高亮块数上限（D-UI-05）；非全屏仍用 INLINE_HL_LIMIT(25)。 */
 const FULLSCREEN_INLINE_HL_LIMIT = 80;
@@ -30,7 +30,8 @@ type ResolveBlockFn = (changeId: string, blockId: string, action: "confirm" | "r
  * **不做** resolve / 逐块确认 / 版本切换（D4 / §5.5 / §5.6）。
  *
  * 配色沿用基座内联 `var(--...)` 主题（同 FileViewer），不引 Tailwind；
- * 渲染结构与锚定语义移植自 sf-mini InlineHighlightView / DiffBlockView（只取渲染、去 resolve）。
+ * 行内 diff（第七轮·第二轮 C 混合，D-UI-10）：未改动 equal 段走 markdown 富渲染、
+ * 改动块走与「查看 Diff」同款 DiffBlockCard，由 buildLineDiffSegments 按 LCS ops 真实顺序驱动。
  */
 
 // add 绿 / del 红 / mod 黄 三态配色（AC②）。border-left 3px + 浅色底，复用 FileViewer 的 diff 色值。
@@ -201,6 +202,9 @@ export function ArtifactPanel({
   const effectiveLimit = isFullscreen ? FULLSCREEN_INLINE_HL_LIMIT : INLINE_HL_LIMIT;
   const degraded = pendingCount > effectiveLimit;
   const effectiveMode: "inline" | "diff" = degraded ? "diff" : viewMode;
+  // 内联混合渲染只在「单条 replace」时走（D-R7B-02 保 LCS 自洽）；多条 / op=patch 退回并排 Diff。
+  const singleReplace =
+    pendingChanges.length === 1 && pendingChanges[0].diff.kind === "replace" ? pendingChanges[0] : null;
 
   // AC⑥：划选 artifact 正文 → 写 editTarget.quoteText（ChatWindow 引用条读取）。
   const handleQuote = () => {
@@ -402,14 +406,22 @@ export function ArtifactPanel({
               )}
               {effectiveMode === "diff" ? (
                 <DiffBlocksView blocks={pendingBlocks} />
-              ) : (
-                <InlineHighlightView
-                  content={artifact.content}
-                  pendingBlocks={pendingBlocks}
+              ) : singleReplace ? (
+                // 单条 replace：整篇混合内联（equal=markdown / change=与「查看 Diff」同款卡片）。
+                <InlineDiffView
+                  change={singleReplace}
                   changeIdByBlock={changeIdByBlock}
                   isFullscreen={isFullscreen}
                   resolveBlock={resolveBlock}
                 />
+              ) : pendingBlocks.length === 0 ? (
+                // 无 pending：只读全文。
+                <div style={{ padding: "16px 24px", maxWidth: 900 }}>
+                  <Markdown>{artifact.content}</Markdown>
+                </div>
+              ) : (
+                // 多条 / op=patch：退回并排 Diff（D-R7B-02），功能不丢。
+                <DiffBlocksView blocks={pendingBlocks} />
               )}
             </>
           )}
@@ -466,56 +478,45 @@ function TocSidebar({ items, contentRef }: { items: TocItem[]; contentRef: React
 }
 
 /**
- * 行内高亮视图（AC②③）：用 buildSegments 把 pending 块就近锚定到裸文本行，
- * plain 段原样 markdown 渲染、hl 段套 add/del/mod 配色（del 显删除线旧行）。
- * 无法锚定的块（unaligned）顶部提示切到并排 Diff。
+ * 内联混合视图（D-UI-10 用户拍板 C；第七轮·第二轮纠偏）：单条 replace 的 PendingChange
+ * 按 LCS ops 真实顺序渲染整篇——未改动 equal 段走 markdown 富渲染、改动块走与「查看 Diff」
+ * 同款 `DiffBlockCard`（带颜色边框的 git 卡片）。靠 T1 的 buildLineDiffSegments 驱动，无 unaligned。
+ * base 用 `change.diff.oldContent`（非 artifact.content，D-R7B-02 保 LCS 自洽）。
  */
-function InlineHighlightView({
-  content,
-  pendingBlocks,
+function InlineDiffView({
+  change,
   changeIdByBlock,
   isFullscreen,
   resolveBlock,
 }: {
-  content: string;
-  pendingBlocks: DiffBlock[];
+  change: PendingChange;
   changeIdByBlock: Map<string, string>;
   isFullscreen: boolean;
   resolveBlock: ResolveBlockFn;
 }) {
-  const setViewMode = useArtifactStore((s) => s.setViewMode);
-  const { segs, unaligned } = useMemo(
-    () => buildSegments(content, pendingBlocks, changeIdByBlock),
-    [content, pendingBlocks, changeIdByBlock],
+  const segs = useMemo(
+    () =>
+      change.diff.kind === "replace"
+        ? buildLineDiffSegments(change.diff.oldContent, change.diff.newContent, change.diffBlocks, changeIdByBlock)
+        : [],
+    [change, changeIdByBlock],
   );
+  // 调用方保证 diff.kind==='replace'；内部 narrow 兜底（非 replace 不渲染）。
+  if (change.diff.kind !== "replace") return null;
 
   return (
     <div style={{ padding: "16px 24px", maxWidth: 900 }}>
-      {unaligned.length > 0 && (
-        <button
-          onClick={() => setViewMode("diff")}
-          style={{
-            display: "block",
-            width: "100%",
-            textAlign: "left",
-            marginBottom: 10,
-            padding: "6px 12px",
-            borderRadius: 6,
-            border: "1px solid #eab308",
-            background: "rgba(234,179,8,0.12)",
-            color: "#ca8a04",
-            fontSize: 12,
-            cursor: "pointer",
-          }}
-        >
-          {unaligned.length} 处变更无法在正文定位，点此切到「并排 Diff」逐块查看 →
-        </button>
-      )}
       {segs.map((seg, i) =>
-        seg.type === "plain" ? (
+        seg.type === "equal" ? (
           seg.text.trim() === "" ? null : <Markdown key={i}>{seg.text}</Markdown>
         ) : (
-          <HlSegment key={i} seg={seg} isFullscreen={isFullscreen} resolveBlock={resolveBlock} />
+          <DiffBlockCard
+            key={i}
+            block={seg.block}
+            changeId={seg.changeId}
+            isFullscreen={isFullscreen}
+            resolveBlock={resolveBlock}
+          />
         ),
       )}
     </div>
@@ -523,31 +524,37 @@ function InlineHighlightView({
 }
 
 /**
- * 单个高亮段：套 KIND_STYLE 配色 + 角标；del/mod 的被删旧行以删除线红字展示。
- * 根 div 带 `data-block-id`（A3 跳转主落点，两态都有）。全屏态（isFullscreen）且块仍 pending 且
- * 有 changeId 时，角标区给出就地 ✓/✗（仅经 resolveBlock → resolve API，红线②不绕过）；已决态显状态标。
- * 非全屏态不显示 ✓/✗（保持侧栏态现状）。本组件只在「跟随最新版」分支渲染，故无需再判历史版只读。
+ * 单个改动块卡片：与「查看 Diff」(DiffBlocksView) 逐字同款的带边框 git 卡片
+ * （四边 1px border + 左 3px kind 色 + 半透 kind 底 + mono + tag + DiffLine 行：
+ * mod 先 oldLines '-' 红删除线再 lines '+' / add lines '+' 绿 / del lines '-' 红删除线）。
+ * 外层 div 带 `data-block-id`（A3 跳转落点，横跨多行的 mod 块命中一个完整元素）。
+ *
+ * 当 `isFullscreen && block.state==='pending' && changeId != null && resolveBlock` 时，
+ * 在 tag 行右侧给就地 ✓/✗（仅经 resolveBlock → resolve API，红线②不绕过）；
+ * 全屏态已决则显「已确认/已拒绝」状态标。非全屏或无 resolveBlock 不渲 ✓/✗（DiffBlocksView 走这条）。
  */
-function HlSegment({
-  seg,
+function DiffBlockCard({
+  block,
+  changeId,
   isFullscreen,
   resolveBlock,
 }: {
-  seg: Extract<Segment, { type: "hl" }>;
-  isFullscreen: boolean;
-  resolveBlock: ResolveBlockFn;
+  block: DiffBlock;
+  changeId?: string;
+  isFullscreen?: boolean;
+  resolveBlock?: ResolveBlockFn;
 }) {
-  const s = KIND_STYLE[seg.block.kind];
+  const s = KIND_STYLE[block.kind];
   const [busy, setBusy] = useState(false);
-  const resolved = seg.block.state !== "pending";
-  // 就地 ✓/✗ 仅全屏态、块 pending、有 changeId（能定位所属 PendingChange）时显示。
-  const canResolveHere = isFullscreen && !resolved && seg.changeId != null;
+  const resolved = block.state !== "pending";
+  // 就地 ✓/✗ 仅全屏态、块 pending、有 changeId、且传了 resolveBlock 时显示。
+  const canResolveHere = !!isFullscreen && !resolved && changeId != null && !!resolveBlock;
 
   const doResolve = async (action: "confirm" | "reject") => {
-    if (busy || seg.changeId == null) return;
+    if (busy || changeId == null || !resolveBlock) return;
     setBusy(true);
     try {
-      await resolveBlock(seg.changeId, seg.block.id, action);
+      await resolveBlock(changeId, block.id, action);
     } finally {
       setBusy(false);
     }
@@ -555,29 +562,34 @@ function HlSegment({
 
   return (
     <div
-      data-block-id={seg.block.id}
+      data-block-id={block.id}
       style={{
-        position: "relative",
-        margin: "2px 0",
-        padding: "4px 8px 4px 12px",
         borderLeft: `3px solid ${s.border}`,
+        border: "1px solid var(--border)",
+        borderLeftWidth: 3,
+        borderLeftColor: s.border,
+        borderRadius: 6,
         background: s.wrap,
-        borderRadius: 4,
+        padding: "10px 12px",
+        marginBottom: 10,
+        fontFamily: "var(--font-mono)",
+        fontSize: 13,
+        lineHeight: 1.6,
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
         <span
           style={{
             display: "inline-block",
             padding: "1px 6px",
             borderRadius: 4,
-            fontSize: 10,
+            fontSize: 11,
             fontWeight: 600,
             color: "#fff",
             background: s.tag,
           }}
         >
-          {seg.block.tag ?? s.tagText}
+          {block.tag ?? s.tagText}
         </span>
         {/* 就地 ✓/✗（全屏态、pending、有 changeId）；onClick stopPropagation 防触发外层（A3 跳转等）。 */}
         {canResolveHere && (
@@ -605,94 +617,41 @@ function HlSegment({
         {/* 已决态（全屏态下）显状态标，半透明。 */}
         {isFullscreen && resolved && (
           <span style={{ color: "var(--text-dim)", fontSize: 10, opacity: 0.7 }}>
-            {seg.block.state === "confirmed" ? "已确认" : "已拒绝"}
+            {block.state === "confirmed" ? "已确认" : "已拒绝"}
           </span>
         )}
       </div>
-      {seg.removed.length > 0 && (
-        <div style={{ margin: "2px 0" }}>
-          {seg.removed.map((ln, i) => (
-            <p
-              key={i}
-              style={{
-                margin: 0,
-                whiteSpace: "pre-wrap",
-                fontSize: 13,
-                lineHeight: 1.6,
-                color: "#f87171",
-                textDecoration: "line-through",
-              }}
-            >
-              {ln}
-            </p>
-          ))}
-        </div>
-      )}
-      {seg.text.trim() !== "" && <Markdown>{seg.text}</Markdown>}
+      {/* mod 块：先列被删旧行（红删除线），再列新行（绿） */}
+      {block.kind === "mod" &&
+        (block.oldLines ?? []).map((ln, i) => (
+          <DiffLine key={`o${i}`} text={ln} prefix="-" color="#f87171" strike />
+        ))}
+      {block.lines.map((ln, i) => (
+        <DiffLine
+          key={`n${i}`}
+          text={ln}
+          prefix={block.kind === "add" ? "+" : block.kind === "del" ? "-" : "+"}
+          color={block.kind === "del" ? "#f87171" : block.kind === "add" ? "#4ade80" : "var(--text)"}
+          strike={block.kind === "del"}
+        />
+      ))}
     </div>
   );
 }
 
 /**
- * 并排 Diff 视图（AC⑤）：逐块渲染 pending 块（add/del/mod），逐块可见。
- * 移植 sf-mini DiffBlockView 的渲染部分、去掉 resolve；mod 块上旧行下新行对照。
+ * 并排 Diff 视图（AC⑤）：逐块渲染 pending 块（add/del/mod），逐块可见、只读。
+ * 改用与内联改动块共用的 DiffBlockCard（不传 resolve → 纯只读，无就地 ✓/✗）。
  */
 function DiffBlocksView({ blocks }: { blocks: DiffBlock[] }) {
   if (blocks.length === 0) {
     return <Centered color="var(--text-dim)">无待确认变更</Centered>;
   }
   return (
-    <div style={{ padding: "16px 24px", display: "flex", flexDirection: "column", gap: 10, maxWidth: 900 }}>
-      {blocks.map((b) => {
-        const s = KIND_STYLE[b.kind];
-        return (
-          <div
-            key={b.id}
-            data-block-id={b.id}
-            style={{
-              borderLeft: `3px solid ${s.border}`,
-              border: "1px solid var(--border)",
-              borderLeftWidth: 3,
-              borderLeftColor: s.border,
-              borderRadius: 6,
-              background: s.wrap,
-              padding: "10px 12px",
-              fontFamily: "var(--font-mono)",
-              fontSize: 13,
-              lineHeight: 1.6,
-            }}
-          >
-            <span
-              style={{
-                display: "inline-block",
-                marginBottom: 6,
-                padding: "1px 6px",
-                borderRadius: 4,
-                fontSize: 11,
-                fontWeight: 600,
-                color: "#fff",
-                background: s.tag,
-              }}
-            >
-              {b.tag ?? s.tagText}
-            </span>
-            {/* mod 块：先列被删旧行（红删除线），再列新行（绿） */}
-            {b.kind === "mod" &&
-              (b.oldLines ?? []).map((ln, i) => (
-                <DiffLine key={`o${i}`} text={ln} prefix="-" color="#f87171" strike />
-              ))}
-            {b.lines.map((ln, i) => (
-              <DiffLine
-                key={`n${i}`}
-                text={ln}
-                prefix={b.kind === "add" ? "+" : b.kind === "del" ? "-" : "+"}
-                color={b.kind === "del" ? "#f87171" : b.kind === "add" ? "#4ade80" : "var(--text)"}
-                strike={b.kind === "del"}
-              />
-            ))}
-          </div>
-        );
-      })}
+    <div style={{ padding: "16px 24px", maxWidth: 900 }}>
+      {blocks.map((b) => (
+        <DiffBlockCard key={b.id} block={b} />
+      ))}
     </div>
   );
 }

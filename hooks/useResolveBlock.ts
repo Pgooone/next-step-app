@@ -6,7 +6,7 @@ import { toast } from "@/lib/stores/useToastStore";
 
 /**
  * 单块 resolve 的共用 hook（第七轮 T3/T4）：抽自 `PendingChangeCard.resolve` 的「单块确认/拒绝」核心，
- * 供内联段就地 ✓/✗（ArtifactPanel.HlSegment，T3）与对话框卡片（PendingChangeCard，T4 改用）共用，
+ * 供内联段就地 ✓/✗（ArtifactPanel.DiffBlockCard，第七轮·第二轮起改名）与对话框卡片（PendingChangeCard，T4 改用）共用，
  * 避免两份 fetch 逻辑漂移。
  *
  * 契约与 PendingChangeCard 现状一致：
