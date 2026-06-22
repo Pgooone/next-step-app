@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { AgentProfile } from "@/lib/domain/agent-profile-store";
 import { getFileName, joinFilePath } from "@/lib/file-paths";
-import { useAgentStore } from "@/lib/stores/useAgentStore";
+import { agentColor, agentInitial, splitModel, useAgentStore } from "@/lib/stores/useAgentStore";
 import {
   selectIsActive,
   selectTaskForProject,
@@ -152,6 +152,7 @@ export function DispatchPanel({ projectId, projectRoot, onClose, onOpenFile }: P
           maxHeight: "86vh",
           display: "flex",
           flexDirection: "column",
+          // Swiss：纯色面板，去环境底径向渐变（同 AgentManager 模态）
           background: "var(--bg)",
           border: "1px solid var(--border)",
           borderRadius: 12,
@@ -300,16 +301,19 @@ function DispatchForm({
             {agents.map((p) => {
               const on = selectedIds.includes(p.id);
               const atLimit = !on && selectedIds.length >= MAX_AGENTS;
+              const isCoding = (p.mode ?? "doc") === "coding";
+              const modelId = p.model ? splitModel(p.model)?.modelId ?? p.model : null;
               return (
                 <div
                   key={p.id}
                   data-testid="dispatch-agent-item"
                   data-agent-name={p.name}
                   data-selected={on}
+                  className="glass-card"
                   style={{
-                    border: on ? "1px solid var(--accent)" : "1px solid var(--border)",
                     borderRadius: 8,
-                    background: on ? "rgba(37,99,235,0.06)" : "var(--bg-hover)",
+                    borderColor: on ? "var(--accent)" : undefined,
+                    background: on ? "var(--accent-soft)" : undefined,
                     overflow: "hidden",
                   }}
                 >
@@ -320,7 +324,7 @@ function DispatchForm({
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: 8,
+                      gap: 10,
                       width: "100%",
                       padding: "9px 12px",
                       background: "none",
@@ -348,21 +352,39 @@ function DispatchForm({
                     >
                       {on ? "✓" : ""}
                     </span>
+                    {/* 头像（复用 .agent-avatar，缩到 32，身份色 + 首字母，无环） */}
+                    <span
+                      className="agent-avatar"
+                      style={{ width: 32, height: 32, fontSize: 13, background: agentColor(p.name) }}
+                    >
+                      {agentInitial(p.name)}
+                    </span>
                     <span style={{ flex: 1, minWidth: 0 }}>
-                      <span
-                        style={{
-                          display: "block",
-                          fontSize: 13,
-                          fontWeight: 500,
-                          color: "var(--text)",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {p.name}
+                      {/* 名 + 模式徽章 */}
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                        <span
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            fontSize: 13,
+                            fontWeight: 600,
+                            color: "var(--text)",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                          title={p.name}
+                        >
+                          {p.name}
+                        </span>
+                        <span
+                          className={`agent-badge ${isCoding ? "agent-badge--coding" : "agent-badge--doc"}`}
+                        >
+                          {isCoding ? "编码" : "文档"}
+                        </span>
                       </span>
-                      {p.role && (
+                      {/* 模型 · role（1 行 ellipsis） */}
+                      {(modelId || p.role) && (
                         <span
                           style={{
                             display: "block",
@@ -373,7 +395,12 @@ function DispatchForm({
                             whiteSpace: "nowrap",
                             marginTop: 2,
                           }}
+                          title={[modelId, p.role].filter(Boolean).join(" · ")}
                         >
+                          {modelId && (
+                            <span style={{ fontFamily: "var(--font-mono)" }}>{modelId}</span>
+                          )}
+                          {modelId && p.role ? " · " : ""}
                           {p.role}
                         </span>
                       )}
