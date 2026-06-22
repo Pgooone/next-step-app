@@ -414,7 +414,7 @@ function AgentList({
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+        gridTemplateColumns: "repeat(auto-fill, minmax(176px, 1fr))",
         gap: 12,
       }}
     >
@@ -428,9 +428,9 @@ function AgentList({
       <button
         data-testid="agent-new-btn"
         onClick={onCreate}
-        className="glass-card"
+        className="glass-card agent-card"
         style={{
-          aspectRatio: "1",
+          minHeight: 132,
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
@@ -465,63 +465,147 @@ function AgentList({
   );
 }
 
-/* ── 单张正方形玻璃卡片（一级展示：真名 + 首字母色块，整卡可点进二级菜单） ── */
+/* ── 单张玻璃名片（三段式 6 字段：身份行 + role 摘要 + meta 页脚，整卡可点进二级菜单） ── */
+
+const THINKING_SHORT: Record<"low" | "medium" | "high", string> = {
+  low: "低",
+  medium: "中",
+  high: "高",
+};
 
 function AgentCard({ p, onOpen }: { p: AgentProfile; onOpen: (p: AgentProfile) => void }) {
+  const mode = p.mode ?? "doc";
+  const isCoding = mode === "coding";
+  const roleText = p.role?.trim();
+  const showSkills = p.skills.length > 0;
+  const showTools = isCoding && p.tools.length > 0;
+  const showThinking = p.thinkingLevel != null && p.thinkingLevel !== "off";
+  const showMeta = showSkills || showTools || showThinking;
+
   return (
     <button
       data-testid="agent-item"
       data-agent-name={p.name}
       onClick={() => onOpen(p)}
       title={`配置 ${p.name}`}
-      className="glass-card"
+      className="glass-card agent-card"
       style={{
-        aspectRatio: "1",
+        minHeight: 132,
         borderRadius: 12,
         padding: 12,
         display: "flex",
         flexDirection: "column",
         alignItems: "flex-start",
+        gap: 8,
         overflow: "hidden",
         cursor: "pointer",
         font: "inherit",
         textAlign: "left",
       }}
     >
-      {/* 首字母色块 */}
-      <div
-        style={{
-          width: 40,
-          height: 40,
-          borderRadius: 10,
-          background: agentColor(p.name),
-          color: "#fff",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 18,
-          fontWeight: 700,
-          flexShrink: 0,
-        }}
-      >
-        {agentInitial(p.name)}
+      {/* 身份行：头像 + 名/模式徽章 + 模型 */}
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-start", minWidth: 0, width: "100%" }}>
+        <div
+          className="agent-avatar"
+          style={{ width: 40, height: 40, fontSize: 18, background: agentColor(p.name) }}
+        >
+          {agentInitial(p.name)}
+        </div>
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+          {/* 名行：真名 + 模式文字徽章 */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+            <span
+              style={{
+                flex: 1,
+                fontSize: 13,
+                fontWeight: 600,
+                color: "var(--text)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+              title={p.name}
+            >
+              {p.name}
+            </span>
+            <span
+              className={`agent-badge ${isCoding ? "agent-badge--coding" : "agent-badge--doc"}`}
+              data-testid="agent-card-mode"
+              data-mode={mode}
+            >
+              {isCoding ? "编码" : "文档"}
+            </span>
+          </div>
+          {/* 模型行 */}
+          {p.model ? (
+            <span
+              className="agent-badge--mono"
+              style={{
+                fontSize: 10,
+                color: "var(--text-dim)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+              title={p.model}
+            >
+              {splitModel(p.model)?.modelId ?? p.model}
+            </span>
+          ) : (
+            <span style={{ fontSize: 11, color: "var(--text-dim)" }}>默认模型</span>
+          )}
+        </div>
       </div>
-      {/* 真名 */}
-      <div
-        style={{
-          marginTop: 10,
-          fontSize: 13,
-          fontWeight: 600,
-          color: "var(--text)",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          maxWidth: "100%",
-        }}
-        title={p.name}
-      >
-        {p.name}
-      </div>
+
+      {/* role 摘要（两行 line-clamp，空则整段不渲染） */}
+      {roleText && (
+        <p
+          style={{
+            margin: 0,
+            fontSize: 11.5,
+            lineHeight: 1.5,
+            color: "var(--text-muted)",
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+          }}
+        >
+          {p.role}
+        </p>
+      )}
+
+      {/* meta 页脚（技能 / 工具 / 思考计数；全空则不渲染） */}
+      {showMeta && (
+        <div
+          style={{
+            marginTop: "auto",
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 6,
+            alignItems: "center",
+          }}
+        >
+          {showSkills && (
+            <span className="agent-badge agent-badge--meta" data-testid="agent-card-skills">
+              {p.skills.length} 技能
+            </span>
+          )}
+          {showTools && (
+            <span
+              className="agent-badge agent-badge--meta agent-badge--mono"
+              data-testid="agent-card-tools"
+            >
+              {p.tools.length} 工具
+            </span>
+          )}
+          {showThinking && (
+            <span className="agent-badge agent-badge--meta" data-testid="agent-card-thinking">
+              {THINKING_SHORT[p.thinkingLevel as "low" | "medium" | "high"]} 思考
+            </span>
+          )}
+        </div>
+      )}
     </button>
   );
 }
