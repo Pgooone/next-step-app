@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -17,6 +17,7 @@ import {
 } from "@/lib/artifact-view/degrade";
 import { useResolveBlock } from "@/hooks/useResolveBlock";
 import type { DiffBlock } from "@/lib/domain/pending-change-service";
+import type { ArtifactVersion } from "@/lib/domain/artifact-service";
 
 /** 全屏态放宽后的行内高亮块数上限（D-UI-05）；非全屏仍用 INLINE_HL_LIMIT(25)。 */
 const FULLSCREEN_INLINE_HL_LIMIT = 80;
@@ -120,6 +121,11 @@ export function ArtifactPanel({
   // 看历史版的逃生口（第二轮 T2 / D-R2-07）：true=对比上一版只读 diff（默认）、false=只读全文。
   // 瞬态局部态、切版本时重置回「对比」默认——纯 useState、彻底绕开 D-D3-10 selector 坑。
   const [historyCompare, setHistoryCompare] = useState(true);
+  // Diff 历史时间线（第二轮 T3 / D-R2-05/06）：historyMode=主体区铺满时间线覆盖正文（甲）；
+  // expandedHistoryVersion=当前手风琴展开的版本号（null=全收起）。皆**局部 useState 标量**——
+  // 瞬态 UI 态、不进 store，彻底绕开 D-D3-10 派生 selector 无限重渲染坑。
+  const [historyMode, setHistoryMode] = useState(false);
+  const [expandedHistoryVersion, setExpandedHistoryVersion] = useState<number | null>(null);
 
   // 确认态打开时支持 Esc / 外点关闭（BUG-04，与 PendingChangeCard 全部✓/✗ 范式一致）。
   useEffect(() => {
@@ -170,6 +176,13 @@ export function ArtifactPanel({
     setHistoryCompare(true);
   }, [selectedVersion]);
 
+  // 切换打开的 artifact 时，Diff 历史时间线态归零（不跨 artifact 留旧的 historyMode/展开条目，T3）。
+  const artifactId = artifact?.id;
+  useEffect(() => {
+    setHistoryMode(false);
+    setExpandedHistoryVersion(null);
+  }, [artifactId]);
+
   // A3 跳转消费端「滚动+脉冲」（T3）：focusBlockNonce 变化（点对话框 diff 块）→ 滚到原文对应
   // data-block-id 段并短暂高亮脉冲。照抄 TocSidebar.jump 的 querySelector+scrollIntoView 范式。
   // deps 只取 nonce（同一块连点也能重触发）；focusBlockId 用 getState() 读最新值（与 nonce 同 set 更新）。
@@ -205,16 +218,26 @@ export function ArtifactPanel({
 
   const toc = useMemo(() => parseToc(displayContent), [displayContent]);
 
-  // 版本间 diff 的「前驱版内容」（第二轮 T2 / D-R2-04）：versions[] 按 version 升序，取选中版在
-  // 序列里的**前一个元素**作 base（**非**「版号-1」，防版本号空洞）；选中版是序列首元素（通常 v1、
-  // 无前驱）→ null（走「只读全文 + 首版无对比基准」）。
-  const historyBaseContent = useMemo(() => {
-    if (!viewingHistory) return null;
-    const sorted = [...versions].sort((a, b) => a.version - b.version);
-    const idx = sorted.findIndex((v) => v.version === selectedVersion);
-    if (idx <= 0) return null; // 未找到或为首元素 → 无前驱
-    return sorted[idx - 1].content;
-  }, [viewingHistory, versions, selectedVersion]);
+  // 「取某版的前驱版内容」共用 helper（第二轮 T2/T3 / D-R2-04）：versions[] 按 version 升序，取目标
+  // 版在序列里的**前一个元素** content 作 base（**非**「版号-1」，防版本号空洞）；目标版是序列首元素
+  // （通常 v1、无前驱）或未找到 → null。T2（viewingHistory 版本下拉）与 T3（时间线手风琴）共用同一套
+  // 「排序取前驱」逻辑，保两处取基准完全一致。useCallback 依赖 versions（已 useShallow 稳定引用）。
+  const baseContentFor = useCallback(
+    (version: number | null): string | null => {
+      if (version == null) return null;
+      const sorted = [...versions].sort((a, b) => a.version - b.version);
+      const idx = sorted.findIndex((v) => v.version === version);
+      if (idx <= 0) return null; // 未找到或为首元素 → 无前驱
+      return sorted[idx - 1].content;
+    },
+    [versions],
+  );
+
+  // 版本间 diff 的「前驱版内容」（第二轮 T2 / D-R2-04）：仅在看历史版时取选中版的前驱（见 baseContentFor）。
+  const historyBaseContent = useMemo(
+    () => (viewingHistory ? baseContentFor(selectedVersion) : null),
+    [viewingHistory, baseContentFor, selectedVersion],
+  );
 
   // 版本间 diff 块（只读、纯客户端重算，D-R2-01/02）。仅在「看历史版 + 逃生口=对比 + 有前驱」时算，
   // base=前驱版 content、target=选中版 content（historyContent / displayContent）。
@@ -281,6 +304,8 @@ export function ArtifactPanel({
           value={viewingHistory ? String(selectedVersion) : ""}
           onChange={(e) => {
             setConfirmRollback(false);
+            // 操作版本下拉即退出 Diff 历史时间线（E，D-R2-06）→ 回正文/版本 diff。
+            setHistoryMode(false);
             const val = e.target.value;
             void selectVersion(val === "" ? null : Number(val));
           }}
@@ -298,6 +323,24 @@ export function ArtifactPanel({
               </option>
             ))}
         </select>
+        {/* Diff 历史时间线入口（第二轮 T3 / D-R2-06）：独立 toggle 按钮、放版本下拉右侧、**常驻可见**
+            （不塞进 `[行内│查看Diff]` 段——该段在历史/无 pending 时隐藏会一并藏掉入口）。点击切 historyMode、
+            开时重置展开态从全收起开始；激活态高亮（active=true 走选中底色 + 加边框）。 */}
+        <button
+          onClick={() => {
+            setHistoryMode((on) => !on);
+            setExpandedHistoryVersion(null);
+          }}
+          title="查看版本变更时间线（点条目就地展开该版与上一版的只读 diff）"
+          style={{
+            ...btnStyle(historyMode),
+            // 高亮态用完整 border shorthand 覆盖 btnStyle 的 border——勿用 borderColor（longhand），
+            // 否则与 btnStyle 的 border（shorthand）混用，React 报「mixing shorthand/non-shorthand」console error。
+            ...(historyMode ? { border: "1px solid var(--accent, #2563eb)", fontWeight: 600 } : {}),
+          }}
+        >
+          Diff 历史
+        </button>
         {/* 看历史版时给出只读 + rollback 二次确认（D-D5-5）。 */}
         {viewingHistory && (
           <>
@@ -395,8 +438,9 @@ export function ArtifactPanel({
         >
           引用到对话框
         </button>
-        {/* 视图切换（AC⑤）；降级时锁定 diff 并提示。看历史版时纯只读、无 Diff（D-D5-4），故隐藏。 */}
-        {!viewingHistory && (
+        {/* 视图切换（AC⑤）；降级时锁定 diff 并提示。看历史版时纯只读、无 Diff（D-D5-4），故隐藏。
+            Diff 历史时间线模式下也隐藏（D，D-R2-06：时间线覆盖正文、行内/Diff 切换无意义）。 */}
+        {!viewingHistory && !historyMode && (
           <div style={{ display: "flex", borderRadius: 5, overflow: "hidden", border: "1px solid var(--border)" }}>
             <button
               onClick={() => setViewMode("inline")}
@@ -431,11 +475,21 @@ export function ArtifactPanel({
         </div>
       )}
 
-      {/* 主体：左 TOC + 右内容（AC①） */}
+      {/* 主体：左 TOC + 右内容（AC①）。Diff 历史时间线模式下 TOC 无意义（时间线非文档正文），隐藏。 */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-        {toc.length > 0 && <TocSidebar items={toc} contentRef={contentRef} />}
+        {toc.length > 0 && !historyMode && <TocSidebar items={toc} contentRef={contentRef} />}
         <div ref={contentRef} style={{ flex: 1, overflow: "auto", background: "var(--bg)" }}>
-          {viewingHistory ? (
+          {historyMode ? (
+            // Diff 历史时间线（第二轮 T3 / D-R2-05/06，甲）：主体区铺满版本时间线、覆盖正文；
+            // 点条目手风琴就地展开该版 vs 前驱版的只读 diff（懒算，复用 T2 渲染器）。
+            <HistoryTimeline
+              versions={versions}
+              expandedVersion={expandedHistoryVersion}
+              onToggle={(v) => setExpandedHistoryVersion((cur) => (cur === v ? null : v))}
+              baseContentFor={baseContentFor}
+              effectiveLimit={effectiveLimit}
+            />
+          ) : viewingHistory ? (
             // 看历史版（第二轮 T2 / D-R2-07，推翻 D-D5-4「纯只读全文」）：默认展示该版 vs 紧邻上一版的
             // **只读**行内 diff（复用形态C混合、无 ✓/✗ 无状态标）；逃生口切「只读全文」或首版无前驱时退回纯只读。
             historyBaseContent == null ? (
@@ -748,6 +802,194 @@ function DiffBlocksView({ blocks }: { blocks: DiffBlock[] }) {
       ))}
     </div>
   );
+}
+
+/** ISO 时间 → 简洁相对时间（刚刚 / N 分钟前 / N 小时前 / N 天前 / 更早走本地日期）。 */
+function formatRelativeTime(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return iso;
+  const diffMs = Date.now() - t;
+  const sec = Math.floor(diffMs / 1000);
+  if (sec < 60) return "刚刚";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} 分钟前`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} 小时前`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day} 天前`;
+  return new Date(t).toLocaleDateString();
+}
+
+/**
+ * Diff 历史时间线（第二轮 T3 / D-R2-05/06，甲）：铺满主体区、覆盖正文。
+ * `versions[]` **按 version 倒序**（最新在上）逐条渲染；点条目手风琴就地展开（懒算）该版 vs 前驱版
+ * 的**只读** diff。零新增存储——直接读 store 已拉回的 versions（含 content/note/author/createdAt）。
+ *
+ * 懒算（D-R2-05）：diff 计算下沉到 HistoryDiffBody，**只在条目展开时才挂载**该子组件 → 同一时刻只算
+ * 当前展开的单条 diff（`computeVersionDiffBlocks` 内 `lcsDiff` 是 O(n*m) 全表 DP），绝不预算全部版本对。
+ */
+function HistoryTimeline({
+  versions,
+  expandedVersion,
+  onToggle,
+  baseContentFor,
+  effectiveLimit,
+}: {
+  versions: ArtifactVersion[];
+  expandedVersion: number | null;
+  onToggle: (version: number) => void;
+  baseContentFor: (version: number | null) => string | null;
+  effectiveLimit: number;
+}) {
+  if (versions.length === 0) {
+    return <Centered color="var(--text-dim)">暂无版本历史</Centered>;
+  }
+  const sortedDesc = [...versions].sort((a, b) => b.version - a.version);
+  return (
+    <div style={{ padding: "16px 24px", maxWidth: 900 }}>
+      <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 12 }}>
+        版本变更时间线（共 {versions.length} 版）—— 点条目展开该版与上一版的只读对比。
+      </div>
+      {sortedDesc.map((v) => (
+        <HistoryTimelineEntry
+          key={v.version}
+          version={v}
+          expanded={expandedVersion === v.version}
+          onToggle={() => onToggle(v.version)}
+          base={baseContentFor(v.version)}
+          effectiveLimit={effectiveLimit}
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * 时间线单条目：恒渲染条目头（v{n} · note · 相对时间 · author + 展开角标），点击切展开。
+ * 展开时**才挂载** HistoryDiffBody（懒算落点，见 HistoryTimeline 头注）。
+ */
+function HistoryTimelineEntry({
+  version,
+  expanded,
+  onToggle,
+  base,
+  effectiveLimit,
+}: {
+  version: ArtifactVersion;
+  expanded: boolean;
+  onToggle: () => void;
+  base: string | null;
+  effectiveLimit: number;
+}) {
+  return (
+    <div
+      style={{
+        border: "1px solid var(--border)",
+        borderRadius: 6,
+        marginBottom: 8,
+        background: expanded ? "var(--bg-panel)" : "var(--bg)",
+        overflow: "hidden",
+      }}
+    >
+      <button
+        onClick={onToggle}
+        title={expanded ? "收起" : "展开该版与上一版的只读对比"}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          width: "100%",
+          textAlign: "left",
+          padding: "8px 12px",
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          color: "var(--text)",
+          fontSize: 13,
+        }}
+      >
+        <span style={{ width: 12, flexShrink: 0, color: "var(--text-dim)" }}>{expanded ? "▾" : "▸"}</span>
+        <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600, flexShrink: 0 }}>v{version.version}</span>
+        <span
+          style={{
+            color: "var(--text-muted)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            flex: 1,
+            minWidth: 0,
+          }}
+        >
+          {version.note || "(初版)"}
+        </span>
+        <span style={{ color: "var(--text-dim)", fontSize: 11, flexShrink: 0 }}>{version.author}</span>
+        <span
+          style={{ color: "var(--text-dim)", fontSize: 11, flexShrink: 0 }}
+          title={new Date(version.createdAt).toLocaleString()}
+        >
+          {formatRelativeTime(version.createdAt)}
+        </span>
+      </button>
+      {expanded && (
+        <div style={{ borderTop: "1px solid var(--border)" }}>
+          <HistoryDiffBody base={base} target={version.content} effectiveLimit={effectiveLimit} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 时间线条目展开后的只读 diff 主体（懒算落点）：只在父条目展开时挂载 → 此处 useMemo 的
+ * `computeVersionDiffBlocks` 同一时刻只算当前一条（D-R2-05 懒算）。
+ * 与 T2 版本下拉 diff 同一管线、同一渲染器（只读 InlineDiffView，**不传** resolve 三件套）：
+ * - base==null（首元素 v1，无前驱）→ 「首版，无对比基准」+ 只读全文。
+ * - 块数 > effectiveLimit → 降级并排 DiffBlocksView（D-R2-03，版本块非 pending 故按总块数判）。
+ * - 否则 → 形态C混合只读行内 diff。
+ */
+function HistoryDiffBody({
+  base,
+  target,
+  effectiveLimit,
+}: {
+  base: string | null;
+  target: string;
+  effectiveLimit: number;
+}) {
+  const blocks = useMemo(
+    () => (base == null ? [] : computeVersionDiffBlocks(base, target)),
+    [base, target],
+  );
+  if (base == null) {
+    return (
+      <div style={{ padding: "12px 16px" }}>
+        <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 10 }}>首版，无对比基准。</div>
+        <div style={{ maxWidth: 900 }}>
+          <Markdown>{target}</Markdown>
+        </div>
+      </div>
+    );
+  }
+  if (blocks.length > effectiveLimit) {
+    return (
+      <>
+        <div
+          style={{
+            padding: "8px 16px",
+            fontSize: 12,
+            color: "#ca8a04",
+            background: "rgba(234,179,8,0.1)",
+            borderBottom: "1px solid var(--border)",
+          }}
+        >
+          变更块数（{blocks.length}）超过 {effectiveLimit}，已自动切换为并排 Diff。
+        </div>
+        <DiffBlocksView blocks={blocks} />
+      </>
+    );
+  }
+  // 只读行内 diff：不传 changeIdByBlock/resolveBlock/isFullscreen → 恒只读、无 ✓/✗、无状态标。
+  return <InlineDiffView oldContent={base} newContent={target} diffBlocks={blocks} />;
 }
 
 function DiffLine({ text, prefix, color, strike }: { text: string; prefix: string; color: string; strike?: boolean }) {
