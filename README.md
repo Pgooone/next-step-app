@@ -1,4 +1,4 @@
-# Next-Step V1.1（基于 pi-web 打造）
+# Next-Step（基于 pi-web 打造的多 Agent 软件工厂）
 
 > ### 👉 第一次用 Next-Step？从 **[《新手引导与使用指南》](./新手引导.md)** 开始
 >
@@ -6,7 +6,7 @@
 
 > 🔗 **溯源**：**Next-Step 是基于开源项目 [pi-web] 打造的「多 Agent 软件工厂」本地工具** —— 在 pi-web 现成的「真 Agent 内核 + 聊天 / 工具 / 技能 / 模型 UI」之上，叠加「项目 / 多 Agent 档案 / 派发编排 / 文档型产物的块级 Diff·版本·按块确认」领域层；**pi 内核不 fork**。
 >
-> 本目录是 **V1.1 迭代版**：V1 源码（GitHub: `Pgooone/next-step-app`，收官 commit `52313d2`）的**工作副本** + 本次迭代的需求 / 设计 / 任务文档。
+> 当前为 **V1.2 迭代版**（活跃开发，GitHub: `Pgooone/next-step-app`，分支 `v1.2` / `master`）：在 V1.1 全部已收官能力之上新增「多 Agent 管理」界面的专业重做等。**V1.1 为历史基线、V1 已发布。**
 > - 仓库总览：`../README.md`
 > - V1（已发布，含规格文档 + 源码 `next-step-app/`）：`../next-step-V1/`
 
@@ -20,10 +20,33 @@ npm run test    # vitest
 npm run lint
 ```
 
+## 更新计划（Roadmap）
+
+> 当前活跃 = **V1.2 第一轮·多 Agent 管理**。下面列「已完成」与「还没做」。
+
+### ✅ 已完成
+- **V1.1 四大支柱 + 多轮**（已收官、历史基线）：项目即工作区 / 多 Agent 档案可定义 / 多 Agent 协作派发 / 产物**块级 Diff·版本·HITL 按块确认** + V2「提议工具」模型 + 受管文档入口·删除 + 会话 re-attach 保 doc 工具 + Agent 模式（doc/coding，编码型放开 bash）。
+- **V1.2 第一轮·多 Agent 管理（界面专业重做）**：agent 卡片 / Dispatch 派发 / Agent 管理三处界面**专业重做**（Swiss 极简，ui-ux-pro-max 驱动）—— 6 字段信息卡（头像 + 模式徽章 + 模型 + 角色 + 技能/工具/思考计数）+ 三处统一视觉语言 + 亮/暗双主题。
+
+### 🚧 下一步（"多 Agent 管理"主题的其余增量，待拍板）
+- [ ] **发起多 Agent 派发能力**：dispatch 重构 / 模板驱动 / 发起向导（降低冷启动门槛、当前硬要 ≥2 个 agent 易死胡同）。
+- [ ] **事件流 / 进度实时呈现**：派发过程可视化（当前是 2s 轮询 + 静态状态徽章、无流式）。
+- [ ] **Agent 详情观测台 / 二级菜单**：点 agent 看运行轨迹（输入工件 → 提示词 → 工具调用 → 产出 + diff）。
+
+### 📋 规划中（软件工厂蓝图 · 以 sf-mini 为标杆反推）
+- [ ] **流程蓝图**：纯文件 `pipeline.json` + 「工厂控制台」（配置 / 工作 / 出结果 三段）。
+- [ ] **13 阶段流水线**：资料 → 需求 → 设计 → 开发 → … → 反馈，每段配角色化 Agent。
+- [ ] **自治度 4 档**（全手动 / 低 / 中 / 高）、**Critic 评审 + 返工环**、**黑板 A2A**、**RTM 追溯**。
+- 设计调研详见 `docs/QA/开发/通用多Agent配置-sf-mini反推.md`。
+
+### 🔧 已知技术债 / 环境
+- [ ] **本机 `npm run build` 受 Google Fonts 限制**：`app/layout.tsx` 用 `next/font/google` 取 Noto Sans Mono、离线环境取不到 → 计划换本地 / 系统字体让 build 离线可过（dev 不受影响）。
+- [ ] V1.1 遗留：主对话 / dispatch 会话 re-attach 重建 doc 工具（§B）。
+
 ## V1.1 各轮（已完成）
 
 V1.1 已完成多轮：**第一轮·基础迭代**（M1~M8，下表）+ **bug-fix 轮**（5 缺陷）+ **P0**（profile 会话接拦截）+ **第二轮·V2「提议工具」模型**（文档型 Agent 用 `create_artifact`/`propose_edit` 产文档 → 块级确认 → 物化真实 `.md`，取代旧 guard；已真模型 DeepSeek 端到端验证）+ **第三轮·受管文档入口并入 file panel** + **第四轮·删除受管文档** + **第五轮·会话 re-attach 重建保 doc 工具** + **第六轮·Agent 模式（doc/coding），编码型放开 bash 等内置工具**。详见各 `docs/第N轮-*/`（+ `docs/第一轮-基础迭代/新手引导.md`）。
-> 待拍板未开工：**第七轮·通用多 Agent 配置（软件工厂蓝图）**（`docs/QA/开发/通用多Agent配置-sf-mini反推.md`）。
+> 后续迭代见上「**更新计划（Roadmap）**」；V1.2 自身轮次文档在 `docs/V1.2/`。
 
 第一轮源自 `docs/第一轮-基础迭代/需求文档.md`，共 **1 bug + 5 功能 + 1 外观**：
 
