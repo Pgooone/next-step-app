@@ -6,10 +6,36 @@
 
 ## 总进度
 - [x] **T0** · 性能 baseline profiling（lead chrome-devtools 已完成）→ 结论：仅 memo 化
-- [ ] **T1** · `lib/artifact-view/toc-diff.ts`（computeTocDiff + parseTocWithLines）+ 单测（承重墙）
-- [ ] **T2** · TOC 接线 + 色线渲染（viewingHistory）—— UI 卡·chrome-devtools 真彩色截图给用户
-- [ ] **T3** · memo 化（Markdown 提常量+React.memo / 段 memo+稳定 key / DiffBlockCard memo）—— 性能卡·trace 对比
+- [x] **T1** · `lib/artifact-view/toc-diff.ts`（computeTocDiff + parseTocWithLines）+ 单测（承重墙）—— commit `8314669`
+- [x] **T2** · TOC 体现版本 diff（接线 + 标记条+类型符号 + 精确归属）—— commit `42d111e`（含 T2b 决策 C/视觉乙，真浏览器验过、截图存第三轮验收截图/）
+- [ ] **T3** · memo 化（Markdown 提常量+React.memo / 段 memo+稳定 key / DiffBlockCard memo）—— 性能卡·真浏览器 Performance API trace 对比 ← **新窗口从这里开始**
 - [ ] **T4** · 双层验收 + 文档回写 + 逐卡 commit + push（用户授权后）
+
+---
+
+## 🔻 T3 交接（新窗口接手，2026-06-22）
+
+**当前 HEAD = `42d111e`（分支 v1.2，未 push）**。第三轮 commit 链：`acfead3`立项 → `8314669`T1 → `42d111e`T2。T0/T1/T2 已收官，**新窗口从 T3 开始**。
+
+**T3 要做什么**（详见 `../../../docs/V1.2/第三轮-TOC-diff与文档性能/详细设计.md` §四 + ADR `D-R3-06/07/08`）：
+仅 **memo 化**（用户拍板 D-V1.2-18、实测定论），消除「内容不变时重渲染重跑 react-markdown 解析」的冗余 ~600ms：
+1. `components/ArtifactPanel.tsx` 的本地 `Markdown` 组件（约 :54-70）：6 个 heading 工厂 + components 对象 + `remarkPlugins=[remarkGfm]` **提到模块级常量**（现在每次渲染都新建→废掉 react-markdown 内部 memo）；`Markdown` 包 `React.memo`（props 仅 `children:string`）。
+2. `InlineDiffView`（约 :650-680）的 equal 段抽成 `React.memo` 子组件（按 text 浅比较）；map 的 `key` 从 index 改**稳定 key**（保 D-R7B-04 段顺序与 block.id 对齐、改动块增删不串位）。
+3. `DiffBlockCard` 包 `React.memo`。
+4. **不**虚拟化、**不**按长度降级、**不**碰 lcs.ts/聚块（D-R3-06/07）。
+
+**性能 baseline（T0 实测，T3 对比用）**：大文档只读全文渲染 render long task ~593ms、版本 diff ~596ms（实例数非放大器、瓶颈是 react-markdown 解析全文）；滚动流畅 0 掉帧。T3 目标 = 内容不变的重渲染不再触发该 ~600ms。
+
+**验收方式（用户拍板：走 browser-e2e、别用 chrome-devtools 大快照、见 [[next-step-browser-e2e]]）**：
+- 现成 perf fixture **保留可用**：registry 项目「r3-性能验收」(`ec6be7d9`)、artifact「大型设计文档」(`6bfc5e09`) 有 v1/v2/v3（v2 是可选历史版、选 v2→v2 vs v1 行内 diff + TOC diff）。
+- 跑法：`source ~/.local/bin/ns-browser-env.sh` → 写 drive.mjs（Performance API：PerformanceObserver longtask + rAF 帧间隔，触发「内容不变的重渲染」对比 long task）→ `bash .claude/skills/browser-e2e/scripts/run-e2e.sh <drive 绝对路径>`（dev 已在 30141 跑会复用）。验收脚本范例可参 `/tmp/r3-t2b-drive.mjs`。
+- 红线：D-D3-10（memo 别引入新 selector）、D-R7B-04（段稳定 key 不串位）、UI/性能卡走真浏览器、`build` 非 oracle（Google Fonts 环境限制）。
+
+**T4**：逻辑层全量 lint/test + 真浏览器复跑 → 回写本 progress + memory → push（用户授权后，push v1.2 + ff master、ls-remote 实测同步）。
+
+**门禁现状**：lint 干净 / tsc 仅 2 个预存无关错（session-grouping/useAgentStore 的 AgentProfile.mode）/ test 406 过 + 1 已知 doctor-checks 冷缓存 flake。
+
+**残留待清（T4 收尾）**：测试 fixture（registry 的 r3 项目 + `~/pi-cwd-20260622/r3-perf` + 物化 .md）、未跟踪的 `scripts/verify-r3-*.mts`/`scripts/r3-*.mts`、`第三轮验收截图/`（截图未入 git）。
 
 > 门禁：`lint`/`test` 绿（`doctor-checks` 冷缓存 flake 无关）；`tsc` 仅 2 个预存无关错（AgentProfile.mode）；**build 受 Google Fonts 环境限制失败（预存非回归）**；UI/性能卡铁律走 chrome-devtools（`GET /` 200 + `pageErrors=0`）。
 
