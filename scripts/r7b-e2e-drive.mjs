@@ -169,7 +169,9 @@ try {
   // ===== 兜底回归：点「查看 Diff」→ 真切到并排 DiffBlocksView（标题消失=确实切换、非混合内联）=====
   R.diffViewOk = await T("回归 点查看 Diff → 真切并排：3 块 + markdown 标题消失（不再混合）", async () => {
     const headingsBefore = await page.locator("[data-slug]").count(); // 混合内联里应 >0
-    await page.getByRole("button", { name: "查看 Diff" }).click(); // 不 catch：点不到就 FAIL
+    // 作用域限右栏：A3 恢复会话后中栏聊天卡片也有一个「查看 Diff」按钮（PendingChangeCard:265，
+    // D4 的 D 键跳并排功能），不限定会 strict-mode 命中 2 个。右栏切换钮才是本回归要点的对象。
+    await page.locator(".right-panel-container").getByRole("button", { name: "查看 Diff" }).click();
     await page.waitForTimeout(1200);
     const p = await probeInline(page);
     if (p.count !== 3) throw new Error("并排视图块数 ≠ 3：" + p.count);
