@@ -128,16 +128,26 @@ dev :30141（next/font 离线优雅降级 fallback、不阻塞）；fixture = ts
 
 ---
 
-## 第二轮 · 内联 diff 纠偏（2026-06-22，设计完成、待 greenlight）
+## 第二轮 · 内联 diff 纠偏（2026-06-22，**实现 + 双层验收完成、已提交**）
 
 > 第七轮 A2/A3 实测：**对最常见 add/mod 改动原文零内联呈现、A3 点击静默 no-op**（详见 `../../docs/第七轮-UI优化-diff内联与全屏/第二轮-内联diff纠偏-详细设计.md`）。上面「A2 内联三色 + 就地 ✓ 真物化」的真机 PASS 是 fixture 预置新行进正文（A_NEW）的反向造法掩盖了真实流程必坏——真实 propose 下正文=旧内容，新行锚不到。
 > 根因：propose 阶段 `artifact.content`=旧内容（红线未确认不写盘），`buildSegments` 用「新行」锚「旧正文」必落空 → unaligned。用户拍板形态 **C 混合**（D-UI-10）。
 
 | 卡 | 范围 | 状态 |
 |---|---|---|
-| T1 | 数据层：export lcsDiff/splitLines/groupOpsToBlocks + 新建 `buildLineDiffSegments`（LCS ops 驱动、无 unaligned）+ 真实 case 单测 | ⬜ 待开 |
-| T2 | 渲染层：抽 `DiffBlockCard` 共用；`InlineHighlightView` 改混合渲染（equal=Markdown / change=DiffBlockCard）+ 单条/多条/patch 分流 + 删 unaligned 分支 | ⬜ 待开 |
-| T3 | A3 跳转回归（机制零改，真浏览器确认改动 run 有 data-block-id 落点、两态都能跳） | ⬜ 待开 |
-| T4 | 验收造数据纠偏（fixture/单测改真实流程：正文=旧+propose 新）+ 全回归 | ⬜ 待开 |
+| T1 | 数据层：export lcsDiff/splitLines/groupOpsToBlocks + 新建 `buildLineDiffSegments`（LCS ops 驱动、无 unaligned）+ 真实 case 单测 | ✅ `c53a0e0`（7 真实流程单测） |
+| T2 | 渲染层：抽 `DiffBlockCard` 共用；`InlineHighlightView`→`InlineDiffView` 混合渲染（equal=Markdown / change=DiffBlockCard）+ 单条/多条/patch 分流 + 删 unaligned + 删旧 buildSegments/HlSegment | ✅ `6dc3044` |
+| **B（真崩 bugfix）** | **node:fs 进客户端 bundle 致全站 500**：anchor 值导入 pending-change-service（含 node:fs）→ `"use client"` 链拖进客户端、Turbopack 崩。修=抽纯算法到 `lib/domain/lcs.ts`，domain 与 anchor 共用。**独立 verifier 真浏览器揪出、lint/test/tsc 全漏** | ✅ `708a69e`（GET / 200 实测） |
+| T3 | A3 跳转回归（机制零改） | ✅ 真浏览器确认（探针 pulsed=true + 落点存在） |
+| T4 | 验收造数据纠偏 fixture（正文=旧内容） | ✅ `d3a64aa`（r7b-e2e-fixture/drive） |
 
-排序：T1 → T2 → T3 → T4 串行（数据→渲染→跳转回归→验收纠偏）。A3 机制不动。lead ADR：`../../docs/设计决策记录.md` D-R7B-01~06。
+排序：T1 → T2 → (bugfix B) → T3 → T4。A3 机制不动。lead ADR：`../../docs/设计决策记录.md` **D-R7B-01~07**（07=node:fs bugfix）。
+
+### 双层验收（2026-06-22，HEAD `d3a64aa`）
+**逻辑层**：lint 0 errors；anchor(7)+pending-change-service(42) 全绿；全量 test 唯一失败=doctor-checks 冷启动 flake（单跑 9/9 必过、与本轮无关）。
+**真浏览器层**（独立 verifier 自写 fixture content=A_OLD + lead 亲 Read 截图核对，双独立）：
+- **① 混合内联渲染 PASS**：equal 段真实 markdown 标题（slugCount=5）+ 3 个改动块 add/del/mod 带颜色边框 git 卡片（mono/+-前缀/del删除线）按文档顺序内联 + 新文本在原文可见 + **无 unaligned 黄条**（截图 `verify-r7b-02-inline-mixed.png`）。
+- **② 点对话框 diff 条→跳转 PASS**：原文对应 `[data-block-id]` 块 pulsed=true（boxShadow rgba(234,179,8,0.6)）+ inViewport（截图 `verify-r7b-03-a3-jump.png`）。
+- **回归「查看 Diff」真切并排 PASS**：点后 slugCount 5→0、equal 正文消失、3 卡片仍在（截图 `verify-r7b-04b-diffview.png`）。
+- **pageErrors=0。**
+**关键过程教训**：①lint/test/tsc 全过 ≠ app 能跑——node:fs 进客户端只有 dev(Turbopack)+真浏览器暴露；**UI 卡提交前必须真浏览器冒烟 GET / 200**。②lead 自己那次"卡在 dev 冷启动"的 shell 跑其实是 500 编译失败、被误读成"慢"；独立 verifier 用第二双眼定性为真崩。③`count=3` 这类判据在多视图下都成立、分不清——回归须用**确定性区分判据**（混合内联 slugCount>0 vs 并排 slugCount=0）。
