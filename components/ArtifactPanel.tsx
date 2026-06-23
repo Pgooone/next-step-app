@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -47,27 +47,29 @@ const KIND_STYLE: Record<
   mod: { wrap: "rgba(234,179,8,0.14)", border: "#eab308", tag: "#ca8a04", tagText: "修改", label: "mod" },
 };
 
+/** heading 工厂：给 hN 注入 data-slug（与 parseToc 的 slugify 一致），供 TOC 跳转定位。提到模块级，避免每次渲染重建（配合 React.memo 复用）。 */
+function makeHeading(Tag: "h1" | "h2" | "h3" | "h4" | "h5" | "h6") {
+  return function H({ children: kids }: { children?: React.ReactNode }) {
+    const text = typeof kids === "string" ? kids : Array.isArray(kids) ? kids.join("") : "";
+    return <Tag data-slug={slugify(text)}>{kids}</Tag>;
+  };
+}
+const MD_COMPONENTS = { h1: makeHeading("h1"), h2: makeHeading("h2"), h3: makeHeading("h3"), h4: makeHeading("h4"), h5: makeHeading("h5"), h6: makeHeading("h6") };
+const MD_REMARK_PLUGINS = [remarkGfm];
+
 /**
  * Markdown 渲染包装：复用 FileViewer 的 `.markdown-body` 样式，并给标题注入 `data-slug`
  * （与 parseToc 的 slugify 一致），供 TOC 点击跳转定位（AC①）。同名标题取首个命中即可。
  */
-function Markdown({ children }: { children: string }) {
-  const heading = (Tag: "h1" | "h2" | "h3" | "h4" | "h5" | "h6") =>
-    function H({ children: kids }: { children?: React.ReactNode }) {
-      const text = typeof kids === "string" ? kids : Array.isArray(kids) ? kids.join("") : "";
-      return <Tag data-slug={slugify(text)}>{kids}</Tag>;
-    };
+const Markdown = memo(function Markdown({ children }: { children: string }) {
   return (
     <div className="markdown-body markdown-file-preview">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{ h1: heading("h1"), h2: heading("h2"), h3: heading("h3"), h4: heading("h4"), h5: heading("h5"), h6: heading("h6") }}
-      >
+      <ReactMarkdown remarkPlugins={MD_REMARK_PLUGINS} components={MD_COMPONENTS}>
         {children}
       </ReactMarkdown>
     </div>
   );
-}
+});
 
 export function ArtifactPanel({
   onDeleted,
@@ -738,14 +740,24 @@ function InlineDiffView({
     [oldContent, newContent, diffBlocks, changeIdByBlock],
   );
 
+  // 段稳定 key（D-R7B-04 / 防 DiffBlockCard 局部 busy state 随 index 复用错位泄漏）：
+  // change 段 = 'chg:'+block.id（唯一稳定，亦是 data-block-id）；equal 段 = 'eq:'+紧邻其前一个 change 的 block.id（无则 'head'）。
+  // equal 段永不相邻（buildLineDiffSegments 合并连续 equal），故该 key 在真实调用路径下全局唯一稳定。
+  const keys: string[] = [];
+  let lastChangeId: string | null = null;
+  for (const seg of segs) {
+    if (seg.type === "change") { keys.push(`chg:${seg.block.id}`); lastChangeId = seg.block.id; }
+    else { keys.push(`eq:${lastChangeId ?? "head"}`); }
+  }
+
   return (
     <div style={{ padding: "16px 24px", maxWidth: 900 }}>
       {segs.map((seg, i) =>
         seg.type === "equal" ? (
-          seg.text.trim() === "" ? null : <Markdown key={i}>{seg.text}</Markdown>
+          seg.text.trim() === "" ? null : <Markdown key={keys[i]}>{seg.text}</Markdown>
         ) : (
           <DiffBlockCard
-            key={i}
+            key={keys[i]}
             block={seg.block}
             changeId={seg.changeId}
             isFullscreen={isFullscreen}
@@ -767,7 +779,8 @@ function InlineDiffView({
  * 在 tag 行右侧给就地 ✓/✗（仅经 resolveBlock → resolve API，红线②不绕过）；
  * 全屏态已决则显「已确认/已拒绝」状态标。非全屏或无 resolveBlock 不渲 ✓/✗（DiffBlocksView 走这条）。
  */
-function DiffBlockCard({
+// resolveBlock 必须传 useCallback 稳定引用（useResolveBlock 已是），否则 React.memo 永久失效。
+const DiffBlockCard = memo(function DiffBlockCard({
   block,
   changeId,
   isFullscreen,
@@ -871,7 +884,7 @@ function DiffBlockCard({
       ))}
     </div>
   );
-}
+});
 
 /**
  * 并排 Diff 视图（AC⑤）：逐块渲染 pending 块（add/del/mod），逐块可见、只读。
