@@ -25,6 +25,8 @@ interface Props {
   onOpenArtifact: (artifactId: string) => void;
   /** 派发产出过受管文档、到终态时回调一次：让 file panel 的「受管文档」分组重取出现新 .md（T5）。 */
   onArtifactsChanged?: () => void;
+  /** 派发到终态（done/failed）时回调一次：刷新左栏「会话分组」（不被 artifact 门控，T2/第五轮）。 */
+  onSessionsChanged?: () => void;
 }
 
 /** 轮询间隔（ms）；任务进行中每 2s 拉一次进度。 */
@@ -47,6 +49,7 @@ export function DispatchPanel({
   onOpenFile,
   onOpenArtifact,
   onArtifactsChanged,
+  onSessionsChanged,
 }: Props) {
   // agent 列表复用 useAgentStore（项目下档案的权威来源）
   const { agents, agentsLoadedId, refreshAgents } = useAgentStore(
@@ -104,6 +107,17 @@ export function DispatchPanel({
     notifiedTaskRef.current = visibleTask.id;
     onArtifactsChanged?.();
   }, [visibleTask?.id, visibleTask?.status, onArtifactsChanged]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // T2（第五轮）：派发到终态（done/failed）即通知刷新「会话分组」。与上面 onArtifactsChanged
+  // 不同——这里**不被 producedArtifact 门控**：coding/纯文本 worker（artifactId 恒空）跑完也要
+  // 刷新左栏 agent 分组（否则各 agent 会话堆「其它会话」、M7·5.3 类 FAIL 复发）。独立 ref 按 taskId 去重。
+  const notifiedSessionsTaskRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!visibleTask || selectIsActive(visibleTask)) return; // 仅终态
+    if (notifiedSessionsTaskRef.current === visibleTask.id) return; // 已通知过
+    notifiedSessionsTaskRef.current = visibleTask.id;
+    onSessionsChanged?.();
+  }, [visibleTask?.id, visibleTask?.status, onSessionsChanged]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleAgent = useCallback((id: string) => {
     setSelectedIds((prev) => {

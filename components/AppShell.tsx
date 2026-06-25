@@ -387,6 +387,32 @@ export function AppShell() {
     setExplorerRefreshKey((k) => k + 1);
   }, []);
 
+  // T2（第五轮）：dispatch 到终态时刷新会话归属映射——worker 会话内核懒落盘有延迟，单次 refresh
+  // 常拿不到 bySession，故有界重试（≤8 次/700ms，复用 handleSessionCreated agent 分支同款 tick），
+  // 直到 bySession 出现新派发归属或达上限。每次并 setRefreshKey 重拉 /api/sessions 让会话进侧栏列表。
+  const handleDispatchSessionsChanged = useCallback(() => {
+    if (!currentProjectId) return;
+    const store = useSessionMapStore.getState();
+    const projectId = currentProjectId;
+    const before = Object.keys(
+      selectMapForProject(store.map, store.loadedProjectId, projectId).bySession,
+    ).length;
+    let tries = 0;
+    const tick = () => {
+      tries++;
+      void store
+        .refresh(projectId)
+        .then((map) => {
+          setRefreshKey((k) => k + 1);
+          if (Object.keys(map.bySession).length <= before && tries < 8) setTimeout(tick, 700);
+        })
+        .catch(() => {
+          if (tries < 8) setTimeout(tick, 700);
+        });
+    };
+    tick();
+  }, [currentProjectId]);
+
   const handleSessionForked = useCallback((newSessionId: string) => {
     setRefreshKey((k) => k + 1);
     setSessionKey((k) => k + 1);
@@ -1096,6 +1122,7 @@ export function AppShell() {
         onOpenFile={handleOpenFile}
         onOpenArtifact={handleOpenArtifact}
         onArtifactsChanged={() => setExplorerRefreshKey((k) => k + 1)}
+        onSessionsChanged={handleDispatchSessionsChanged}
       />
     )}
     </>
