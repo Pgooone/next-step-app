@@ -21,6 +21,7 @@ function makeAgent(id: string, name = id, projectId = "proj"): AgentProfile {
     skills: [],
     tools: [],
     thinkingLevel: "off",
+    mode: "doc",
     agentMdPath: `.pi/agents/${id}/agent.md`,
     memoryPath: `.pi/agents/${id}/memory.md`,
   };

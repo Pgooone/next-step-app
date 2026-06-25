@@ -28,6 +28,7 @@ function agent(id: string, name: string): AgentProfile {
     skills: [],
     tools: [],
     thinkingLevel: "off",
+    mode: "doc",
     agentMdPath: "",
     memoryPath: "",
   };

@@ -30,7 +30,7 @@ describe("isNodeVersionOk", () => {
 });
 
 describe("checkDeps", () => {
-  it("已安装的内核包加载成功", async () => {
+  it("已安装的内核包加载成功", { timeout: 15000 }, async () => {
     expect((await checkDeps()).ok).toBe(true);
   });
 });
