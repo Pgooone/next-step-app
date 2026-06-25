@@ -39,6 +39,16 @@
 - 用户拍板 QA：`QA/第三轮-TOC-diff与文档性能决策.md`（D-V1.2-15~18）；lead ADR `设计决策记录.md`（D-R3-01~08）
 - 调研留痕：ultracode 工作流 `next-step-v1.2-r3-investigate`（4 路精读 → 综合 → 对抗式核实 GO·需修正 4 处，已纳入）+ lead chrome-devtools 实测 baseline
 
+### 第四轮 · 让文档型派发也能产受管文档（`第四轮-派发产受管文档/`）
+
+主题：补「多 Agent 派发」与「受管产物」两支柱的断点——**文档型（mode=doc）派发 worker 产不出受管文档（只落 `.pi/artifacts` 纯文本、掉出受管体系）**。根因 = dispatch-runner 建会话从不挂 doc 提议工具（有意分期 D-C-1 + V2 没回接，非主动屏蔽）；本轮兑现第五轮 §A。方案 B（接线 + create_artifact 闭环对账 + **dispatch 禁 propose_edit**，分两轮）：dispatch doc worker 装受限集（含 create_artifact/list_artifacts）、产受管文档、id 回填 assignment、进度链接 by-id 开 ArtifactPanel、完成刷新受管分组。
+
+- 先读 `第四轮-派发产受管文档/需求文档.md` → `概要设计.md` → `详细设计.md`（含 T1~T6 落地 + 双层验收结果）
+- 任务卡与进度：`../../tasks/V1.2/第四轮-派发产受管文档/progress.md`
+- 用户拍板 QA：`QA/第四轮-派发产受管文档决策.md`（D-V1.2-19~20）；lead ADR `设计决策记录.md`（D-R4-01~08）
+- 调研留痕：ultracode 工作流 `dispatch-managed-doc-fix-investigation`（`wf_778dac19`，5 路精读 → Option B → 3 视角对抗式核实全 holds=True）+ 承重墙 T1 spike（lead 复跑）+ T6 真浏览器端到端（lead 亲验）
+- commits：T2 `3d1077b` / T4 `dc0b4a6` / T5 `3c3d4c8` / 收尾 `209d1d3`（分支 v1.2，未 push）
+
 ## 与 V1.1「第八轮」的关系
 
 本轮 = V1.1 时期规划的「**第八轮·通用多 Agent 配置（软件工厂蓝图）**」（当时调研完成、形态待拍板、未开工）整体迁移至 V1.2、**重新立项为「第一轮」**。V1.1 侧（根 `CLAUDE.md`、`next-step-V1.1/README.md`、`next-step-V1.1/docs/QA/00-索引.md`）已标注「已迁至 V1.2」，不再承接。调研留痕原文随工作副本复制在 `../QA/开发/通用多Agent配置-sf-mini反推.md`（V1.1 时期产物，作设计输入参考）。
