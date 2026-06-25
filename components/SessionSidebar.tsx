@@ -934,7 +934,7 @@ function AgentSessionSection({
   const tree = useMemo(() => buildSessionTree(group.sessions), [group.sessions]);
 
   return (
-    <div>
+    <div data-testid="agent-session-group" data-agent-name={group.agentName} data-count={group.sessions.length}>
       <button
         onClick={() => setCollapsed((v) => !v)}
         style={{
