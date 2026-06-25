@@ -13,6 +13,9 @@ export type Assignment = {
   sessionId?: string;
   status: DispatchStatus;
   output?: string; // 产物路径（相对 projectRoot）或摘要
+  /** 本 assignment 的 worker 经 create_artifact 新建的受管文档 id（文档型派发把受管文档当权威产物，T4）。
+   *  可选：coding/纯文本 worker 无此字段；旧任务亦无（无迁移、按可选处理）。 */
+  artifactId?: string;
 };
 
 /** 一次派发 = 一个目标 + 一串串行执行的子任务。权威类型见 docs/03:26-32。 */

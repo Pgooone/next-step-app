@@ -28,7 +28,12 @@ import {
 import { AgentProfileStore, type AgentProfile } from "../domain/agent-profile-store";
 import { ProjectRegistry } from "../domain/project-registry";
 import { AgentSessionWrapper } from "../rpc-manager";
-import { runWorker, type RegisterInnerSession, type SessionHandle } from "./dispatch-runner";
+import {
+  extractCreatedArtifactIds,
+  runWorker,
+  type RegisterInnerSession,
+  type SessionHandle,
+} from "./dispatch-runner";
 
 let dir: string;
 let registry: ProjectRegistry;
@@ -300,5 +305,57 @@ describe("runWorker 派发受限工具集（T2）", () => {
     } finally {
       faux.unregister();
     }
+  });
+});
+
+// ===========================================================================
+// T4：extractCreatedArtifactIds —— 从一回合 messages 抽 create_artifact 新建的受管文档 id
+// 纯函数单测（构造与内核 ToolResultMessage 同形的最小消息：role/toolName/content）。
+// ===========================================================================
+
+/** 造一条 create_artifact 的 toolResult 消息（content 是 [{type:"text", text: JSON}]，同 T1 spike 实证形态）。 */
+function createArtifactToolResult(payload: unknown) {
+  return {
+    role: "toolResult" as const,
+    toolName: "create_artifact",
+    content: [{ type: "text", text: JSON.stringify(payload) }],
+  };
+}
+
+describe("extractCreatedArtifactIds（T4 产物对账）", () => {
+  it("从含 create_artifact toolResult 的回合抽出 id（按调用顺序）", () => {
+    const messages = [
+      { role: "user", content: "建文档" },
+      { role: "assistant", content: [{ type: "text", text: "新建" }] },
+      createArtifactToolResult({ id: "art-1", filePath: "a.md", version: 1 }),
+      createArtifactToolResult({ id: "art-2", filePath: "b.md", version: 1 }),
+      { role: "assistant", content: [{ type: "text", text: "done" }] },
+    ];
+    expect(extractCreatedArtifactIds(messages)).toEqual(["art-1", "art-2"]);
+  });
+
+  it("纯文本回合（无 create_artifact）→ []", () => {
+    const messages = [
+      { role: "user", content: "你好" },
+      { role: "assistant", content: [{ type: "text", text: "回复正文" }] },
+    ];
+    expect(extractCreatedArtifactIds(messages)).toEqual([]);
+  });
+
+  it("其它工具的 toolResult 不计入（只认 create_artifact）", () => {
+    const messages = [
+      { role: "toolResult", toolName: "list_artifacts", content: [{ type: "text", text: "[]" }] },
+      createArtifactToolResult({ id: "art-only" }),
+    ];
+    expect(extractCreatedArtifactIds(messages)).toEqual(["art-only"]);
+  });
+
+  it("content 非 JSON / 无 id 字段 → 跳过该条（不抛）", () => {
+    const messages = [
+      { role: "toolResult", toolName: "create_artifact", content: [{ type: "text", text: "创建文档失败：xxx" }] },
+      { role: "toolResult", toolName: "create_artifact", content: [{ type: "text", text: JSON.stringify({ note: "no id here" }) }] },
+      createArtifactToolResult({ id: "art-good" }),
+    ];
+    expect(extractCreatedArtifactIds(messages)).toEqual(["art-good"]);
   });
 });

@@ -165,18 +165,27 @@ export async function runDispatch(
       return failTask(dispatchStore, task.projectId, current, assignment, "派发已取消");
     }
 
-    // 正常结束但产物为空（worker 未产出文本）→ 视为失败，中止后续。
-    if (!result.output.trim()) {
+    // 正常结束但**既无文本产物又无受管文档**（worker 什么都没产出）→ 视为失败，中止后续。
+    // T4：文档型 worker 可能只 create_artifact、不回 assistant 文本——此时 artifactIds 非空即算有产出。
+    if (!result.output.trim() && result.artifactIds.length === 0) {
       return failTask(dispatchStore, task.projectId, current, assignment, "worker 未产出任何文本");
     }
 
-    // D-C-1：assistant 文本落 .pi/artifacts/<dispatchId>/<seq>-<agentName>.md（轻量普通文件）。
+    // T4：回填本回合新建的受管文档 id（取最后一个；文档型派发把受管文档当权威产物）。
+    const lastArtifactId = result.artifactIds.at(-1);
+    if (lastArtifactId) {
+      assignment.artifactId = lastArtifactId;
+    }
+
+    // D-C-1：assistant 文本仍落 .pi/artifacts/<dispatchId>/<seq>-<agentName>.md（轻量普通文件，
+    // 兼容 coding/纯文本 worker；文档型 worker 文本可能为空，照写空文件不影响——受管文档才是权威产物）。
     const relPath = writeArtifact(projectRoot, current.id, i + 1, profile.name, result.output);
     assignment.output = relPath;
     assignment.status = "done";
     dispatchStore.write(task.projectId, current);
 
-    upstreamOutput = result.output;
+    // T4：喂下游——有受管文档则用其权威正文（createdContent，回读失败退回 output），否则用文本产物。
+    upstreamOutput = lastArtifactId ? (result.createdContent ?? result.output) : result.output;
     upstreamAgentName = profile.name;
   }
 

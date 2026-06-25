@@ -331,7 +331,7 @@ describe("runDispatch 并发闸门（AC⑤）", () => {
       peak = Math.max(peak, inFlight);
       await new Promise((r) => setTimeout(r, 5));
       inFlight--;
-      return { sessionId: `s-${Math.random()}`, output: `out:${args.firstMessage}`, reason: "completed" };
+      return { sessionId: `s-${Math.random()}`, output: `out:${args.firstMessage}`, reason: "completed", artifactIds: [] };
     }) as unknown as typeof runWorker;
 
     const result = await runDispatch(task, {
@@ -363,6 +363,7 @@ describe("runDispatch 并发闸门（AC⑤）", () => {
         sessionId: "x",
         output: "y",
         reason: "completed",
+        artifactIds: [],
       })) as unknown as typeof runWorker,
       acquireSlot,
       registerInnerSession: (() => {
@@ -380,7 +381,7 @@ describe("runDispatch 并发闸门（AC⑤）", () => {
     const calls: string[] = [];
     const fakeRun = (async (args: { firstMessage: string }) => {
       calls.push(args.firstMessage);
-      return { sessionId: "s1", output: "", reason: "timeout" };
+      return { sessionId: "s1", output: "", reason: "timeout", artifactIds: [] };
     }) as unknown as typeof runWorker;
 
     const result = await runDispatch(task, {
@@ -400,6 +401,84 @@ describe("runDispatch 并发闸门（AC⑤）", () => {
     expect(result.assignments[0].output).toContain("超时"); // 明确是执行超时，而非泛泛「未产出」
     expect(result.assignments[1].status).toBe("pending"); // 中止后续
     expect(calls).toHaveLength(1); // 只起了第一个 worker
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T4 产物对账：受管文档作权威产物——回填 Assignment.artifactId、空文本也不失败、下游喂 createdContent
+// ---------------------------------------------------------------------------
+describe("runDispatch 产物对账（T4，受管文档作权威产物）", () => {
+  it("worker 返回 artifactIds + 空文本 → assignment.artifactId 回填、不判失败、下游 upstreamOutput 取 createdContent", async () => {
+    const { task } = makeTask(["上游子任务", "下游子任务"]);
+    const downstreamFirstMessages: string[] = [];
+    // 第一个 worker：文本为空但产出受管文档（artifactIds 非空 + createdContent=权威正文）。
+    // 第二个 worker：捕获其首条 message（应含上游 createdContent，而非空 output），返回普通文本收尾。
+    let call = 0;
+    const fakeRun = (async (args: { firstMessage: string }) => {
+      call += 1;
+      if (call === 1) {
+        return {
+          sessionId: "s1",
+          output: "", // 文档型 worker 可能不回 assistant 文本
+          reason: "completed",
+          artifactIds: ["art-上游"],
+          createdContent: "受管文档权威正文 DOC-UP",
+        };
+      }
+      downstreamFirstMessages.push(args.firstMessage);
+      return { sessionId: "s2", output: "下游文本 OUT-DOWN", reason: "completed", artifactIds: [] };
+    }) as unknown as typeof runWorker;
+
+    const result = await runDispatch(task, {
+      registry,
+      dispatchStore,
+      profileStore,
+      runWorker: fakeRun,
+      acquireSlot: async () => {},
+      registerInnerSession: (() => {
+        throw new Error("不应被调用（faux runWorker 不起真实会话）");
+      }) as unknown as RegisterInnerSession,
+    });
+
+    // 不判失败：第一个 worker 空文本但有受管文档 → 整任务 done、两 assignment 都 done。
+    expect(result.status).toBe("done");
+    expect(result.assignments.map((a) => a.status)).toEqual(["done", "done"]);
+    // 回填 artifactId（取最后一个 = 唯一一个）
+    expect(result.assignments[0].artifactId).toBe("art-上游");
+    expect(result.assignments[1].artifactId).toBeUndefined(); // 第二个无受管文档
+    // 下游首条 message 取的是 createdContent（权威正文），不是空 output
+    expect(downstreamFirstMessages).toHaveLength(1);
+    expect(downstreamFirstMessages[0]).toContain("DOC-UP");
+    expect(downstreamFirstMessages[0]).toContain("## 上游产物");
+    // 落盘可回读 artifactId
+    const onDisk = dispatchStore.get(projectId, task.id);
+    expect(onDisk.assignments[0].artifactId).toBe("art-上游");
+  });
+
+  it("worker 空文本且 artifactIds 为空 → 仍判失败（未产出任何文本）", async () => {
+    const { task } = makeTask(["t1", "t2"]);
+    const fakeRun = (async () => ({
+      sessionId: "s1",
+      output: "   ",
+      reason: "completed",
+      artifactIds: [],
+    })) as unknown as typeof runWorker;
+
+    const result = await runDispatch(task, {
+      registry,
+      dispatchStore,
+      profileStore,
+      runWorker: fakeRun,
+      acquireSlot: async () => {},
+      registerInnerSession: (() => {
+        throw new Error("不应被调用");
+      }) as unknown as RegisterInnerSession,
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.assignments[0].status).toBe("failed");
+    expect(result.assignments[0].output).toContain("未产出");
+    expect(result.assignments[1].status).toBe("pending"); // 中止后续
   });
 });
 

@@ -22,6 +22,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 import type { AgentProfile } from "../domain/agent-profile-store";
+import { ArtifactService } from "../domain/artifact-service";
+import { ProjectRegistry } from "../domain/project-registry";
 import { applyProfileRuntime, assembleProfileSessionOptions } from "./agent-profile-session";
 import { assembleDispatchDocSessionOptions } from "./doc-session";
 import { CODING_TOOL_NAMES } from "./coding-tools";
@@ -48,12 +50,22 @@ export type RegisterInnerSession = (inner: AgentSession) => {
 /** worker 回合的结束原因：正常结束 / 执行超时 / 被取消（abort）。 */
 export type TurnEndReason = "completed" | "timeout" | "aborted";
 
-/** runWorker 的结果：worker 的真实 sessionId + 抽出的 assistant 产物文本 + 结束原因。 */
+/** runWorker 的结果：worker 的真实 sessionId + 抽出的 assistant 产物文本 + 结束原因 + 本回合新建的受管文档。 */
 export interface WorkerResult {
   sessionId: string;
   output: string;
   /** 结束原因——orchestrator 据此写明确的失败信息（区分超时 / 取消 / 仅未产出）。 */
   reason: TurnEndReason;
+  /**
+   * 本回合 worker 经 create_artifact 新建的受管文档 id（按调用顺序）。文档型派发把「受管文档」当权威产物：
+   * 非空时 orchestrator 据此回填 Assignment.artifactId、且即便 assistant 文本为空也不判失败。无则 `[]`（恒返回）。
+   */
+  artifactIds: string[];
+  /**
+   * 最后一个新建受管文档的当前正文（从 ArtifactService 回读，与盘上一致、权威）——供 orchestrator
+   * 喂给下游 worker。仅当 artifactIds 非空且回读成功时有值；否则 undefined（下游退回用 output）。
+   */
+  createdContent?: string;
 }
 
 /**
@@ -151,7 +163,56 @@ export async function runWorker(args: {
   }
 
   const output = extractAssistantText(messages);
-  return { sessionId: realSessionId, output, reason };
+
+  // 产物对账（T4）：抽本回合 create_artifact 新建的受管文档 id（T1 spike 已证 toolResult 在 messages 内）。
+  // 文档型派发把「受管文档」当权威产物——非空则 orchestrator 据此回填、且空文本也不判失败。
+  const artifactIds = extractCreatedArtifactIds(messages);
+
+  // 喂下游用最后一个新建文档的**当前正文**（从 ArtifactService 回读，与盘上一致、权威；提议工具用默认文件
+  // 后端写 ~/.pi，此处用同源默认 registry 回读）。回读失败（如默认后端读不到该 id）静默退回 undefined，
+  // 下游改用 output——createdContent 是优化项，不应因回读异常炸掉整个 worker。
+  let createdContent: string | undefined;
+  const lastArtifactId = artifactIds.at(-1);
+  if (lastArtifactId) {
+    try {
+      createdContent = new ArtifactService(new ProjectRegistry()).readCurrentContent(
+        projectId,
+        lastArtifactId,
+      );
+    } catch {
+      createdContent = undefined;
+    }
+  }
+
+  return { sessionId: realSessionId, output, reason, artifactIds, createdContent };
+}
+
+/**
+ * 从一回合 messages 中抽出 create_artifact 工具**新建的受管文档 id**（按调用顺序）。
+ * 路径（T1 spike 已双向实证）：`m.role === "toolResult" && m.toolName === "create_artifact"` →
+ * `m.content` 里 `type === "text"` 的 `text` → `JSON.parse` → `.id`。parse 失败 / 无 id / isError 跳过。
+ * 纯文本回合（无 create_artifact）返回 `[]`。
+ */
+export function extractCreatedArtifactIds(messages: AgentMessageLike[]): string[] {
+  const ids: string[] = [];
+  for (const m of messages) {
+    if (m.role !== "toolResult") continue;
+    if ((m as { toolName?: string }).toolName !== "create_artifact") continue;
+    const content = (m as { content?: unknown }).content;
+    if (!Array.isArray(content)) continue;
+    const textPart = content.find(
+      (c): c is { type: string; text: string } =>
+        !!c && typeof c === "object" && (c as { type?: string }).type === "text",
+    );
+    if (!textPart) continue;
+    try {
+      const parsed = JSON.parse(textPart.text) as { id?: unknown };
+      if (typeof parsed.id === "string" && parsed.id) ids.push(parsed.id);
+    } catch {
+      // 非 JSON（如错误文本）→ 跳过
+    }
+  }
+  return ids;
 }
 
 /**
