@@ -21,6 +21,10 @@ interface Props {
   onClose: () => void;
   /** 点击 assignment 产物链接时回调（绝对路径 + 文件名），由 AppShell 在 FileViewer 打开。 */
   onOpenFile: (filePath: string, fileName: string) => void;
+  /** 点击「受管文档」产物时回调（artifactId），由 AppShell 按 id 打开右侧 ArtifactPanel（T5）。 */
+  onOpenArtifact: (artifactId: string) => void;
+  /** 派发产出过受管文档、到终态时回调一次：让 file panel 的「受管文档」分组重取出现新 .md（T5）。 */
+  onArtifactsChanged?: () => void;
 }
 
 /** 轮询间隔（ms）；任务进行中每 2s 拉一次进度。 */
@@ -36,7 +40,14 @@ const STATUS_META: Record<DispatchStatus, { label: string; color: string; bg: st
   failed: { label: "失败", color: "#dc2626", bg: "rgba(239,68,68,0.10)" },
 };
 
-export function DispatchPanel({ projectId, projectRoot, onClose, onOpenFile }: Props) {
+export function DispatchPanel({
+  projectId,
+  projectRoot,
+  onClose,
+  onOpenFile,
+  onOpenArtifact,
+  onArtifactsChanged,
+}: Props) {
   // agent 列表复用 useAgentStore（项目下档案的权威来源）
   const { agents, agentsLoadedId, refreshAgents } = useAgentStore(
     useShallow((s) => ({
@@ -81,6 +92,18 @@ export function DispatchPanel({ projectId, projectRoot, onClose, onOpenFile }: P
     }, POLL_INTERVAL);
     return () => clearInterval(timer);
   }, [projectId, visibleTask?.id, visibleTask?.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // T5：派发到终态（done/failed）且本次产出过受管文档 → 通知一次 AppShell 刷新 file panel 受管分组。
+  // 用 ref 记已通知过的 taskId，避免轮询多次落到终态时重复 bump（每个任务只触发一次）。
+  const notifiedTaskRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!visibleTask || selectIsActive(visibleTask)) return; // 仅终态
+    if (notifiedTaskRef.current === visibleTask.id) return; // 已通知过
+    const producedArtifact = visibleTask.assignments.some((a) => a.artifactId);
+    if (!producedArtifact) return;
+    notifiedTaskRef.current = visibleTask.id;
+    onArtifactsChanged?.();
+  }, [visibleTask?.id, visibleTask?.status, onArtifactsChanged]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleAgent = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -200,6 +223,7 @@ export function DispatchPanel({ projectId, projectRoot, onClose, onOpenFile }: P
               agents={visibleAgents}
               projectRoot={projectRoot}
               onOpenFile={onOpenFile}
+              onOpenArtifact={onOpenArtifact}
               onRestart={handleRestart}
             />
           ) : (
@@ -467,6 +491,7 @@ function DispatchSummary({
   agents,
   projectRoot,
   onOpenFile,
+  onOpenArtifact,
   onRestart,
 }: {
   goal: string;
@@ -475,6 +500,7 @@ function DispatchSummary({
   agents: AgentProfile[];
   projectRoot: string | null;
   onOpenFile: (filePath: string, fileName: string) => void;
+  onOpenArtifact: (artifactId: string) => void;
   onRestart: () => void;
 }) {
   const nameOf = (agentId: string) =>
@@ -531,54 +557,62 @@ function DispatchSummary({
             <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>
               {a.subTask}
             </div>
-            {a.output && (
-              <div style={{ marginTop: 8 }}>
-                <button
-                  data-testid="dispatch-output-link"
-                  data-output={a.output}
-                  onClick={() => openOutput(a.output!)}
-                  title={`打开产物：${a.output}`}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    maxWidth: "100%",
-                    padding: "4px 10px",
-                    background: "var(--bg)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 6,
-                    color: "var(--accent)",
-                    fontSize: 11,
-                    fontFamily: "var(--font-mono)",
-                    cursor: "pointer",
-                  }}
-                >
-                  <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    style={{ flexShrink: 0 }}
-                  >
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <polyline points="14 2 14 8 20 8" />
-                  </svg>
-                  <span
+            {/* T5：有受管文档(artifactId)则只露这一个入口、按 id 打开右侧 ArtifactPanel；
+                否则退回回执文件链接（coding/纯文本 worker，经 FileViewer 打开 .pi/artifacts/*.md）。
+                output 在有 artifactId 时仅作内部保底、不再额外渲染。 */}
+            {(() => {
+              const isArtifact = !!a.artifactId;
+              if (!isArtifact && !a.output) return null;
+              return (
+                <div style={{ marginTop: 8 }}>
+                  <button
+                    data-testid="dispatch-output-link"
+                    data-output={a.output ?? ""}
+                    data-artifact-id={a.artifactId ?? ""}
+                    onClick={() => (isArtifact ? onOpenArtifact(a.artifactId!) : openOutput(a.output!))}
+                    title={isArtifact ? "打开受管文档" : `打开产物：${a.output}`}
                     style={{
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      maxWidth: "100%",
+                      padding: "4px 10px",
+                      background: "var(--bg)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 6,
+                      color: "var(--accent)",
+                      fontSize: 11,
+                      fontFamily: isArtifact ? "inherit" : "var(--font-mono)",
+                      cursor: "pointer",
                     }}
                   >
-                    {a.output}
-                  </span>
-                </button>
-              </div>
-            )}
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      style={{ flexShrink: 0 }}
+                    >
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
+                    </svg>
+                    <span
+                      style={{
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {isArtifact ? "受管文档" : a.output}
+                    </span>
+                  </button>
+                </div>
+              );
+            })()}
           </div>
         ))}
       </div>

@@ -1094,6 +1094,8 @@ export function AppShell() {
         projectRoot={currentRoot}
         onClose={() => setDispatchPanelOpen(false)}
         onOpenFile={handleOpenFile}
+        onOpenArtifact={handleOpenArtifact}
+        onArtifactsChanged={() => setExplorerRefreshKey((k) => k + 1)}
       />
     )}
     </>
