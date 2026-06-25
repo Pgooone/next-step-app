@@ -128,6 +128,7 @@ export async function runDispatch(
     try {
       result = await doRunWorker({
         projectRoot,
+        projectId: task.projectId,
         profile,
         cwd: projectRoot,
         firstMessage,

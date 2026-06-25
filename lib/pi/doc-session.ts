@@ -19,7 +19,7 @@
  *
  * 沿用 guard / B2 的「只产 options、调用方 new 会话」边界（V2-4 wiring 负责真正 createAgentSession）。
  */
-import { buildDocTools, type DocToolDeps, type DocToolDef } from "./doc-tools";
+import { buildDispatchDocTools, buildDocTools, type DocToolDeps, type DocToolDef } from "./doc-tools";
 
 /**
  * 受限工具集白名单（7 项）：4 只读内置（read/grep/find/ls，便于 agent 读材料/定位）+ 3 提议工具名。
@@ -32,6 +32,21 @@ export const DOC_SESSION_TOOLS = [
   "ls",
   "create_artifact",
   "propose_edit",
+  "list_artifacts",
+] as const;
+
+/**
+ * **派发（headless dispatch）**专用受限工具集白名单（6 项）：4 只读内置 + 2 提议工具名
+ * （create_artifact / list_artifacts），**不含 propose_edit**（派发无人按块确认，propose_edit 会落下
+ * 永远悬而未决的 PendingChange）、也**不含 write/edit/bash**。**必须含这 2 个 customTool 名**
+ * （D-V2-04，否则内核 `_refreshToolRegistry` 按白名单名过滤掉它们、agent 调不到）。
+ */
+export const DISPATCH_DOC_SESSION_TOOLS = [
+  "read",
+  "grep",
+  "find",
+  "ls",
+  "create_artifact",
   "list_artifacts",
 ] as const;
 
@@ -56,6 +71,24 @@ export function assembleDocSessionOptions(deps: DocToolDeps & { cwd: string }): 
   return {
     options: {
       tools: [...DOC_SESSION_TOOLS],
+      customTools,
+    },
+  };
+}
+
+/**
+ * 产出**派发 worker** 用的受限工具集 options（白名单 {@link DISPATCH_DOC_SESSION_TOOLS} 6 项 +
+ * create_artifact/list_artifacts 两个 customTool，**无 propose_edit**）。与 {@link assembleDocSessionOptions}
+ * 同构、同边界（只产 options、调用方 new 会话；spread 须排在 profileOptions 之后覆盖 profile.tools），
+ * 供 dispatch-runner 让文档型 worker 也能产受管文档。
+ */
+export function assembleDispatchDocSessionOptions(deps: DocToolDeps & { cwd: string }): {
+  options: { tools: string[]; customTools: DocToolDef[] };
+} {
+  const customTools = buildDispatchDocTools(deps);
+  return {
+    options: {
+      tools: [...DISPATCH_DOC_SESSION_TOOLS],
       customTools,
     },
   };

@@ -23,6 +23,8 @@ import {
 
 import type { AgentProfile } from "../domain/agent-profile-store";
 import { applyProfileRuntime, assembleProfileSessionOptions } from "./agent-profile-session";
+import { assembleDispatchDocSessionOptions } from "./doc-session";
+import { CODING_TOOL_NAMES } from "./coding-tools";
 
 /** 运行时事件的最小读取形状（与 rpc-manager 的 AgentEvent 一致：松散 { type, ... }）。 */
 type RuntimeEvent = { type: string; [key: string]: unknown };
@@ -66,6 +68,8 @@ export interface WorkerResult {
  */
 export async function runWorker(args: {
   projectRoot: string;
+  /** 当前项目 id（派发 doc 提议工具按 id 操作受管文档、物化定位项目；orchestrator 传 task.projectId）。 */
+  projectId: string;
   profile: AgentProfile;
   cwd: string;
   firstMessage: string;
@@ -82,6 +86,7 @@ export async function runWorker(args: {
 }): Promise<WorkerResult> {
   const {
     projectRoot,
+    projectId,
     profile,
     cwd,
     firstMessage,
@@ -103,7 +108,31 @@ export async function runWorker(args: {
     additionalSkillPaths,
   });
 
-  const { session: inner } = await createAgentSession({ ...options, ...createOptionsOverride });
+  // 让文档型（mode=doc，默认）派发 worker 也能产受管文档：按 mode 合并「派发专用受限工具集」
+  // （create_artifact + list_artifacts，**无 propose_edit**——headless 无人按块确认，propose_edit 会落死悬 pending）。
+  //   - mode='doc'：装受限集（read/grep/find/ls + 2 提议工具，无 write/edit/bash）。
+  //   - mode='coding'：不套受限集 → profile.tools 直接生效（等价既有带 bash 编码 worker）；
+  //     profile.tools 为空时退回全套内置编码工具（含 bash），与主对话/profile 会话「空 tools → 默认全集」对齐（D-MODE-05）。
+  // sourceActor = profile.name（version.author / 物化定位，与 profile 会话同款）。提议工具后端默认文件后端
+  //   （buildDispatchDocTools 内 new ProjectRegistry() 读默认 ~/.pi/projects.json），测试经 createOptionsOverride 不覆盖、
+  //   hermetic 时由 docDepsOverride 注入——本卡 dispatch-runner 暂只暴露默认后端（orchestrator 生产路径不注入）。
+  const docOptions =
+    profile.mode === "coding"
+      ? undefined
+      : assembleDispatchDocSessionOptions({ projectId, sourceActor: profile.name, cwd }).options;
+  const codingToolsFallback =
+    profile.mode === "coding" && profile.tools.length === 0 ? { tools: [...CODING_TOOL_NAMES] } : {};
+
+  // ⚠️ spread 顺序 options → docOptions → codingToolsFallback → createOptionsOverride 不可调（D-V2-04，
+  // 与 profile-session-wiring.ts:165-170 同序）：options 含 `tools: profile.tools`；doc 模式 docOptions 也含
+  // `tools`（6 项受限白名单）——docOptions 必须排在 options **之后**覆盖掉 profile.tools，否则含 write/edit/bash
+  // 会泄漏、受限集失效。coding 模式 docOptions=undefined → profile.tools 即最终工具集（空时由 fallback 兜底）。
+  const { session: inner } = await createAgentSession({
+    ...options,
+    ...(docOptions ?? {}),
+    ...codingToolsFallback,
+    ...createOptionsOverride,
+  });
   await applyProfileRuntime(inner, profile);
 
   // 必须先登记接事件流、再挂 agent_end 监听、最后才 send——否则首条 prompt 的事件错过。

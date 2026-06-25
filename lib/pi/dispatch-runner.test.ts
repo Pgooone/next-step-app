@@ -18,10 +18,16 @@ import {
   SessionManager,
   type AgentSession,
 } from "@earendil-works/pi-coding-agent";
-import { registerFauxProvider, getApiProvider } from "@earendil-works/pi-ai";
+import {
+  registerFauxProvider,
+  getApiProvider,
+  fauxAssistantMessage,
+  fauxText,
+} from "@earendil-works/pi-ai";
 
 import { AgentProfileStore, type AgentProfile } from "../domain/agent-profile-store";
 import { ProjectRegistry } from "../domain/project-registry";
+import { AgentSessionWrapper } from "../rpc-manager";
 import { runWorker, type RegisterInnerSession, type SessionHandle } from "./dispatch-runner";
 
 let dir: string;
@@ -96,6 +102,7 @@ describe("runWorker 执行超时兜底", () => {
     try {
       const result = await runWorker({
         projectRoot: projectRoot(),
+        projectId,
         profile,
         cwd: projectRoot(),
         firstMessage: "干活",
@@ -129,6 +136,7 @@ describe("runWorker 执行超时兜底", () => {
     try {
       const result = await runWorker({
         projectRoot: projectRoot(),
+        projectId,
         profile,
         cwd: projectRoot(),
         firstMessage: "干活",
@@ -145,6 +153,150 @@ describe("runWorker 执行超时兜底", () => {
 
       expect(result.reason).toBe("aborted");
       expect(sends.some((c) => c.type === "abort")).toBe(true);
+    } finally {
+      faux.unregister();
+    }
+  });
+});
+
+// ===========================================================================
+// T2：派发 worker 受限工具集（按 profile.mode 合并 dispatch doc 子集 / coding 不套受限集）
+//
+// 用真实 AgentSessionWrapper 提供 onEvent/send 的真实事件接线（runWorker 的 waitForTurnEnd 才能正常
+// resolve），但不入进程级 globalThis registry；并捕获内核 inner 以读 getActiveToolNames()（激活集
+// 由会话构造期 _refreshToolRegistry 按白名单确定）。faux 给一条 "ok" 文本让回合正常结束。
+// ===========================================================================
+
+/** 带 responses 的 faux（setResponses 必须在捕获 streamSimple 之前），让 worker 一回合正常结束。 */
+type FauxResponses = Parameters<ReturnType<typeof registerFauxProvider>["setResponses"]>[0];
+function makeFauxWithResponses(responses: FauxResponses) {
+  const reg = registerFauxProvider({
+    api: "faux",
+    provider: "faux",
+    models: [{ id: "faux-1", name: "Faux", contextWindow: 128000, maxTokens: 16384 }],
+  });
+  reg.setResponses(responses);
+  const liveFaux = getApiProvider("faux") as { streamSimple?: unknown; stream?: unknown };
+  const capturedStreamSimple = (liveFaux.streamSimple ?? liveFaux.stream) as never;
+  const authStorage = AuthStorage.inMemory({ faux: { type: "api_key", key: "dummy-key" } });
+  const modelRegistry = ModelRegistry.inMemory(authStorage);
+  modelRegistry.registerProvider("faux", {
+    api: "faux",
+    baseUrl: "http://localhost:0",
+    apiKey: "dummy-key",
+    streamSimple: capturedStreamSimple,
+    models: [
+      { id: "faux-1", name: "faux-1", baseUrl: "http://localhost:0", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 16384 },
+    ],
+  });
+  const model = modelRegistry.find("faux", "faux-1")!;
+  return { authStorage, modelRegistry, model, unregister: () => reg.unregister() };
+}
+
+/** 捕获内核 inner 的 register（真实 AgentSessionWrapper 接事件流，不入进程级 registry）。 */
+function makeCapturingRegister(): {
+  register: RegisterInnerSession;
+  captured: { inner: AgentSession | null };
+} {
+  const captured: { inner: AgentSession | null } = { inner: null };
+  const register: RegisterInnerSession = (inner: AgentSession) => {
+    captured.inner = inner;
+    const wrapper = new AgentSessionWrapper(inner);
+    wrapper.start();
+    return { session: wrapper, realSessionId: inner.sessionId };
+  };
+  return { register, captured };
+}
+
+/** 起一个 dispatch worker、跑完一回合、返回捕获的内核 inner（读激活工具集）。 */
+async function runAndCapture(
+  profile: AgentProfile,
+  faux: ReturnType<typeof makeFauxWithResponses>,
+): Promise<AgentSession> {
+  const { register, captured } = makeCapturingRegister();
+  await runWorker({
+    projectRoot: projectRoot(),
+    projectId,
+    profile,
+    cwd: projectRoot(),
+    firstMessage: "开始",
+    registerInnerSession: register,
+    timeoutMs: 5000,
+    sessionManager: SessionManager.inMemory(),
+    createOptionsOverride: {
+      model: faux.model,
+      authStorage: faux.authStorage,
+      modelRegistry: faux.modelRegistry,
+    },
+  });
+  if (!captured.inner) throw new Error("register 未捕获到内核 inner");
+  return captured.inner;
+}
+
+describe("runWorker 派发受限工具集（T2）", () => {
+  it("mode=doc（默认）：工具集恰为 read/grep/find/ls/create_artifact/list_artifacts 六项，不含 propose_edit/write/edit/bash", async () => {
+    const profile = store.create(projectId, { name: "派发文档员", tools: ["read"] }); // mode 默认 doc
+    expect(profile.mode).toBe("doc");
+    const faux = makeFauxWithResponses([() => fauxAssistantMessage([fauxText("ok")])]);
+    try {
+      const inner = await runAndCapture(profile, faux);
+      const active = inner.getActiveToolNames().slice().sort();
+      expect(active).toEqual(
+        ["create_artifact", "find", "grep", "list_artifacts", "ls", "read"].sort(),
+      );
+      for (const f of ["propose_edit", "write", "edit", "bash"]) {
+        expect(active).not.toContain(f);
+      }
+    } finally {
+      faux.unregister();
+    }
+  });
+
+  it("mode=coding 且 tools 空 → 退回全套编码工具（含 bash），不套 doc 受限集（无提议工具）", async () => {
+    const profile = store.create(projectId, { name: "编码空", tools: [], mode: "coding" });
+    const faux = makeFauxWithResponses([() => fauxAssistantMessage([fauxText("ok")])]);
+    try {
+      const inner = await runAndCapture(profile, faux);
+      const active = inner.getActiveToolNames();
+      for (const t of ["read", "bash", "edit", "write"]) expect(active).toContain(t);
+      for (const t of ["create_artifact", "list_artifacts", "propose_edit"]) {
+        expect(active).not.toContain(t);
+      }
+    } finally {
+      faux.unregister();
+    }
+  });
+
+  it("mode=coding 且 tools=['read'] → 工具集恰为 ['read']（不被 doc 子集污染、不退回全集）", async () => {
+    const profile = store.create(projectId, { name: "编码只读", tools: ["read"], mode: "coding" });
+    const faux = makeFauxWithResponses([() => fauxAssistantMessage([fauxText("ok")])]);
+    try {
+      const inner = await runAndCapture(profile, faux);
+      const active = inner.getActiveToolNames();
+      expect(active).toEqual(["read"]);
+      for (const t of ["bash", "create_artifact", "list_artifacts"]) {
+        expect(active).not.toContain(t);
+      }
+    } finally {
+      faux.unregister();
+    }
+  });
+
+  it("泄漏对照：mode=doc + profile.tools 含 write/edit/bash → 经合并后仍被受限集覆盖剔除", async () => {
+    const profile = store.create(projectId, {
+      name: "想越权",
+      tools: ["read", "write", "edit", "bash"],
+    }); // mode 默认 doc
+    const faux = makeFauxWithResponses([() => fauxAssistantMessage([fauxText("ok")])]);
+    try {
+      const inner = await runAndCapture(profile, faux);
+      const active = inner.getActiveToolNames().slice().sort();
+      expect(active).toEqual(
+        ["create_artifact", "find", "grep", "list_artifacts", "ls", "read"].sort(),
+      );
+      for (const f of ["write", "edit", "bash", "propose_edit"]) {
+        expect(active).not.toContain(f);
+      }
     } finally {
       faux.unregister();
     }

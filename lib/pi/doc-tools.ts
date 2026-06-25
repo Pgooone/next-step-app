@@ -83,22 +83,31 @@ const proposeEditSchema = Type.Object({
 const listArtifactsSchema = Type.Object({});
 
 /**
- * 装配文档会话的三个提议工具（闭包注入 deps）。返回数组直接进 `createAgentSession({ customTools })`。
- * 注意：白名单（tools）须含这三个工具名，否则内核 `_refreshToolRegistry` 按白名单名过滤掉它们
- * （D-V2-04 命门，V2-0 spike 已双向实证）——该白名单由 V2-3 的 assembleDocSessionOptions 负责。
+ * 解析提议工具的后端依赖（artifactService / pendingStore），供 {@link buildDocTools} 与
+ * {@link buildDispatchDocTools} 共用——两者后端解析逻辑一致（默认文件后端、半注入防护，D-V2-09）。
+ * 默认后端指向 ~/.pi/projects.json（registry 构造惰性、无 I/O），与 resolve/pending 路由的默认 store
+ * 指向同一批文件、UI 读得到（沿用 P0 guard 装配的默认后端约定）。
  */
-export function buildDocTools(deps: DocToolDeps): DocToolDef[] {
-  const { projectId, sourceActor } = deps;
-  // 默认后端指向 ~/.pi/projects.json（registry 构造惰性、无 I/O），与 resolve/pending 路由的默认 store
-  // 指向同一批文件、UI 读得到（沿用 P0 guard 装配的默认后端约定）。
+function resolveBackends(deps: DocToolDeps): {
+  artifactService: ArtifactService;
+  pendingStore: PendingChangeStore;
+} {
   const registry = new ProjectRegistry();
   const artifactService = deps.artifactService ?? new ArtifactService(registry);
   // 透传 artifactService（D-V2-09）：PendingChangeStore 第二参为复用 artifactService 预留，
   // 默认分支也传同一实例——省一次实例化 + 强制默认 pendingStore 与上行 artifactService 同源，
   // 消除「半注入（只注 artifactService 省 pendingStore）→读不到对方落的数据」footgun 的一半爆炸半径。
   const pendingStore = deps.pendingStore ?? new PendingChangeStore(registry, artifactService);
+  return { artifactService, pendingStore };
+}
 
-  const createArtifact = defineTool({
+/** create_artifact 工具工厂（闭包注入 projectId/sourceActor/artifactService）。供两个装配函数共用。 */
+function makeCreateArtifactTool(
+  projectId: string,
+  sourceActor: string,
+  artifactService: ArtifactService,
+): DocToolDef {
+  return defineTool({
     name: "create_artifact",
     label: "create_artifact",
     description:
@@ -130,8 +139,16 @@ export function buildDocTools(deps: DocToolDeps): DocToolDef[] {
       }
     },
   });
+}
 
-  const proposeEdit = defineTool({
+/** propose_edit 工具工厂（闭包注入 projectId/sourceActor/后端）。**仅交互式文档会话用**（headless dispatch 不挂它）。 */
+function makeProposeEditTool(
+  projectId: string,
+  sourceActor: string,
+  artifactService: ArtifactService,
+  pendingStore: PendingChangeStore,
+): DocToolDef {
+  return defineTool({
     name: "propose_edit",
     label: "propose_edit",
     description:
@@ -194,8 +211,11 @@ export function buildDocTools(deps: DocToolDeps): DocToolDef[] {
       }
     },
   });
+}
 
-  const listArtifacts = defineTool({
+/** list_artifacts 工具工厂（闭包注入 projectId/artifactService）。供两个装配函数共用。 */
+function makeListArtifactsTool(projectId: string, artifactService: ArtifactService): DocToolDef {
+  return defineTool({
     name: "list_artifacts",
     label: "list_artifacts",
     description:
@@ -224,6 +244,38 @@ export function buildDocTools(deps: DocToolDeps): DocToolDef[] {
       }
     },
   });
+}
 
-  return [createArtifact, proposeEdit, listArtifacts];
+/**
+ * 装配**交互式**文档会话的三个提议工具（闭包注入 deps）。返回数组直接进 `createAgentSession({ customTools })`。
+ * 注意：白名单（tools）须含这三个工具名，否则内核 `_refreshToolRegistry` 按白名单名过滤掉它们
+ * （D-V2-04 命门，V2-0 spike 已双向实证）——该白名单由 V2-3 的 assembleDocSessionOptions 负责。
+ *
+ * 返回顺序固定 [create_artifact, propose_edit, list_artifacts]（doc-session.test.ts 断言依赖）。
+ */
+export function buildDocTools(deps: DocToolDeps): DocToolDef[] {
+  const { projectId, sourceActor } = deps;
+  const { artifactService, pendingStore } = resolveBackends(deps);
+  return [
+    makeCreateArtifactTool(projectId, sourceActor, artifactService),
+    makeProposeEditTool(projectId, sourceActor, artifactService, pendingStore),
+    makeListArtifactsTool(projectId, artifactService),
+  ];
+}
+
+/**
+ * 装配**派发（headless dispatch）**文档会话的提议工具——只 `create_artifact` + `list_artifacts`，
+ * **不含 `propose_edit`**：派发 worker 无人在界面按块确认，propose_edit 会落下永远悬而未决的 PendingChange。
+ * 让文档型 dispatch worker 也能产受管文档（create_artifact 直接落 v1 + 物化），但改已存在文档仍须走交互式会话。
+ *
+ * 与 {@link buildDocTools} 共用同一批工具工厂（create/list），仅少装 propose_edit。
+ * 白名单须含这两个工具名（{@link DISPATCH_DOC_SESSION_TOOLS}），否则内核按名过滤掉、调不到（D-V2-04）。
+ */
+export function buildDispatchDocTools(deps: DocToolDeps): DocToolDef[] {
+  const { projectId, sourceActor } = deps;
+  const { artifactService } = resolveBackends(deps);
+  return [
+    makeCreateArtifactTool(projectId, sourceActor, artifactService),
+    makeListArtifactsTool(projectId, artifactService),
+  ];
 }
