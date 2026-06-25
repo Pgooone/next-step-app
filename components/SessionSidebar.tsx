@@ -8,6 +8,7 @@ import { useSessionMapStore, selectMapForProject } from "@/lib/stores/useSession
 import { useAgentStore, selectAgentsForProject, agentColor } from "@/lib/stores/useAgentStore";
 import { useProjectStore, selectCurrentProjectId, selectCurrentRoot } from "@/lib/stores/useProjectStore";
 import { groupSessionsByOwner, makeAgentResolver, type AgentSessionGroup } from "@/lib/session-grouping";
+import { pickSessionToRestoreOnEnter } from "@/lib/main-session";
 
 interface Props {
   selectedSessionId: string | null;
@@ -260,40 +261,59 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     }).catch(() => {});
   }, []);
 
+  // M7·5.4 / T3：会话归属映射 store 在 sidebar 内订阅（方案 A）。这三行上提到恢复 effect 之前，
+  // 使「进项目默认恢复主会话」(T3) 能读到 mainSessionId；下方分组 useMemo 等仍引用这些变量。
+  // selectMapForProject 不匹配项目时回退空 map，避免切项目串显。
+  const currentProjectId = useProjectStore(selectCurrentProjectId);
+  const currentRoot = useProjectStore(selectCurrentRoot);
+  const { map, loadedProjectId } = useSessionMapStore(
+    useShallow((s) => ({ map: s.map, loadedProjectId: s.loadedProjectId })),
+  );
+
   const restoredRef = useRef(false);
 
   useEffect(() => {
     onCwdChange?.(selectedCwd);
   }, [selectedCwd, onCwdChange]);
 
-  // Auto-select cwd and restore session from URL on first load.
-  // 默认 cwd = 当前项目根（selectedCwdProp），优先于 getRecentCwds——后者跨全局所有
-  // 会话取最近，会把新项目串成别的项目目录（BUG-01 缺陷②）。URL 会话恢复仍最优先。
+  // 进项目：恢复会话 + 选默认 cwd（V1.2 第五轮·Bug2）。
+  // 恢复优先级：URL ?session= > 该项目主对话 mainSessionId > 无（走新建态 T4，由 AppShell 接管）。
+  // 难点是 map 异步：mainSessionId 恢复必须等 map 就绪（loadedProjectId===currentProjectId）后再判，
+  // 否则会在 map 未到时过早设默认 cwd 而永久错过主会话恢复。URL 恢复不依赖 map。
   useEffect(() => {
-    if (selectedCwd !== null) return;
-
-    // URL 恢复指定会话：需等会话列表加载完再找（故 allSessions 空时仅在此分支等待）
-    if (initialSessionId && !restoredRef.current) {
-      if (allSessions.length === 0) return;
-      restoredRef.current = true;
-      const target = allSessions.find((s) => s.id === initialSessionId);
+    // 1) 会话恢复：restoredRef 守护，仅尝试一次
+    if (!restoredRef.current) {
+      const effectiveMap = selectMapForProject(map, loadedProjectId, currentProjectId);
+      const target = pickSessionToRestoreOnEnter(effectiveMap, initialSessionId);
       if (target) {
-        setSelectedCwd(target.cwd);
-        onSelectSession(target, true);
-        return;
+        if (allSessions.length === 0) return; // 列表未就绪，等下次（list/map 到达触发重跑）
+        restoredRef.current = true;
+        const found = allSessions.find((s) => s.id === target);
+        if (found) {
+          setSelectedCwd(found.cwd);
+          onSelectSession(found, true);
+          return;
+        }
+        // 目标会话不在列表（已删/陈旧）→ 通知父组件走占位/新建态
+        onInitialRestoreDone?.();
+      } else {
+        // target 为空：可能 map 尚未加载（mainSessionId 暂为 null）。仅当 map 已就绪（loadedProjectId
+        // 匹配当前项目）才确认「确无主会话」、标 restored 走新建态；否则 return 等 map 到达再判。
+        const mapReady = loadedProjectId === currentProjectId;
+        if (!mapReady && currentProjectId) return;
+        restoredRef.current = true;
       }
-      // Session not found — notify parent so it can show the placeholder
-      onInitialRestoreDone?.();
     }
 
-    // 默认落到当前项目根；无项目根时才回退到全局最近 cwd
+    // 2) 默认 cwd：恢复尝试已定后再设。默认落当前项目根（selectedCwdProp）；无则回退全局最近 cwd。
+    if (selectedCwd !== null) return;
     if (selectedCwdProp) {
       setSelectedCwd(selectedCwdProp);
       return;
     }
     const cwds = getRecentCwds(allSessions);
     if (cwds.length > 0) setSelectedCwd(cwds[0]);
-  }, [allSessions, selectedCwd, selectedCwdProp, initialSessionId, onSelectSession, onInitialRestoreDone]);
+  }, [allSessions, selectedCwd, selectedCwdProp, initialSessionId, map, loadedProjectId, currentProjectId, onSelectSession, onInitialRestoreDone]);
 
   const commitCustomPath = useCallback(async () => {
     const path = customPathValue.trim();
@@ -368,13 +388,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     ? allSessions.filter((s) => s.cwd === selectedCwd)
     : allSessions;
 
-  // M7·5.4：按「会话→agent / 主对话」归属把当前列表切三区。store 在 sidebar 内订阅（方案 A）。
-  // selectMapForProject/selectAgentsForProject 不匹配项目时回退空，避免切项目串显。
-  const currentProjectId = useProjectStore(selectCurrentProjectId);
-  const currentRoot = useProjectStore(selectCurrentRoot);
-  const { map, loadedProjectId } = useSessionMapStore(
-    useShallow((s) => ({ map: s.map, loadedProjectId: s.loadedProjectId })),
-  );
+  // M7·5.4：按「会话→agent / 主对话」归属把当前列表切三区（currentProjectId/currentRoot/map 已上提，见恢复 effect 前）。
+  // selectAgentsForProject 不匹配项目时回退空，避免切项目串显。
   const agents = useAgentStore(useShallow((s) => selectAgentsForProject(s, currentProjectId)));
   const grouped = useMemo(() => {
     const effectiveMap = selectMapForProject(map, loadedProjectId, currentProjectId);

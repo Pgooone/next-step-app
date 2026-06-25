@@ -18,3 +18,21 @@ export function pickMainOnSessionCreated(
   if (map.mainSessionId) return null; // 已有主对话，不抢占
   return newSessionId;
 }
+
+/**
+ * 进项目时「应恢复哪条会话」判定（T3 · 第五轮）。
+ *
+ * 进项目（或刷新/深链）时左栏需自动选回一条会话，无需用户手动点：
+ *  - URL 上的 `?session=`（urlSessionId）最优先——深链/刷新当前会话须精确恢复；
+ *  - 否则回到该项目的主对话（map.mainSessionId）——「进项目默认恢复主会话」核心诉求；
+ *  - 两者皆空 → 返回 null，由调用方走默认 cwd 选择 / 新建态（T4）。
+ *
+ * 纯函数：不查会话是否真实存在（调用方据返回 id 在 allSessions 里 find，找不到再降级）。
+ */
+export function pickSessionToRestoreOnEnter(
+  map: SessionMap,
+  urlSessionId: string | null | undefined,
+): string | null {
+  if (urlSessionId) return urlSessionId; // URL 优先
+  return map.mainSessionId;
+}
