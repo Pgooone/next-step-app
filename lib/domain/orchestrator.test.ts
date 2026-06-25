@@ -483,6 +483,165 @@ describe("runDispatch 产物对账（T4，受管文档作权威产物）", () =>
 });
 
 // ---------------------------------------------------------------------------
+// T1（V1.2 第五轮·5.3）：worker 会话写「会话→agent」归属（setOwner），供左栏按 agent 分组（Bug1）
+//   - completed/timeout/aborted 三类（都已在 L152 建会话）都写 (projectRoot, sessionId, agentId)；
+//     决策③：失败/超时会话也归类、也计数。
+//   - 档案不存在 / acquireSlot 抛错 / runWorker 抛错 三类前置失败（无 sessionId）→ 不写。
+// ---------------------------------------------------------------------------
+describe("runDispatch 写会话归属（T1·5.3）", () => {
+  it("每个 completed worker 起会话后以 (projectRoot, sessionId, agentId) 调一次 setOwner", async () => {
+    const { task } = makeTask(["t1", "t2"]);
+    const setOwnerSpy = vi.fn();
+    const ids = ["sid-1", "sid-2"];
+    let call = 0;
+    const fakeRun = (async () => ({
+      sessionId: ids[call++],
+      output: "out",
+      reason: "completed",
+      artifactIds: [],
+    })) as unknown as typeof runWorker;
+
+    const result = await runDispatch(task, {
+      registry,
+      dispatchStore,
+      profileStore,
+      runWorker: fakeRun,
+      acquireSlot: async () => {},
+      setOwner: setOwnerSpy,
+      registerInnerSession: (() => {
+        throw new Error("不应被调用（faux runWorker 不起真实会话）");
+      }) as unknown as RegisterInnerSession,
+    });
+
+    expect(result.status).toBe("done");
+    expect(setOwnerSpy).toHaveBeenCalledTimes(2);
+    // 每条 assignment 用 (projectRoot, 真实 sessionId, 该 assignment 的 agentId) 调一次
+    expect(setOwnerSpy).toHaveBeenNthCalledWith(1, projectRoot(), "sid-1", task.assignments[0].agentId);
+    expect(setOwnerSpy).toHaveBeenNthCalledWith(2, projectRoot(), "sid-2", task.assignments[1].agentId);
+  });
+
+  it("worker timeout（已建会话）也写归属、然后中止后续（决策③）", async () => {
+    const { task } = makeTask(["t1", "t2"]);
+    const setOwnerSpy = vi.fn();
+    const fakeRun = (async () => ({
+      sessionId: "sid-timeout",
+      output: "",
+      reason: "timeout",
+      artifactIds: [],
+    })) as unknown as typeof runWorker;
+
+    const result = await runDispatch(task, {
+      registry,
+      dispatchStore,
+      profileStore,
+      runWorker: fakeRun,
+      acquireSlot: async () => {},
+      setOwner: setOwnerSpy,
+      registerInnerSession: (() => {
+        throw new Error("不应被调用");
+      }) as unknown as RegisterInnerSession,
+    });
+
+    expect(result.status).toBe("failed");
+    // 第一个 worker timeout 已建会话 → 写 1 次；中止后续 → 不起第二个、不再写
+    expect(setOwnerSpy).toHaveBeenCalledTimes(1);
+    expect(setOwnerSpy).toHaveBeenCalledWith(projectRoot(), "sid-timeout", task.assignments[0].agentId);
+  });
+
+  it("worker aborted（已建会话）也写归属、然后中止后续（决策③）", async () => {
+    const { task } = makeTask(["t1", "t2"]);
+    const setOwnerSpy = vi.fn();
+    const fakeRun = (async () => ({
+      sessionId: "sid-aborted",
+      output: "",
+      reason: "aborted",
+      artifactIds: [],
+    })) as unknown as typeof runWorker;
+
+    const result = await runDispatch(task, {
+      registry,
+      dispatchStore,
+      profileStore,
+      runWorker: fakeRun,
+      acquireSlot: async () => {},
+      setOwner: setOwnerSpy,
+      registerInnerSession: (() => {
+        throw new Error("不应被调用");
+      }) as unknown as RegisterInnerSession,
+    });
+
+    expect(result.status).toBe("failed");
+    expect(setOwnerSpy).toHaveBeenCalledTimes(1);
+    expect(setOwnerSpy).toHaveBeenCalledWith(projectRoot(), "sid-aborted", task.assignments[0].agentId);
+  });
+
+  it("档案不存在（L97 前置失败、无 sessionId）→ 不写归属", async () => {
+    const a1 = profileStore.create(projectId, { name: "real" });
+    const task = dispatchStore.create(projectId, {
+      goal: "g",
+      assignments: [
+        { agentId: "does-not-exist", subTask: "t" },
+        { agentId: a1.id, subTask: "u" },
+      ],
+    });
+    const setOwnerSpy = vi.fn();
+    const result = await runDispatch(task, {
+      registry,
+      dispatchStore,
+      profileStore,
+      runWorker: (async () => ({ sessionId: "x", output: "y", reason: "completed", artifactIds: [] })) as unknown as typeof runWorker,
+      acquireSlot: async () => {},
+      setOwner: setOwnerSpy,
+      registerInnerSession: (() => {
+        throw new Error("不应被调用");
+      }) as unknown as RegisterInnerSession,
+    });
+    expect(result.status).toBe("failed");
+    expect(setOwnerSpy).not.toHaveBeenCalled();
+  });
+
+  it("acquireSlot 抛错（L113 前置失败、无 sessionId）→ 不写归属", async () => {
+    const { task } = makeTask(["t1", "t2"]);
+    const setOwnerSpy = vi.fn();
+    const result = await runDispatch(task, {
+      registry,
+      dispatchStore,
+      profileStore,
+      runWorker: (async () => ({ sessionId: "x", output: "y", reason: "completed", artifactIds: [] })) as unknown as typeof runWorker,
+      acquireSlot: async () => {
+        throw new Error("活跃会话已达上限 3");
+      },
+      setOwner: setOwnerSpy,
+      registerInnerSession: (() => {
+        throw new Error("不应被调用");
+      }) as unknown as RegisterInnerSession,
+    });
+    expect(result.status).toBe("failed");
+    expect(setOwnerSpy).not.toHaveBeenCalled();
+  });
+
+  it("runWorker 抛错（L142 前置失败、无 sessionId）→ 不写归属", async () => {
+    const { task } = makeTask(["t1", "t2"]);
+    const setOwnerSpy = vi.fn();
+    const result = await runDispatch(task, {
+      registry,
+      dispatchStore,
+      profileStore,
+      runWorker: (async () => {
+        throw new Error("worker 崩了");
+      }) as unknown as typeof runWorker,
+      acquireSlot: async () => {},
+      setOwner: setOwnerSpy,
+      registerInnerSession: (() => {
+        throw new Error("不应被调用");
+      }) as unknown as RegisterInnerSession,
+    });
+    expect(result.status).toBe("failed");
+    expect(setOwnerSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 文件名净化：保留中文、只替换非法字符（真实端到端 deepseek 跑出 1-_.md 的 bug 回归）
 // ---------------------------------------------------------------------------
 describe("sanitizeFileName", () => {

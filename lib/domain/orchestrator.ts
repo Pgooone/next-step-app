@@ -18,6 +18,7 @@ import { AgentProfileStore } from "./agent-profile-store";
 import { DispatchStore, type Assignment, type DispatchTask } from "./dispatch-store";
 import { sanitizeFileName } from "./file-name";
 import { ProjectRegistry } from "./project-registry";
+import { setOwner } from "./session-agent-map";
 import { acquireSlot } from "../pi/concurrency-gate";
 import { runWorker, type RegisterInnerSession } from "../pi/dispatch-runner";
 import type { CreateAgentSessionOptions, SessionManager } from "@earendil-works/pi-coding-agent";
@@ -37,6 +38,8 @@ export interface OrchestratorDeps {
   profileStore?: AgentProfileStore;
   runWorker?: RunWorkerFn;
   acquireSlot?: AcquireSlotFn;
+  /** 写「会话→agent」归属（V1.2 第五轮·5.3）；生产用 session-agent-map.setOwner，测试注入 spy。 */
+  setOwner?: (cwd: string, sid: string, agentId: string) => void;
   /** 透传给 runWorker：生产用 rpc-manager.registerInnerSession，测试用 faux register。 */
   registerInnerSession: RegisterInnerSession;
   /** 透传给 runWorker（测试注入 faux session/model）。 */
@@ -70,6 +73,7 @@ export async function runDispatch(
   const profileStore = deps.profileStore ?? new AgentProfileStore(registry);
   const doRunWorker = deps.runWorker ?? runWorker;
   const doAcquireSlot = deps.acquireSlot ?? acquireSlot;
+  const doSetOwner = deps.setOwner ?? setOwner;
   const workerTimeoutMs = deps.workerTimeoutMs ?? DEFAULT_WORKER_TIMEOUT_MS;
 
   const projectRoot = registry.get(task.projectId).root;
@@ -150,6 +154,11 @@ export async function runDispatch(
     }
 
     assignment.sessionId = result.sessionId;
+
+    // V1.2 第五轮·5.3：worker 会话已建（completed/timeout/aborted 三类都有 sessionId），立即写
+    // 「会话→agent」归属，供左栏按 agent 分组（决策③：失败/超时会话也归类、也计数）。与
+    // app/api/projects/[id]/agents/[agentId]/session/route.ts:45 同款——dispatch 此前漏写此行（Bug1 根因）。
+    doSetOwner(projectRoot, result.sessionId, assignment.agentId);
 
     // 执行超时 / 被取消 → 明确失败信息（runWorker 已 abort 该会话释放并发槽），中止后续。
     if (result.reason === "timeout") {
