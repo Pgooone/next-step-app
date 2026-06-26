@@ -34,3 +34,6 @@ e2e-screenshots/
 scripts/d3-e2e-*
 scripts/d4-e2e-*
 scripts/d5-e2e-*
+
+# 验收/实测截图（体量大，按精简原则不入库；本地归档于 验收截图/<各轮>/）
+验收截图/
