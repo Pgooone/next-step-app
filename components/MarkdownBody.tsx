@@ -40,6 +40,12 @@ export function MarkdownBody({ children, className, isStreaming }: MarkdownBodyP
 
   return (
     <div className={["markdown-body", className].filter(Boolean).join(" ")}>
+      {/* TODO(upstream pi-web 0.6.17 lib/markdown.ts / 见 UPSTREAM.md §3): 上游新增 rehype-raw +
+          rehype-sanitize 以「安全渲染 markdown 里的原始 HTML」。这是可选功能(非 bug 修复)——我们当前
+          用 remark-gfm 已能渲染 markdown 语法表格、且默认不渲染原始 HTML(安全)；引入它会加 2 依赖 +
+          新攻击面,且 rehype-sanitize 跑在下方 KaTeX/mermaid 链上有回归风险。故 V1.2 第六轮(D-V1.2-27)
+          判定暂不实施。将来确有「文档需渲染原始 HTML」需求时再立项,接线后须真浏览器验 KaTeX/mermaid/
+          表格零回归。 */}
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false }]]}

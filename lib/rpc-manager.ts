@@ -348,6 +348,14 @@ export async function startRpcSessionInner(
   // Determine which tools to pass based on requested toolNames.
   // Since v0.68.0, createAgentSession expects string[] tool names instead of Tool[] instances.
   // Pass all built-in coding tool names by default; for "all off", pass empty array.
+  //
+  // TODO(upstream pi-web 0.6.18 / 见 UPSTREAM.md §3): 上游修了「非空工具预设传 builtin-only 白名单
+  // → isAllowedTool 把扩展工具(pi-subagents 的 subagent / pi-web-access 的 web 等)过滤掉」。修法 =
+  // 非空预设改传 tools=undefined + setActiveToolsByName([...toolNames, ...扩展工具名])。本环境零扩展
+  // 安装(node_modules 仅 pi-ai/pi-coding-agent)→ 扩展工具集恒空、套用等价现状,是 provable no-op,
+  // 故 V1.2 第六轮(D-V1.2-27 + M4 spike)判定暂不实施。将来真装某 pi 扩展且要在非 doc 路径用它时再做。
+  // 🚩红线: doc 会话受限工具集绝不加扩展工具——改动只能加在下方「非空 toolNames」分支(:365),
+  // 绝不可移到空/undefined 分支(否则会把扩展工具漏给走 generic 退化路径的 doc 会话)。
   const allCodingToolNames = ["read", "bash", "edit", "write", "grep", "find", "ls"];
   let toolsOption: string[] | undefined;
   if (toolNames !== undefined) {
