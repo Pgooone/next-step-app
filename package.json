@@ -3,6 +3,18 @@
   "version": "1.2.5",
   "description": "Next-Step：基于 pi-web 改造的多 Agent 软件工厂（实现仓库）",
   "license": "MIT",
+  "upstream": {
+    "forkedFrom": "@agegr/pi-web",
+    "forkBaseVersion": "0.6.16",
+    "forkCommit": "f923751",
+    "kernel": {
+      "packages": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-ai"],
+      "declared": "^0.79.0",
+      "trackingTarget": "0.79.10"
+    },
+    "lastComparedUpstream": "2026-06-26",
+    "notes": "溯源叙事与「如何对照上游」的操作步骤见根目录 UPSTREAM.md；本字段是机器锚、权威版本号以此为准"
+  },
   "bin": {
     "pi-web": "bin/pi-web.js"
   },
