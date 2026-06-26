@@ -1,6 +1,6 @@
 {
   "name": "next-step-app",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "description": "Next-Step：基于 pi-web 改造的多 Agent 软件工厂（实现仓库）",
   "license": "MIT",
   "upstream": {

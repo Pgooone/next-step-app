@@ -61,12 +61,12 @@
 
 ### 第六轮 · 版本治理与上游对齐（`第六轮-版本治理与上游对齐/`）
 
-主题：**轻量 chore 轮**（无承重改动）。用户两问 ——①让首页 `web v…` 随版本迭代更新、记录原始 pi-web 基线版本以便对照上游升级基座；②pi 有更新在哪、怎么提醒。结论：首页版本机制本就完好（next.config 构建期自动读），缺口只是 version 从未 bump → 方案 B（`1.2.<轮次>`，首页 `web v1.2.5`）+ 补 tag；基线记录 = `package.json.upstream` 字段 + app 根 `UPSTREAM.md`；内核升 0.79.10（白捡、^0.79.0 范围内）。两条「上游回合并」经 M4 承重 spike 对抗式核实判 **no-op（rpc）/ 可选功能（markdown）→ 跳过留 TODO**；问题二（提醒机制）用户选**暂不做**。
+主题：**轻量 chore 轮**（无承重改动）。用户两问 ——①让首页 `web v…` 随版本迭代更新、记录原始 pi-web 基线版本以便对照上游升级基座；②pi 有更新在哪、怎么提醒。结论：首页版本机制本就完好（next.config 构建期自动读），缺口只是 version 从未 bump → 方案 B（`1.2.<已收官轮次>`，本轮第六轮→首页 `web v1.2.6`）+ 补 tag；基线记录 = `package.json.upstream` 字段 + app 根 `UPSTREAM.md`；内核升 0.79.10（白捡、^0.79.0 范围内）。两条「上游回合并」经 M4 承重 spike 对抗式核实判 **no-op（rpc）/ 可选功能（markdown）→ 跳过留 TODO**；问题二（提醒机制）用户选**暂不做**。
 
 - 先读 `第六轮-版本治理与上游对齐/进度与收官.md`（chore 轮、不出三件套）；对照上游手册见 app 根 `UPSTREAM.md`
 - 用户拍板 QA：`QA/第六轮-版本治理与上游对齐决策.md`（D-V1.2-24~27，含 spike 后订正轮次2）；lead ADR `设计决策记录.md`（D-R6-01~06）
 - 调研留痕：ultracode 工作流 `wf_4539e50b`（8 agent·版本机制+上游 delta+skeptic 复核）+ M4 承重 spike `wf_6db0eb67`（7 agent 对抗式·测绘+怀疑者+裁决）+ lead npm pack/file:line/真浏览器复验
-- commits：M1 `e204c9f`（+ tag v1.2.1~v1.2.5）/ M2 `cf82425` / M3 `7fb6fdb` / M4-M5 TODO `d4be136`（分支 v1.2，未 push）
+- commits：M1 `e204c9f` / M2 `cf82425` / M3 `7fb6fdb` / M4-M5 TODO `d4be136` / docs `5365e05` / 版本订正→1.2.6（+ tag v1.2.1~v1.2.6，第六轮=`v1.2.6`）（分支 v1.2，未 push）
 
 ## 与 V1.1「第八轮」的关系
 
