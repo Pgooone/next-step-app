@@ -59,6 +59,15 @@
 - 调研留痕：ultracode 已调查 + 三视角对抗 holds=True + lead 复核根因 + 用户拍板（A/A/A）
 - commits：T1 `bae6a95` / T2 `c44e282` / T3 `b06e447` / 收尾 `5bb4641`（T4 无代码，分支 v1.2）
 
+### 第六轮 · 版本治理与上游对齐（`第六轮-版本治理与上游对齐/`）
+
+主题：**轻量 chore 轮**（无承重改动）。用户两问 ——①让首页 `web v…` 随版本迭代更新、记录原始 pi-web 基线版本以便对照上游升级基座；②pi 有更新在哪、怎么提醒。结论：首页版本机制本就完好（next.config 构建期自动读），缺口只是 version 从未 bump → 方案 B（`1.2.<轮次>`，首页 `web v1.2.5`）+ 补 tag；基线记录 = `package.json.upstream` 字段 + app 根 `UPSTREAM.md`；内核升 0.79.10（白捡、^0.79.0 范围内）。两条「上游回合并」经 M4 承重 spike 对抗式核实判 **no-op（rpc）/ 可选功能（markdown）→ 跳过留 TODO**；问题二（提醒机制）用户选**暂不做**。
+
+- 先读 `第六轮-版本治理与上游对齐/进度与收官.md`（chore 轮、不出三件套）；对照上游手册见 app 根 `UPSTREAM.md`
+- 用户拍板 QA：`QA/第六轮-版本治理与上游对齐决策.md`（D-V1.2-24~27，含 spike 后订正轮次2）；lead ADR `设计决策记录.md`（D-R6-01~06）
+- 调研留痕：ultracode 工作流 `wf_4539e50b`（8 agent·版本机制+上游 delta+skeptic 复核）+ M4 承重 spike `wf_6db0eb67`（7 agent 对抗式·测绘+怀疑者+裁决）+ lead npm pack/file:line/真浏览器复验
+- commits：M1 `e204c9f`（+ tag v1.2.1~v1.2.5）/ M2 `cf82425` / M3 `7fb6fdb` / M4-M5 TODO `d4be136`（分支 v1.2，未 push）
+
 ## 与 V1.1「第八轮」的关系
 
 本轮 = V1.1 时期规划的「**第八轮·通用多 Agent 配置（软件工厂蓝图）**」（当时调研完成、形态待拍板、未开工）整体迁移至 V1.2、**重新立项为「第一轮」**。V1.1 侧（根 `CLAUDE.md`、`next-step-V1.1/README.md`、`next-step-V1.1/docs/QA/00-索引.md`）已标注「已迁至 V1.2」，不再承接。调研留痕原文随工作副本复制在 `../QA/开发/通用多Agent配置-sf-mini反推.md`（V1.1 时期产物，作设计输入参考）。
