@@ -1,7 +1,7 @@
 # BF·BUG-05 · §C 引用注入（⚠️ 高回归风险，最后做）
 
 `handleSend` 接入 `editTarget.quoteText` + 乐观清除防重复。**触核心发送链路**，本轮**序 5、最后做、单独 commit**。
-依赖：前 4 项稳定后再动。详见 `../BUG修复记录-v1.1.md` · BUG-05。
+依赖：前 4 项稳定后再动。详见 `../../../docs/V1.1/BUG修复记录-v1.1.md` · BUG-05。
 
 - [ ] 读 `useAgentSession.ts:334-402`（handleSend + steer/followUp）+ ChatWindow QuoteBar + `useArtifactStore` 的 `editTarget`/`setEditTarget`
 - [ ] handleSend 入口：有 `editTarget.quoteText` 则拼进 message（格式「【引用：…】\n\n{userMessage}」）

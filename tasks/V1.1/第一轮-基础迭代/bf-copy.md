@@ -1,7 +1,7 @@
 # BF·BUG-03 · 文案/空状态（P2.1/2.3/2.5）
 
 纯文案替换、零逻辑改动。本轮**序 1**（最低风险，先热身）。无依赖。
-详见 `../BUG修复记录-v1.1.md` · BUG-03。
+详见 `../../../docs/V1.1/BUG修复记录-v1.1.md` · BUG-03。
 
 - [ ] 读 6 处站点：`AppShell.tsx:893-896` / `ChatInput.tsx:535` / `ArtifactPicker.tsx:95` / `AgentManager.tsx:401-447` / `SessionSidebar.tsx:722-725`
 - [ ] Get Started：改全中文 V1.1 语境（建 Agent → 起会话/主对话 → @转交 → 产物按块确认）

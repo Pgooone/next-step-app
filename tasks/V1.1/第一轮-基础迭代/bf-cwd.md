@@ -1,7 +1,7 @@
 # BF·BUG-01 · 进项目 cwd 错误（§I，选 A 补强版）
 
 修三个相关缺陷：①空 cwd ②串别的项目 cwd ③切项目不更新。本轮**序 2**。无依赖。
-详见 `../BUG修复记录-v1.1.md` · BUG-01（决策 Q3：naive 选 A 被证伪，改补强版）。
+详见 `../../../docs/V1.1/BUG修复记录-v1.1.md` · BUG-01（决策 Q3：naive 选 A 被证伪，改补强版）。
 
 - [ ] 读 `AppShell.tsx`(174-175 / 390-398 / 446) + `SessionSidebar.tsx`(205-209 / 264-288 / 532) + `app/api/sessions/route.ts`
 - [ ] `AppShell.tsx:390` 给 `<SessionSidebar>` 加 `key={currentProjectId}` → 切项目干净 remount（修缺陷③）

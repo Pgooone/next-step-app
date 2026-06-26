@@ -1,7 +1,7 @@
 # BF·BUG-02 · 全局 toast（§G + 操作回执）
 
 自建最小 toast 基建 + 分批接 16 处无回执/吞错操作。本轮**序 3**。接线点多，重点防刷屏。
-详见 `../BUG修复记录-v1.1.md` · BUG-02。决策落 `../docs/设计决策记录.md` D-V1.1-11（自建 vs 第三方）。
+详见 `../../../docs/V1.1/BUG修复记录-v1.1.md` · BUG-02。决策落 `../docs/设计决策记录.md` D-V1.1-11（自建 vs 第三方）。
 
 **阶段 A（基建）**
 - [ ] `lib/stores/useToastStore.ts`（zustand）：`{ toasts, show({type,message}), dismiss(id) }`，自动消失计时 + 手动关闭

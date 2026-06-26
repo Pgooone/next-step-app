@@ -1,7 +1,7 @@
 # BF·BUG-04 · 高危操作二次确认（P2.4）
 
 「全部 ✓/✗」「回滚」加内联二次确认，复用既有 `confirmId`/`confirmDelete` 范式。本轮**序 4**。
-建议在 BUG-02 之后（失败可走 toast）。详见 `../BUG修复记录-v1.1.md` · BUG-04。
+建议在 BUG-02 之后（失败可走 toast）。详见 `../../../docs/V1.1/BUG修复记录-v1.1.md` · BUG-04。
 
 - [ ] 读 `PendingChangeCard.tsx:178-197`（全部✓/✗）+ `useArtifactStore.ts` 回滚 + 范式 `AgentManager.tsx:644-687` / `ProjectSwitcher.tsx:46-64`
 - [ ] 全部 ✓/✗：点击 → 替换按钮区为「确认全部 N 处待处理块？[确认][取消]」（明确数字）
