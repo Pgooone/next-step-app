@@ -354,8 +354,8 @@ export async function startRpcSessionInner(
   // 非空预设改传 tools=undefined + setActiveToolsByName([...toolNames, ...扩展工具名])。本环境零扩展
   // 安装(node_modules 仅 pi-ai/pi-coding-agent)→ 扩展工具集恒空、套用等价现状,是 provable no-op,
   // 故 V1.2 第六轮(D-V1.2-27 + M4 spike)判定暂不实施。将来真装某 pi 扩展且要在非 doc 路径用它时再做。
-  // 🚩红线: doc 会话受限工具集绝不加扩展工具——改动只能加在下方「非空 toolNames」分支(:365),
-  // 绝不可移到空/undefined 分支(否则会把扩展工具漏给走 generic 退化路径的 doc 会话)。
+  // 🚩红线: doc 会话受限工具集绝不加扩展工具——改动只能加在下方 `if (toolNames && toolNames.length > 0)`
+  // 非空分支内,绝不可移到空/undefined 分支(否则会把扩展工具漏给走 generic 退化路径的 doc 会话)。
   const allCodingToolNames = ["read", "bash", "edit", "write", "grep", "find", "ls"];
   let toolsOption: string[] | undefined;
   if (toolNames !== undefined) {
