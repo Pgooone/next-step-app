@@ -145,4 +145,4 @@ C 方案下 equal 段各起独立 `<Markdown>`、change run 走 mono git 块。*
 - lead ADR：`../设计决策记录.md`（D-R7B-01~06）
 - 第七轮原设计：`./详细设计.md`（A1 全屏壳层 / A3 信号机制 / 对话框卡片在本轮全部保留）
 - 调研全量结论：本轮 5-agent 工作流输出（R1/R2 对抗式核实 confirmed + R3/R4 + D1 综合）
-- 进度 + 任务卡：`../../tasks/第七轮-UI优化-diff内联与全屏/progress.md`（第二轮段）
+- 进度 + 任务卡：`../../../tasks/V1.1/第七轮-UI优化-diff内联与全屏/progress.md`（第二轮段）

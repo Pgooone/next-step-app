@@ -27,5 +27,5 @@
 ## 成果
 - 目录重组 + 引用修复（commit `31f2064`）；CLAUDE.md 文档索引升级两轮结构（git 外）。
 - V2 三件套（commit `d343df6`）：`../../../第二轮-V2提议工具/{需求文档,概要设计,详细设计}.md`。
-- V2 任务卡 + 监工 prompt（commit `035b818`）：`../../../../tasks/第二轮-V2提议工具/`（V2-0 spike + V2-1~V2-6 + progress + prompt）。
+- V2 任务卡 + 监工 prompt（commit `035b818`）：`../../../../../tasks/V1.1/第二轮-V2提议工具/`（V2-0 spike + V2-1~V2-6 + progress + prompt）。
 - **下一步**：实现阶段用 **agent team**（监工 prompt 已明确：TeamCreate 可寻址队员、串行）；**⚠️ 前置须 `/login`** 解决本地 401 无凭证（本轮 Explore 勘察 agent 已实测 401 失败）。
