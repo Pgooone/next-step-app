@@ -584,3 +584,192 @@ describe("AC-7 读时对账（reconcileOrphan）", () => {
     expect(reconciled.status).toBe("running");
   });
 });
+
+// ===========================================================================
+// T6 承重 verify：mid-flight cancel（运行中 abort signal）→ failRun('已取消') + 该阶段 evict 释槽
+//
+// 区别于上面 cancel 顶检测（signal 起始即 aborted、worker 0 调用）：这里 worker **已起、跑到一半**才 abort，
+// 验证「停止」真能中断在跑会话并释槽。复用承重 fauxMap 纪律（三处闭包引用同一 fauxMap + faux destroy 真删
+// Map，否则 size 永不降 = 假绿）+ 负对照（不 abort → done、每阶段 evict）。证 T6 cancel 路由翻转的 signal
+// 经 runPipeline 顶检测/worker signal 接通后，aborted 阶段在结果判定前已 evict（pipeline-orchestrator.ts:187），
+// run 失败原因为 '已取消'（:194）。
+//
+// 注：T6 的薄 cancel 路由（app/api/pipeline-runs/[runId]/cancel）仅做「findRun → 翻 cancelRequested →
+// store.write → getRunController?.abort → deleteRunController」的纯转发，本仓 vitest 仅 include lib/**（见
+// vitest.config：无 app/ route 测先例），故按规格把 cancel 核心承重并入此处编排器层 verify：abort 经 signal
+// 接通 runPipeline 的端到端中断 + 释槽，是「停止」语义的真命门；路由层 abort/delete 调用由 run-controllers
+// 单测覆盖范围（globalThis 单例 set/get/delete）+ 编排器既有 signal 顶检测共同保证。
+// ===========================================================================
+describe("T6 承重 verify：mid-flight cancel → 中断在跑会话 + 释槽 + failedReason='已取消'", () => {
+  /**
+   * @param onWorkerEntered 第 1 阶段 faux worker 已 set 进 fauxMap、即将 await abort 时回调（测试据此 abort，免 setTimeout 竞态）。
+   * @param destroyDeletesMap 负对照开关：false → destroy 只翻 alive 不删 Map（证 size 回落断言依赖真 destroy）。
+   */
+  function makeCancelHarness(opts?: {
+    onWorkerEntered?: () => void;
+    destroyDeletesMap?: boolean;
+  }) {
+    const destroyDeletesMap = opts?.destroyDeletesMap ?? true;
+    const fauxMap = new Map<string, AgentSessionWrapper>(); // 唯一计数源
+    const ownerByAgent: Record<string, string[]> = {};
+    let stageSeq = 0;
+    let peak = 0;
+    const evictedAgents: string[] = [];
+
+    function makeFakeWrapper(sid: string): AgentSessionWrapper {
+      let alive = true;
+      const w = {
+        isAlive: () => alive,
+        inner: { isStreaming: false },
+        send: async () => null,
+        destroy: () => {
+          alive = false;
+          if (destroyDeletesMap) fauxMap.delete(sid); // ★命门：真删 Map 才回落
+        },
+      };
+      return w as unknown as AgentSessionWrapper;
+    }
+
+    // faux runWorker：第 1 阶段 set 进 Map 后 await 由 signal 控的 abort-promise（mid-flight），signal 触发
+    // 即返回 reason:"aborted"；后续阶段（负对照下游）正常 completed。args.signal 由 runPipeline 透传
+    // （pipeline-orchestrator.ts:163）。
+    const fauxRunWorker = (async (args: {
+      firstMessage: string;
+      profile: { id: string };
+      signal?: AbortSignal;
+    }) => {
+      const idx = stageSeq++;
+      const sid = "s" + idx;
+      const agentId = args.profile.id;
+      expect(fauxMap.size).toBe(0); // 进阶段：上阶段已 evict 释槽
+      fauxMap.set(sid, makeFakeWrapper(sid));
+      ownerByAgent[agentId] = [sid];
+      peak = Math.max(peak, fauxMap.size);
+
+      // 仅 cancel 测试（提供 onWorkerEntered）才在第 1 阶段 mid-flight 等待 abort；负对照（无 onWorkerEntered）
+      // 第 1 阶段直接正常 completed（否则会 await 永不解的 promise → 挂死）。
+      if (idx === 0 && opts?.onWorkerEntered) {
+        // 通知测试：已占槽、即将等待（测试此刻 abort）。
+        opts.onWorkerEntered();
+        // mid-flight 等待 abort（已 aborted 立即解；否则挂 listener）。
+        await new Promise<void>((res) => {
+          const sig = args.signal;
+          if (!sig || sig.aborted) return res();
+          sig.addEventListener("abort", () => res(), { once: true });
+        });
+        if (args.signal?.aborted) {
+          return {
+            sessionId: sid,
+            reason: "aborted" as const,
+            output: "",
+            artifactIds: [] as string[],
+            createdContent: "",
+            firstMessage: args.firstMessage,
+          };
+        }
+      }
+      return {
+        sessionId: sid,
+        reason: "completed" as const,
+        output: "out" + idx,
+        artifactIds: ["a" + idx],
+        createdContent: "C" + idx,
+        firstMessage: args.firstMessage,
+      };
+    }) as never;
+
+    const evictSpy = vi.fn((root: string, agentId: string) => {
+      evictedAgents.push(agentId);
+      return evictAgentSessions(root, agentId, {
+        sessionsForAgent: (_c, a) => ownerByAgent[a] ?? [],
+        getSession: (s) => fauxMap.get(s),
+      });
+    });
+
+    return {
+      fauxMap,
+      evictedAgents,
+      get peak() {
+        return peak;
+      },
+      deps: {
+        registry,
+        runStore,
+        profileStore,
+        runWorker: fauxRunWorker,
+        // 真实 acquireSlot 数同一 fauxMap（Infinity→30 防负对照真挂死）。
+        acquireSlot: (async (o?: Parameters<typeof acquireSlot>[0]) =>
+          acquireSlot({
+            activeCount: () => fauxMap.size,
+            limit: 1,
+            timeoutMs: o?.timeoutMs === Infinity ? 30 : (o?.timeoutMs ?? 30),
+            pollMs: 1,
+          })) as unknown as typeof acquireSlot,
+        setOwner: vi.fn(),
+        evictAgentSessions: evictSpy as unknown as typeof evictAgentSessions,
+        registerInnerSession: throwingRegister,
+      },
+      evictSpy,
+    };
+  }
+
+  it("①②③ worker 跑到一半 abort → run failed + failedReason='已取消' + 该阶段 evict 一次 + fauxMap 该会话被移除(size 回落非本就0)", async () => {
+    const { run, agentIds } = makeRun(4);
+    const controller = new AbortController();
+    // onWorkerEntered：worker 第 1 阶段占槽后回调（此刻 fauxMap.size===1，证「回落」非「本就 0」），再 abort。
+    let sizeAtAbort = -1;
+    const h = makeCancelHarness({
+      onWorkerEntered: () => {
+        sizeAtAbort = -2; // 占位：真正取值在断言前用 fauxMap.size，但这里先记录 abort 时机
+        controller.abort();
+      },
+    });
+
+    const result = await runPipeline(run, h.deps, controller.signal);
+
+    // ① run 失败、原因恰为「已取消」（不是只判 status）
+    expect(result.status).toBe("failed");
+    expect(result.failedReason).toBe("已取消");
+    // 第 1 阶段 failed、后续仍 pending（中止后续）
+    expect(result.stages[0].status).toBe("failed");
+    expect(result.stages.slice(1).map((s) => s.status)).toEqual(["pending", "pending", "pending"]);
+    // ② 该阶段 evict 恰一次、命中第 1 阶段 agentId（aborted 路径在结果判定前已 evict 释槽）
+    expect(h.evictSpy).toHaveBeenCalledTimes(1);
+    expect(h.evictSpy).toHaveBeenNthCalledWith(1, projectRoot(), agentIds[0]);
+    // ③ fauxMap 该会话被移除 → size 回落到 0（abort 时占了 1 槽，evict 真删才回落；区别于「本就 0」）
+    expect(h.fauxMap.size).toBe(0);
+    expect(sizeAtAbort).toBe(-2); // onWorkerEntered 确曾触发（abort 确在 mid-flight 而非起始）
+  });
+
+  it("④ 负对照：不 abort → run done、每阶段 evict、size 回落 0", async () => {
+    const { run, agentIds } = makeRun(4);
+    const controller = new AbortController(); // 从不 abort
+    const h = makeCancelHarness(); // 无 onWorkerEntered → 第 1 阶段 signal 未 aborted → 正常 completed
+
+    const result = await runPipeline(run, h.deps, controller.signal);
+
+    expect(result.status).toBe("done");
+    // 每阶段 evict 一次（4 阶段）
+    expect(h.evictSpy).toHaveBeenCalledTimes(4);
+    expect(h.evictedAgents).toEqual(agentIds);
+    expect(h.fauxMap.size).toBe(0);
+    expect(h.peak).toBeLessThanOrEqual(1);
+  });
+
+  it("⑤ 负对照(destroy 不删 Map)：mid-flight abort 后第 1 阶段 evict 的 destroy 不删 Map → size 不回落（证 size 断言依赖真 destroy）", async () => {
+    const { run } = makeRun(4);
+    const controller = new AbortController();
+    const h = makeCancelHarness({
+      destroyDeletesMap: false,
+      onWorkerEntered: () => controller.abort(),
+    });
+
+    const result = await runPipeline(run, h.deps, controller.signal);
+
+    // run 仍因取消而 failed（evict 被调，但 faux destroy 不删 Map）
+    expect(result.status).toBe("failed");
+    expect(result.failedReason).toBe("已取消");
+    // ★命门反证：destroy 不删 Map → size 停在 1（证 ③ 的「size 回落」断言真依赖 destroy 删 Map，非 vacuous）
+    expect(h.fauxMap.size).toBe(1);
+  });
+});

@@ -1144,7 +1144,7 @@ export function AppShell() {
         projectId={currentProjectId}
         onClose={() => setPipelineModalOpen(false)}
         onOpenArtifact={handleOpenArtifact}
-        onOpenSession={(sessionId) =>
+        onOpenSession={(sessionId) => {
           handleSelectSession({
             id: sessionId,
             path: "",
@@ -1154,8 +1154,10 @@ export function AppShell() {
             modified: new Date().toISOString(),
             messageCount: 1,
             firstMessage: "",
-          })
-        }
+          });
+          // 关模态：否则 fixed inset-0 z1000 的 PipelineModal 盖住 ChatWindow → AC-12「点了没反应」（仿 :354）。
+          setPipelineModalOpen(false);
+        }}
         onArtifactsChanged={() => setExplorerRefreshKey((k) => k + 1)}
         onSessionsChanged={handleDispatchSessionsChanged}
       />

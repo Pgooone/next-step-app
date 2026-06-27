@@ -15,6 +15,7 @@ const POLL_INTERVAL = 2000;
  */
 export default function PipelineBoard({
   isDark,
+  onOpenArtifact,
   onOpenSession,
   onEditBlueprint,
 }: {
@@ -140,7 +141,7 @@ export default function PipelineBoard({
                     ? "已完成"
                     : "运行中"}
               </span>
-              {/* 停止按钮（UI 占位）：T6 端点未实现会 404，本卡仅占位、不接逻辑。 */}
+              {/* 停止按钮：已接 cancel route（POST /api/pipeline-runs/[id]/cancel），翻 cancelRequested + abort。 */}
               {currentRun.status === "running" && (
                 <button
                   data-testid="pipeline-stop-btn"
@@ -176,7 +177,9 @@ export default function PipelineBoard({
                 key={s.order}
                 stage={s}
                 totalStages={currentRun.stages.length}
+                stages={currentRun.stages}
                 onOpenSession={onOpenSession}
+                onOpenArtifact={onOpenArtifact}
               />
             ))}
           </div>

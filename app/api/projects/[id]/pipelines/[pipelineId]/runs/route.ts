@@ -7,7 +7,7 @@ import { ProjectRegistry } from "@/lib/domain/project-registry";
 import { domainErrorResponse } from "@/lib/api/errors";
 import { registerInnerSession } from "@/lib/rpc-manager";
 import { runPipeline } from "@/lib/domain/pipeline-orchestrator";
-import { setRunController } from "@/lib/pi/run-controllers";
+import { setRunController, deleteRunController } from "@/lib/pi/run-controllers";
 import { extraSkillDirs } from "@/lib/pi/extra-skill-dirs";
 
 // POST /api/projects/[id]/pipelines/[pipelineId]/runs — 起一次流水线运行
@@ -88,7 +88,9 @@ export async function POST(
         additionalSkillPaths: extraSkillDirs(registry.get(id).root),
       },
       controller.signal,
-    ).catch(() => {});
+    )
+      .finally(() => deleteRunController(run.id)) // 决策1：唯一清理点，覆盖 done/failed/cancel 所有终态（cancel 路由只 abort 不删）
+      .catch(() => {});
 
     // 7. 立即返回（201）。
     return NextResponse.json(run, { status: 201 });

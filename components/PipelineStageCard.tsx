@@ -5,6 +5,7 @@ import { agentAvatarDataUri } from "@/lib/pipeline/avatar";
 import { statusToProgress } from "@/lib/pipeline/dot-matrix";
 import StageDotMatrix from "@/components/StageDotMatrix";
 import StageHoverPreview from "@/components/StageHoverPreview";
+import StageSessionMenu from "@/components/StageSessionMenu";
 import type { PipelineRunStage } from "@/lib/domain/pipeline-run-store"; // 仅类型
 
 /** status → .brow 修饰类（视觉 §6/§7；running 用 Kimi 蓝 run-accent，非 emerald）。 */
@@ -46,14 +47,20 @@ export default function PipelineStageCard({
   stage,
   stageName,
   totalStages,
+  stages,
   onOpenSession,
+  onOpenArtifact,
 }: {
   stage: PipelineRunStage;
   stageName?: string;
   totalStages?: number;
+  stages?: PipelineRunStage[];
   onOpenSession?: (sessionId: string) => void;
+  onOpenArtifact?: (artifactId: string) => void;
 }) {
   const [hover, setHover] = useState(false);
+  // click 二级菜单（T6）：与 hover 浮窗分属两套独立 state，互不合并。
+  const [menuOpen, setMenuOpen] = useState(false);
   const badge = badgeFor(stage);
   return (
     <div
@@ -61,11 +68,7 @@ export default function PipelineStageCard({
       style={{ position: "relative" }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      onClick={() => {
-        // T4 预留挂载点：T6 接 StageSessionMenu（按 stage.sessionId 进 agent 会话）。
-        // onOpenSession 透传备用，本卡不消费（避免与 hover 浮窗合并）。
-        void onOpenSession;
-      }}
+      onClick={() => setMenuOpen(true)}
     >
       {/* 区1 头像（dicebear data: URI，无法走 next/image，沿用既有 <img> 约定） */}
       <span className="ava">
@@ -93,8 +96,20 @@ export default function PipelineStageCard({
       {/* 区4 右箭头 */}
       <span className="chev">›</span>
 
-      {hover && (
+      {/* hover 浮窗：menuOpen 时抑制（避免两浮层叠加） */}
+      {hover && !menuOpen && (
         <StageHoverPreview stage={stage} stageName={stageName} totalStages={totalStages} />
+      )}
+
+      {/* click 二级菜单（T6） */}
+      {menuOpen && (
+        <StageSessionMenu
+          stage={stage}
+          stages={stages ?? []}
+          onOpenSession={onOpenSession}
+          onOpenArtifact={onOpenArtifact}
+          onClose={() => setMenuOpen(false)}
+        />
       )}
     </div>
   );
