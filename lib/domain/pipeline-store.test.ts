@@ -5,7 +5,7 @@
 import { existsSync, mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PipelineStore, PipelineError } from "./pipeline-store";
 import { ProjectRegistry } from "./project-registry";
@@ -143,13 +143,24 @@ describe("PipelineStore CRUD", () => {
   });
 
   it("list 按 updatedAt 倒序（最近改在前）", () => {
-    const a = store.create(projectId, { name: "A", stages: [stage(1)] });
-    const b = store.create(projectId, { name: "B", stages: [stage(1)] });
-    // 改 a 使其 updatedAt 后于 b
-    store.update(projectId, a.id, { name: "A2", stages: [stage(1)] });
-    const list = store.list(projectId);
-    expect(list[0].id).toBe(a.id);
-    expect(list[1].id).toBe(b.id);
+    // 用假时钟给确定且严格递增的时间戳：否则 create a / create b / update a 常在同一毫秒
+    // 完成 → updatedAt 打平 → list 的 localeCompare 返 0 → 顺序退回 readdir 文件系统序 →
+    // 非确定性 flaky（真因是测试依赖墙钟毫秒分辨率，非 store 排序 bug）。
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+      const a = store.create(projectId, { name: "A", stages: [stage(1)] });
+      vi.setSystemTime(new Date("2026-01-01T00:00:01.000Z"));
+      const b = store.create(projectId, { name: "B", stages: [stage(1)] });
+      // 改 a 使其 updatedAt 严格后于 b
+      vi.setSystemTime(new Date("2026-01-01T00:00:02.000Z"));
+      store.update(projectId, a.id, { name: "A2", stages: [stage(1)] });
+      const list = store.list(projectId);
+      expect(list[0].id).toBe(a.id);
+      expect(list[1].id).toBe(b.id);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("update 改 name/stages → id/createdAt 不变、updatedAt 变、stages 替换并归一", () => {

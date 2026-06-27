@@ -96,10 +96,26 @@ export default function PipelineBoard({
         </button>
       ) : currentRun ? (
         <>
-          {/* 容器头：行1 ⑂ + 名 + ④/N；行2 全局进度条 + 状态字 */}
+          {/* 容器头：行1 分支图标 + 名 + ④/N；行2 全局进度条 + 状态字 */}
           <div className="hd">
             <div className="hd1">
-              <span className="fork">⑂</span>
+              <span className="fork" aria-hidden="true">
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <line x1="6" y1="3" x2="6" y2="15" />
+                  <circle cx="18" cy="6" r="3" />
+                  <circle cx="6" cy="18" r="3" />
+                  <path d="M18 9a9 9 0 0 1-9 9" />
+                </svg>
+              </span>
               <span>{currentRun.pipelineName}</span>
               <span className="cnt">
                 {Math.min(currentRun.currentStageIndex + 1, currentRun.stages.length)} /{" "}
@@ -196,7 +212,7 @@ function PipelineBoardStyles() {
 .pipeline-board.board{border-radius:14px;padding:.7rem;background:var(--bg);color:var(--text)}
 .pipeline-board .hd{padding:.35rem .5rem .65rem}
 .pipeline-board .hd1{display:flex;align-items:center;gap:.45rem;font-size:.8rem;font-weight:650;color:var(--text)}
-.pipeline-board .hd1 .fork{color:var(--accent);font-size:.9rem}
+.pipeline-board .hd1 .fork{color:var(--accent);display:inline-flex;align-items:center}
 .pipeline-board .hd1 .cnt{margin-left:auto;font-size:.72rem;font-weight:500;color:var(--sub);font-variant-numeric:tabular-nums}
 .pipeline-board .hd2{display:flex;align-items:center;gap:.55rem;margin-top:.45rem}
 .pipeline-board .hd2 .rst{font-size:.68rem;color:var(--run-accent);font-weight:500}
