@@ -8,7 +8,10 @@
     "forkBaseVersion": "0.6.16",
     "forkCommit": "f923751",
     "kernel": {
-      "packages": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-ai"],
+      "packages": [
+        "@earendil-works/pi-coding-agent",
+        "@earendil-works/pi-ai"
+      ],
       "declared": "^0.79.0",
       "trackingTarget": "0.79.10"
     },
@@ -42,6 +45,8 @@
     "release": "npm version patch --no-git-tag-version && npm run build && npm publish --access public"
   },
   "dependencies": {
+    "@dicebear/collection": "^9.4.2",
+    "@dicebear/core": "^9.4.2",
     "@earendil-works/pi-ai": "^0.79.0",
     "@earendil-works/pi-coding-agent": "^0.79.0",
     "@gsap/react": "^2.1.2",
