@@ -18,6 +18,23 @@ if [ ! -d "$PW_DIR/node_modules/playwright" ]; then
   mkdir -p "$PW_DIR"; ( cd "$PW_DIR" && npm i playwright >/dev/null 2>&1 ) || log "npm i playwright 失败（可能已离线缓存）"
 fi
 
+# ★★ 最优先（2026-06-28 起）：系统 Google Chrome（库与字体系统自带，免 chrome-shared 手工 bundle）。
+#   容器已装完整 google-chrome（依赖自解析）+ 系统 Noto CJK；默认 fontconfig 同时覆盖系统 Noto + ~/.fonts(wqy)，
+#   故系统 Chrome 在时直接用、不设 LD_LIBRARY_PATH/FONTCONFIG override（字体覆盖是旧法超集）。
+#   缺失/不可用（或 NS_SKIP_SYSTEM_CHROME=1 强制）则落到下方 chrome-shared 持久化复用 → 再到重建 fallback。
+#   注：仍需 --no-sandbox/--disable-dev-shm-usage（容器沙箱限制，由驱动脚本传）。
+if [ -z "${NS_SKIP_SYSTEM_CHROME:-}" ]; then
+  for SYS_CHROME in /usr/bin/google-chrome /usr/bin/google-chrome-stable /opt/google/chrome/chrome; do
+    if [ -x "$SYS_CHROME" ] && "$SYS_CHROME" --version >/dev/null 2>&1; then
+      log "用系统 Chrome：$SYS_CHROME（$("$SYS_CHROME" --version 2>/dev/null)）"
+      echo "export PLAYWRIGHT_BROWSERS_PATH='$CACHE'"
+      echo "export PW_EXECUTABLE='$SYS_CHROME'"
+      exit 0
+    fi
+  done
+  log "未找到可用系统 Chrome → 回退 chrome-shared 持久化复用"
+fi
+
 # ★ 持久化快路径（2026-06-21 起，容器=Debian 11 / Chrome for Testing 149）：
 #   持久 env 脚本 ~/.local/bin/ns-browser-env.sh + 包装脚本 chrome-shared 都在 → 直接复用、秒过。
 #   chrome-shared 内部已 export LD_LIBRARY_PATH(~/.cache/chrome-deps/root)/FONTCONFIG_FILE 再 exec
