@@ -4,7 +4,7 @@
 
 > **状态：设计收官、可开工。** 三件套齐备（需求 / 概要 / 详细设计）+ 对抗式审查通过（覆盖 20/20 决策 + 15/15 缺口、红线 8/8 守住、承重墙写清）+ 全部决策入 QA（D-V1.2-28~47）。
 > 已 commit：`8cf8b16`（视觉定稿 / 决策 / 边界审计）、`6a3e504`（三件套 / 审查 / 交互精确化）、`2a7be36`（任务卡 / progress）。
-> **T1 承重墙 ✅ + T2 数据层 ✅ + T3 编排器 ✅ + T4 看板族 UI ✅ 收官（2026-06-27/28）。承重三卡(T1/T3)全绿、T4 真浏览器 6/6 + pageErrors=0/nodeFs=0。下一步 = T5（并发上限可配：factory-config + concurrency-gate + 根 CLAUDE.md + UI 警示，🚩红线变更 D-V1.2-41）。**
+> **T1 ✅ + T2 ✅ + T3 ✅ + T4 看板族 UI ✅ + T5 并发上限可配 ✅ 收官（2026-06-27/28）。承重三卡(T1/T3)全绿、T4 真浏览器 6/6、T5 真浏览器警示亮暗可读 + 门禁 502。下一步 = T6（进会话悬浮二级菜单 + 底部切换条 + run cancel + 失败态，承重·依赖 T1-B/T3/T4，真浏览器）。⚠️ 遗留：T2 flaky 测试（pipeline-store list 排序毫秒打平）待修。**
 >
 > 权威设计 = 详细设计 §五任务表 + §四承重墙（`../../../docs/V1.2/第七轮-流水线与阶段看板/详细设计.md`）；本文是其进度镜像。
 
@@ -14,7 +14,7 @@
 - [x] **T2** ✅ 数据层：pipeline-store + pipeline-run-store + 蓝图 API（GET/POST/PUT/DELETE）+ 校验（依赖 T1）—— AC-1 达成；ultracode 8-agent 调查（READY、揪 5 真坑）+ agent team 实现 + lead 亲读两 store diff + 独立复跑 vitest 40/40 + 全量 475/475 + tsc/eslint 0；校验拒 0 阶段/空模板/order 重复缺号/含0负/小数/乱序归一 + name 非空；reconcileOrphan 五分支 + pruneOld 保留 M 仅删终态；listRuns 仿 listArtifacts 跳坏文件 → [`T2.md`](T2.md)
 - [x] **T3** ✅（承重）编排器 runPipeline：冻结模型 + 累积喂下游 + run checkpoint + 起 run/列 runs/读时对账 API + runControllers（依赖 T1-A, T2）—— AC-2~7 达成；ultracode 8-agent 承重调查（READY、揪头号 gap=runWorker 漏 try/catch）+ agent team 实现 + **lead 独立重跑承重 verify**（真实 runPipeline + faux Map 6 断言：evict 每阶段/size→0/peak≤1/顺序 setOwner 在 evict 前/负对照/catch 路径释槽）+ vitest 15/15 + 全量 490/490 + tsc/eslint 0 → [`T3.md`](T3.md)
 - [x] **T4** ✅ 看板族 UI + AppShell 入口/模态 + dicebear 离线头像 + store + **补「一键起 run」触发疏漏（D-R7-04）**（依赖 T2, T3）—— AC-10 全 + AC-13(部分)；ultracode 7-agent 调查（GO，对抗把关揪 1 blocker B-1〔STATUS_META 未 export→抽 status-meta.ts〕+ M-1〔DispatchStatus 改从 useDispatchStore〕/M-3〔totalStages prop〕/m-1〔done 态进度条〕/m-2〔selectAgentsForProject〕）+ agent team 实现 + lead 亲读全 11 文件 diff + 独立复跑门禁 490/0/0 + **真浏览器 6/6 确定性 PASS + pageErrors=0/nodeFs=0**（D-R7B-07 红线坐实）+ 亲看 4 截图（运行/失败/暗主题/编辑器）。补疏漏：详细设计 §3.10 漏写发起 run 按钮、需求:19/AC-3 是硬需求→PipelineModal 加「蓝图 select + ▶运行」控制条、board 纯渲染。遗留：`⑂` 装饰符字体无覆盖（非 bug）；AC-3 端到端实跑留 T8 → [`T4.md`](T4.md)
-- [ ] **T5** 并发上限可配：factory-config + concurrency-gate + 根 CLAUDE.md + UI 警示（无强依赖）—— AC-14（🚩 红线变更 D-V1.2-41） → [`T5.md`](T5.md)
+- [x] **T5** ✅ 并发上限可配：factory-config + concurrency-gate + 外层 CLAUDE.md 红线 + PipelineModal 资源警示（无强依赖）—— AC-14（🚩 红线变更 D-V1.2-41；用户拍板 D-V1.2-48 配置文件 MVP/无 GUI setter）；ultracode 6-agent 调查（GO 无 blocker）+ ns-impl-t5 实现 + lead 亲读 5 处 diff + 独立复跑门禁（tsc 0/lint 0/test 502 = 490+12 新）+ 真浏览器警示亮暗可读 + pageErrors=0/nodeFs=0。落点 `~/.pi/factory-config.json`（全局非 per-project）、HARD_CAP=8、警示落 Modal（记 ADR D-R7-05）。红线在外层非 git 文件、改动不入 commit。**发现 T2 预存 flaky 测试**（pipeline-store「list 按 updatedAt 倒序」毫秒打平、与 T5 无关，留下一窗口修）→ [`T5.md`](T5.md)
 - [ ] **T6**（✅ 承重·依赖 T1-B）进会话悬浮二级菜单 + 底部切换条 + run cancel + 失败态（依赖 T1-B, T3, T4）—— AC-8/9/11/12；**真浏览器**（含故意失败流水线 + cancel） → [`T6.md`](T6.md)
 - [ ] **T7** 合并入口（一个入口·两 tab）+ 旧 DispatchForm 小修 F6/F8/F15（依赖 T4）—— AC-13；旧 dispatch 零回归 → [`T7.md`](T7.md)
 - [ ] **T8** 双层验收 + 收尾 + 回写 docs + 残留清理（依赖全部）—— AC-15 → [`T8.md`](T8.md)

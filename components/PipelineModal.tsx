@@ -208,6 +208,21 @@ export default function PipelineModal({
                     </button>
                   </div>
                 )}
+                {/* 资源警示（D-V1.2-41 红线变更三件套之②）：并发上限可配 + 风险自担。纯静态文本，不读运行时配置值。 */}
+                {blueprints.length > 0 && (
+                  <div
+                    data-testid="pipeline-concurrency-note"
+                    style={{
+                      fontSize: 11,
+                      lineHeight: 1.4,
+                      color: "var(--text-muted)",
+                      marginBottom: 10,
+                    }}
+                  >
+                    ⓘ 单进程并发会话默认上限 3。可在 ~/.pi/factory-config.json 调整
+                    maxConcurrentSessions；调高 = 更多活会话、资源耗尽风险自担。
+                  </div>
+                )}
                 {runError && (
                   <div
                     data-testid="pipeline-run-error"

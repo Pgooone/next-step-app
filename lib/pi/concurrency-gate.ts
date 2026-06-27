@@ -1,3 +1,5 @@
+import { readMaxConcurrent } from "./factory-config";
+
 /**
  * C1 —— 全局并发闸门（AC⑤：同时活跃会话数 ≤ 3）。
  *
@@ -36,7 +38,7 @@ export async function acquireSlot(opts?: {
   pollMs?: number;
 }): Promise<void> {
   const activeCount = opts?.activeCount ?? activeSessionCount;
-  const limit = opts?.limit ?? MAX_CONCURRENT_SESSIONS;
+  const limit = opts?.limit ?? readMaxConcurrent();
   const timeoutMs = opts?.timeoutMs ?? 60_000;
   const pollMs = opts?.pollMs ?? 100;
 
