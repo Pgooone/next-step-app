@@ -2,7 +2,7 @@
 
 > **状态：设计收官、可开工。** 三件套齐备（需求 / 概要 / 详细设计）+ 对抗式审查通过（覆盖 20/20 决策 + 15/15 缺口、红线 8/8 守住、承重墙写清）+ 全部决策入 QA（D-V1.2-28~47）。
 > 已 commit：`8cf8b16`（视觉定稿 / 决策 / 边界审计）、`6a3e504`（三件套 / 审查 / 交互精确化）、`2a7be36`（任务卡 / progress）。
-> **T1 承重墙 spike ✅ GO + T2 数据层 ✅ 收官（2026-06-27）。下一步 = T3（编排器 runPipeline，依赖 T1-A + T2）。**
+> **T1 承重墙 ✅ GO + T2 数据层 ✅ + T3 编排器 ✅ 收官（2026-06-27）。承重三卡(T1/T3)全绿。下一步 = T4（看板族 UI + AppShell 入口/模态 + dicebear，依赖 T2/T3，UI 卡走真浏览器）。**
 >
 > 权威设计 = 详细设计 §五任务表 + §四承重墙（`../../../docs/V1.2/第七轮-流水线与阶段看板/详细设计.md`）；本文是其进度镜像。
 
@@ -10,7 +10,7 @@
 
 - [x] **T1**（✅ 承重·**GO**）承重墙 spike：A 冻结释槽 + B re-attach 续聊 —— AC-2/3/12 命门**双命门确定性 GO**；ultracode 10-agent 对抗去风险(GO_WITH_MITIGATION) + agent team 实现 + lead 独立复跑 vitest 9/9 + 全量 435/435 + tsc 0 + eslint 0 + 变异 sanity（destroy 不删 Map→A1/A4 FAIL，证非 vacuous）；T1-B 全绿、AC-12 无须降级；探针待 T8 收官删 → [`T1.md`](T1.md)
 - [x] **T2** ✅ 数据层：pipeline-store + pipeline-run-store + 蓝图 API（GET/POST/PUT/DELETE）+ 校验（依赖 T1）—— AC-1 达成；ultracode 8-agent 调查（READY、揪 5 真坑）+ agent team 实现 + lead 亲读两 store diff + 独立复跑 vitest 40/40 + 全量 475/475 + tsc/eslint 0；校验拒 0 阶段/空模板/order 重复缺号/含0负/小数/乱序归一 + name 非空；reconcileOrphan 五分支 + pruneOld 保留 M 仅删终态；listRuns 仿 listArtifacts 跳坏文件 → [`T2.md`](T2.md)
-- [ ] **T3**（✅ 承重）编排器 runPipeline：冻结模型 + 累积喂下游 + run checkpoint + 起 run API（依赖 T1-A, T2）—— AC-2/3/4/5/6/7 → [`T3.md`](T3.md)
+- [x] **T3** ✅（承重）编排器 runPipeline：冻结模型 + 累积喂下游 + run checkpoint + 起 run/列 runs/读时对账 API + runControllers（依赖 T1-A, T2）—— AC-2~7 达成；ultracode 8-agent 承重调查（READY、揪头号 gap=runWorker 漏 try/catch）+ agent team 实现 + **lead 独立重跑承重 verify**（真实 runPipeline + faux Map 6 断言：evict 每阶段/size→0/peak≤1/顺序 setOwner 在 evict 前/负对照/catch 路径释槽）+ vitest 15/15 + 全量 490/490 + tsc/eslint 0 → [`T3.md`](T3.md)
 - [ ] **T4** 看板族 UI + AppShell 入口/模态 + dicebear 离线头像 + store（依赖 T2, T3）—— AC-10/13(部分)；**真浏览器 pageErrors=0 + node:fs 不入 bundle** → [`T4.md`](T4.md)
 - [ ] **T5** 并发上限可配：factory-config + concurrency-gate + 根 CLAUDE.md + UI 警示（无强依赖）—— AC-14（🚩 红线变更 D-V1.2-41） → [`T5.md`](T5.md)
 - [ ] **T6**（✅ 承重·依赖 T1-B）进会话悬浮二级菜单 + 底部切换条 + run cancel + 失败态（依赖 T1-B, T3, T4）—— AC-8/9/11/12；**真浏览器**（含故意失败流水线 + cancel） → [`T6.md`](T6.md)
