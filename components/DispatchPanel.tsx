@@ -18,7 +18,6 @@ interface Props {
   projectId: string;
   /** 项目根目录（绝对路径，= cwd）；用于把 assignment 产物的相对路径拼成绝对路径再交给 FileViewer。 */
   projectRoot: string | null;
-  onClose: () => void;
   /** 点击 assignment 产物链接时回调（绝对路径 + 文件名），由 AppShell 在 FileViewer 打开。 */
   onOpenFile: (filePath: string, fileName: string) => void;
   /** 点击「受管文档」产物时回调（artifactId），由 AppShell 按 id 打开右侧 ArtifactPanel（T5）。 */
@@ -42,10 +41,14 @@ const STATUS_META: Record<DispatchStatus, { label: string; color: string; bg: st
   failed: { label: "失败", color: "#dc2626", bg: "rgba(239,68,68,0.10)" },
 };
 
-export function DispatchPanel({
+/**
+ * 发起多 Agent 派发的有状态主体（无 modal 壳）。原 DispatchPanel 的全部逻辑搬迁至此，
+ * 供 PipelineModal「快速派发」tab 内嵌复用（T7：合并入口，旧独立 Dispatch 入口/壳已删）。
+ * padding 由调用方容器提供，故 return 为不带外层 padding 的 Fragment。
+ */
+export function DispatchContent({
   projectId,
   projectRoot,
-  onClose,
   onOpenFile,
   onOpenArtifact,
   onArtifactsChanged,
@@ -161,102 +164,50 @@ export function DispatchPanel({
     }
   }, [submitting, goal, selectedIds, subTasks, dispatch, projectId]);
 
-  // 重新发起：清空当前任务回到发起表单（保留已填 goal/选择，便于微调重发）
+  // F15「重跑本次」：只清当前任务回到发起表单，保留已填 goal/选择，便于微调重发。
   const handleRestart = useCallback(() => {
     reset();
     setError(null);
   }, [reset]);
 
-  return (
-    <div
-      data-testid="dispatch-panel"
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 1000,
-        background: "rgba(0,0,0,0.35)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        style={{
-          width: "min(600px, 92vw)",
-          maxHeight: "86vh",
-          display: "flex",
-          flexDirection: "column",
-          // Swiss：纯色面板，去环境底径向渐变（同 AgentManager 模态）
-          background: "var(--bg)",
-          border: "1px solid var(--border)",
-          borderRadius: 12,
-          boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
-          overflow: "hidden",
-        }}
-      >
-        {/* 头部 */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "14px 16px",
-            borderBottom: "1px solid var(--border)",
-          }}
-        >
-          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
-            {visibleTask ? "派发进度" : "发起多 Agent 派发"}
-          </div>
-          <button
-            onClick={onClose}
-            title="关闭"
-            style={{
-              background: "none",
-              border: "none",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              fontSize: 20,
-              lineHeight: 1,
-              padding: "2px 6px",
-            }}
-          >
-            ×
-          </button>
-        </div>
+  // F15「新建空白派发」：清任务 + 清空本地表单 state（goal/选中/子任务），从头发起。
+  const handleRestartBlank = useCallback(() => {
+    reset();
+    setGoal("");
+    setSelectedIds([]);
+    setSubTasks({});
+    setError(null);
+  }, [reset]);
 
-        {/* 主体 */}
-        <div style={{ padding: 16, overflowY: "auto" }}>
-          {visibleTask ? (
-            <DispatchSummary
-              goal={visibleTask.goal}
-              status={visibleTask.status}
-              assignments={visibleTask.assignments}
-              agents={visibleAgents}
-              projectRoot={projectRoot}
-              onOpenFile={onOpenFile}
-              onOpenArtifact={onOpenArtifact}
-              onRestart={handleRestart}
-            />
-          ) : (
-            <DispatchForm
-              agents={visibleAgents}
-              goal={goal}
-              setGoal={setGoal}
-              selectedIds={selectedIds}
-              subTasks={subTasks}
-              setSubTasks={setSubTasks}
-              onToggleAgent={toggleAgent}
-              error={error}
-              submitting={submitting}
-              onDispatch={handleDispatch}
-            />
-          )}
-        </div>
-      </div>
-    </div>
+  return (
+    <>
+      {visibleTask ? (
+        <DispatchSummary
+          goal={visibleTask.goal}
+          status={visibleTask.status}
+          assignments={visibleTask.assignments}
+          agents={visibleAgents}
+          projectRoot={projectRoot}
+          onOpenFile={onOpenFile}
+          onOpenArtifact={onOpenArtifact}
+          onRerun={handleRestart}
+          onRestartBlank={handleRestartBlank}
+        />
+      ) : (
+        <DispatchForm
+          agents={visibleAgents}
+          goal={goal}
+          setGoal={setGoal}
+          selectedIds={selectedIds}
+          subTasks={subTasks}
+          setSubTasks={setSubTasks}
+          onToggleAgent={toggleAgent}
+          error={error}
+          submitting={submitting}
+          onDispatch={handleDispatch}
+        />
+      )}
+    </>
   );
 }
 
@@ -330,6 +281,16 @@ function DispatchForm({
         <label style={labelStyle}>
           选择 Agent（{selectedIds.length}/{MAX_AGENTS}，至少 {MIN_AGENTS} 个）
         </label>
+        {/* F6：串行执行提示——选中顺序即执行顺序。 */}
+        <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5, marginBottom: 8 }}>
+          将按勾选顺序串行执行，上游产物自动喂给下游。
+        </div>
+        {/* F8：有 Agent 但未选时引导先勾选才能填子任务（与下方「暂无 Agent 档案」空态互斥）。 */}
+        {agents.length > 0 && selectedIds.length === 0 && (
+          <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5, marginBottom: 8 }}>
+            勾选 Agent 后可填写各自的子任务。
+          </div>
+        )}
         {agents.length === 0 ? (
           <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
             当前项目暂无 Agent 档案，请先在「Agents」中创建。
@@ -372,6 +333,7 @@ function DispatchForm({
                       opacity: atLimit ? 0.5 : 1,
                     }}
                   >
+                    {/* F6：已选时显执行序号（= selectedIds 中的位次，绝非档案库序），用纯数字避豆腐块 */}
                     <span
                       aria-hidden
                       style={{
@@ -385,10 +347,11 @@ function DispatchForm({
                         background: on ? "var(--accent)" : "var(--bg)",
                         color: "#fff",
                         fontSize: 11,
+                        fontWeight: 600,
                         flexShrink: 0,
                       }}
                     >
-                      {on ? "✓" : ""}
+                      {on ? selectedIds.indexOf(p.id) + 1 : ""}
                     </span>
                     {/* 头像（复用 .agent-avatar，缩到 32，身份色 + 首字母，无环） */}
                     <span
@@ -506,7 +469,8 @@ function DispatchSummary({
   projectRoot,
   onOpenFile,
   onOpenArtifact,
-  onRestart,
+  onRerun,
+  onRestartBlank,
 }: {
   goal: string;
   status: DispatchStatus;
@@ -515,7 +479,8 @@ function DispatchSummary({
   projectRoot: string | null;
   onOpenFile: (filePath: string, fileName: string) => void;
   onOpenArtifact: (artifactId: string) => void;
-  onRestart: () => void;
+  onRerun: () => void;
+  onRestartBlank: () => void;
 }) {
   const nameOf = (agentId: string) =>
     agents.find((a) => a.id === agentId)?.name ?? agentId;
@@ -631,21 +596,41 @@ function DispatchSummary({
         ))}
       </div>
 
-      <button
-        data-testid="dispatch-restart"
-        onClick={onRestart}
-        style={{
-          padding: "8px 0",
-          background: "var(--bg-hover)",
-          border: "1px solid var(--border)",
-          borderRadius: 7,
-          color: "var(--text-muted)",
-          fontSize: 13,
-          cursor: "pointer",
-        }}
-      >
-        重新发起
-      </button>
+      {/* F15：拆两按钮——「重跑本次」保留预填、「新建空白派发」清空表单从头来。 */}
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          data-testid="dispatch-restart"
+          onClick={onRerun}
+          style={{
+            flex: 1,
+            padding: "8px 0",
+            background: "var(--bg-hover)",
+            border: "1px solid var(--border)",
+            borderRadius: 7,
+            color: "var(--text-muted)",
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          重跑本次
+        </button>
+        <button
+          data-testid="dispatch-restart-blank"
+          onClick={onRestartBlank}
+          style={{
+            flex: 1,
+            padding: "8px 0",
+            background: "var(--bg-hover)",
+            border: "1px solid var(--border)",
+            borderRadius: 7,
+            color: "var(--text-muted)",
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          新建空白派发
+        </button>
+      </div>
     </div>
   );
 }

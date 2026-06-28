@@ -6,11 +6,16 @@ import { useTheme } from "@/hooks/useTheme";
 import { usePipelineStore } from "@/lib/stores/usePipelineStore";
 import PipelineBoard from "@/components/PipelineBoard";
 import PipelineEditor from "@/components/PipelineEditor";
+import { DispatchContent } from "./DispatchPanel";
 
 type PipelineModalProps = {
   projectId: string;
+  /** 项目根目录（绝对路径）；透传给「快速派发」tab 的 DispatchContent（产物相对路径拼绝对路径）。 */
+  projectRoot: string | null;
   onClose: () => void;
   onOpenArtifact: (artifactId: string) => void;
+  /** 点击 assignment 产物链接时回调（绝对路径 + 文件名）；透传给 DispatchContent（T7 合并入口）。 */
+  onOpenFile: (filePath: string, fileName: string) => void;
   /** T4 只透传给子组件，真正消费（进完整对话）在 T6（StageSessionMenu）。 */
   onOpenSession: (sessionId: string) => void;
   onArtifactsChanged?: () => void;
@@ -23,9 +28,13 @@ type PipelineModalProps = {
  */
 export default function PipelineModal({
   projectId,
+  projectRoot,
   onClose,
   onOpenArtifact,
+  onOpenFile,
   onOpenSession,
+  onArtifactsChanged,
+  onSessionsChanged,
 }: PipelineModalProps) {
   const { isDark } = useTheme();
   const [tab, setTab] = useState<"pipeline" | "dispatch">("pipeline");
@@ -250,12 +259,14 @@ export default function PipelineModal({
               />
             )
           ) : (
-            <div
-              data-testid="pipeline-dispatch-placeholder"
-              style={{ padding: "2rem 1rem", textAlign: "center", color: "var(--text-muted)", fontSize: 13, lineHeight: 1.6 }}
-            >
-              快速派发（旧快派表单）将在 T7 并入此处。
-            </div>
+            <DispatchContent
+              projectId={projectId}
+              projectRoot={projectRoot}
+              onOpenFile={onOpenFile}
+              onOpenArtifact={onOpenArtifact}
+              onArtifactsChanged={onArtifactsChanged}
+              onSessionsChanged={onSessionsChanged}
+            />
           )}
           {/* 编辑器入口（看板视图常驻，便于新建/改蓝图） */}
           {tab === "pipeline" && view === "board" && blueprints.length > 0 && (

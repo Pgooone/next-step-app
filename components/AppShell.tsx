@@ -10,7 +10,6 @@ import { TabBar, type Tab } from "./TabBar";
 import { ModelsConfig } from "./ModelsConfig";
 import { SkillsConfig } from "./SkillsConfig";
 import { AgentManager } from "./AgentManager";
-import { DispatchPanel } from "./DispatchPanel";
 import PipelineModal from "./PipelineModal";
 import { ArtifactPanel } from "./ArtifactPanel";
 import { BranchNavigator } from "./BranchNavigator";
@@ -59,7 +58,6 @@ export function AppShell() {
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
   const [skillsConfigOpen, setSkillsConfigOpen] = useState(false);
   const [agentManagerOpen, setAgentManagerOpen] = useState(false);
-  const [dispatchPanelOpen, setDispatchPanelOpen] = useState(false);
   const [pipelineModalOpen, setPipelineModalOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   // 右侧面板是否处于「产物视图」（artifact 打开时盖过文件视图，D-D3-7）
@@ -566,20 +564,6 @@ export function AppShell() {
                 <circle cx="9" cy="7" r="4" />
                 <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
                 <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-              </svg>
-            ),
-          },
-          {
-            label: "Dispatch",
-            onClick: () => setDispatchPanelOpen(true),
-            disabled: !currentProjectId,
-            icon: (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="18" cy="5" r="3" />
-                <circle cx="6" cy="12" r="3" />
-                <circle cx="18" cy="19" r="3" />
-                <line x1="8.6" y1="10.5" x2="15.4" y2="6.5" />
-                <line x1="8.6" y1="13.5" x2="15.4" y2="17.5" />
               </svg>
             ),
           },
@@ -1128,22 +1112,13 @@ export function AppShell() {
         onSessionStarted={handleAgentSessionStarted}
       />
     )}
-    {dispatchPanelOpen && currentProjectId && (
-      <DispatchPanel
-        projectId={currentProjectId}
-        projectRoot={currentRoot}
-        onClose={() => setDispatchPanelOpen(false)}
-        onOpenFile={handleOpenFile}
-        onOpenArtifact={handleOpenArtifact}
-        onArtifactsChanged={() => setExplorerRefreshKey((k) => k + 1)}
-        onSessionsChanged={handleDispatchSessionsChanged}
-      />
-    )}
     {pipelineModalOpen && currentProjectId && (
       <PipelineModal
         projectId={currentProjectId}
+        projectRoot={currentRoot}
         onClose={() => setPipelineModalOpen(false)}
         onOpenArtifact={handleOpenArtifact}
+        onOpenFile={handleOpenFile}
         onOpenSession={(sessionId) => {
           handleSelectSession({
             id: sessionId,
