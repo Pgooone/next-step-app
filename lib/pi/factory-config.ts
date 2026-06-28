@@ -6,7 +6,8 @@ import { join } from "node:path";
  * 工厂级运行配置（V1.2 第七轮 T5 / D-V1.2-41）—— 当前仅「全局并发上限」一项。
  *
  * 「并发会话 ≤3」原是硬墙；冻结释槽模型（每阶段跑完 evict 还槽）让它从「硬墙」降级为
- * 「吞吐限流」，故改为可配：默认 3、用户可调，但有 HARD_CAP 兜底（单进程资源现实，见 ADR）。
+ * 「吞吐限流」，故改为可配：默认 3、用户可调，但有 HARD_CAP=100 兜底（真约束是 CPU 吞吐 +
+ * LLM 限流、非内存，2026-06-28 资源实测见 ADR D-R7-09）。
  *
  * 落点：用户级 `~/.pi/factory-config.json`，与 `projects.json` 同级（全局并发 = 进程级资源约束，
  * 非 per-project，理由见 ADR D-R7-*）。纯文件、无 DB（沿用 pi-web 哲学）。
@@ -20,10 +21,13 @@ import { join } from "node:path";
 export const DEFAULT_MAX = 3;
 
 /**
- * 硬上限：用户调到再高也 clamp 到此值。单进程资源现实（每会话 = 一个独立 agent + 完整上下文
- * 窗口 + 工具子进程，由 10min idle 计时器常驻），论证见 ADR D-R7-*。
+ * 硬上限：用户调到再高也 clamp 到此值。原为 8（基于「每会话 = 独立进程 + 工具子进程常驻」的
+ * 保守估计——**已证伪**）；2026-06-28 资源实测（ADR D-R7-09）证一个活会话仅 Next 进程内 ~1MB
+ * JS 对象、0 独立进程/子进程、idle 时 0 常驻连接，内存非瓶颈（20G 可用理论容数千会话），故放宽
+ * 到 100（用户拍板 D-V1.2-49）。真约束是 CPU 核数（事件循环吞吐）+ 下游 LLM provider 限流，
+ * 调高需自担——非内存 OOM。默认仍 3。
  */
-export const HARD_CAP = 8;
+export const HARD_CAP = 100;
 
 /** 配置文件落点：`~/.pi/factory-config.json`（与 projects.json 同级，仿 project-registry.ts:34）。 */
 function configPath(): string {

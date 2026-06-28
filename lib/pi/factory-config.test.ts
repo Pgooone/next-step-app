@@ -79,10 +79,10 @@ describe("readMaxConcurrent", () => {
     expect(readMaxConcurrent()).toBe(1);
   });
 
-  it("8. 越界 clamp 上界：100 → HARD_CAP(8)", () => {
-    withFile(JSON.stringify({ maxConcurrentSessions: 100 }));
+  it("8. 越界 clamp 上界：500 → HARD_CAP(100)", () => {
+    withFile(JSON.stringify({ maxConcurrentSessions: 500 }));
     expect(readMaxConcurrent()).toBe(HARD_CAP);
-    expect(readMaxConcurrent()).toBe(8);
+    expect(readMaxConcurrent()).toBe(100);
   });
 
   it("9. 合法正常值：5 → 5", () => {
@@ -90,10 +90,10 @@ describe("readMaxConcurrent", () => {
     expect(readMaxConcurrent()).toBe(5);
   });
 
-  it("10. 边界值：1 → 1、8 → 8（取本身）", () => {
+  it("10. 边界值：1 → 1、100 → 100（取本身，= 新 HARD_CAP 上界）", () => {
     withFile(JSON.stringify({ maxConcurrentSessions: 1 }));
     expect(readMaxConcurrent()).toBe(1);
-    withFile(JSON.stringify({ maxConcurrentSessions: 8 }));
-    expect(readMaxConcurrent()).toBe(8);
+    withFile(JSON.stringify({ maxConcurrentSessions: 100 }));
+    expect(readMaxConcurrent()).toBe(100);
   });
 });

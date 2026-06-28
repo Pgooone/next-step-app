@@ -228,8 +228,8 @@ export default function PipelineModal({
                       marginBottom: 10,
                     }}
                   >
-                    ⓘ 单进程并发会话默认上限 3。可在 ~/.pi/factory-config.json 调整
-                    maxConcurrentSessions；调高 = 更多活会话、资源耗尽风险自担。
+                    ⓘ 单进程并发会话默认上限 3、最高可配 100。可在 ~/.pi/factory-config.json 调整
+                    maxConcurrentSessions；调高 = 更多会话同时跑，受 CPU 与下游模型限流约束、响应可能变慢（内存非瓶颈）。
                   </div>
                 )}
                 {runError && (
