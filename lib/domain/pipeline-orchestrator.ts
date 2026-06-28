@@ -6,10 +6,12 @@
  * `PipelineRunStage.artifactId`（worker 的 create_artifact 已物化受管文档、artifactId 即权威产物），
  * 并实时回写 {@link PipelineRun} 状态机（running→done/failed）+ 每阶段 status（queued→running→done）。
  *
- * 冻结模型（F16 / D-V1.2-41 核心）：**每阶段（含 completed）跑完后主动 {@link evictAgentSessions}**
- * 销毁该阶段会话还槽——现 `runDispatch` 对 completed worker 不销毁、留 registry 占槽到 10min idle
- * （dispatch-runner.ts:161-163 仅在 !completed 时 abort；orchestrator.ts:156-198 completed 路径无销毁），
- * 故本编排器新增 evict 后串行运行中活 worker 会话恒 ≤1（AC-2），多 run 并发受 acquireSlot 限流轮转（AC-4）。
+ * 冻结模型（F16 / D-V1.2-41 核心）：**每阶段（含 completed）跑完后主动 {@link evictSession}** 按
+ * **本阶段 sessionId** 销毁该阶段会话还槽（第八轮 D-V1.2-50 轮次2：从原「按 agentId 一锅端」收窄为「按
+ * 本阶段 sessionId」，防跨 run 误杀同 agent 的用户接管会话）——现 `runDispatch` 对 completed worker 不销毁、
+ * 留 registry 占槽到 10min idle（dispatch-runner.ts:161-163 仅在 !completed 时 abort；orchestrator.ts:156-198
+ * completed 路径无销毁），故本编排器新增 evict 后串行运行中活 worker 会话恒 ≤1（AC-2），多 run 并发受
+ * acquireSlot 限流轮转（AC-4）。
  *
  * 红线：
  * - 本模块属**服务端领域层**（链经 store/dispatch-runner 引 node:fs），绝不被客户端 value-import
@@ -26,7 +28,7 @@ import { PipelineRunStore, type PipelineRun, type PipelineRunStage } from "./pip
 import { ProjectRegistry } from "./project-registry";
 import { setOwner } from "./session-agent-map";
 import { acquireSlot } from "../pi/concurrency-gate";
-import { evictAgentSessions } from "../pi/evict-agent-sessions";
+import { evictSession } from "../pi/evict-agent-sessions";
 import { runWorker, type RegisterInnerSession } from "../pi/dispatch-runner";
 import type { CreateAgentSessionOptions, SessionManager } from "@earendil-works/pi-coding-agent";
 
@@ -42,8 +44,8 @@ export interface PipelineOrchestratorDeps {
   acquireSlot?: typeof acquireSlot;
   /** 写「会话→agent」归属（看板分组 + re-attach 反查）；生产用 session-agent-map.setOwner，测试注入 spy。 */
   setOwner?: (cwd: string, sid: string, agentId: string) => void;
-  /** ★冻结释槽 DI 钩子：生产用 lib/pi 的 evictAgentSessions，测试注入 spy 断言每阶段调一次。 */
-  evictAgentSessions?: typeof evictAgentSessions;
+  /** ★冻结释槽 DI 钩子：生产用 lib/pi 的 evictSession（按本阶段 sessionId 逐出），测试注入 spy 断言每阶段调一次。 */
+  evictSession?: typeof evictSession;
   /** 透传给 runWorker：生产用 rpc-manager.registerInnerSession，测试用 faux register。唯一必填。 */
   registerInnerSession: RegisterInnerSession;
   /** 透传给 runWorker（测试注入 faux session/model）。 */
@@ -79,7 +81,7 @@ export async function runPipeline(
   const doRunWorker = deps.runWorker ?? runWorker;
   const doAcquireSlot = deps.acquireSlot ?? acquireSlot;
   const doSetOwner = deps.setOwner ?? setOwner;
-  const doEvict = deps.evictAgentSessions ?? evictAgentSessions;
+  const doEvict = deps.evictSession ?? evictSession;
   const workerTimeoutMs = deps.workerTimeoutMs ?? DEFAULT_WORKER_TIMEOUT_MS;
 
   const projectRoot = registry.get(run.projectId).root;
@@ -145,8 +147,11 @@ export async function runPipeline(
         : "");
 
     // g. ★【头号修正】runWorker 必须包 try/catch（详细设计 §3.3 伪代码漏了，模板 orchestrator.ts:131-154 有）。
-    //    catch 内 best-effort doEvict 兜底释槽（runPipeline 独有：worker 内已建会话后 throw 时防漏槽；
-    //    evict 对无会话天然 no-op、对已建会话是唯一释槽手段；吞 evict 错不盖原始 reason）。
+    //    catch 内 best-effort doEvict 传 stage.sessionId——此时 stage.sessionId 尚为初值 null（:181 在 try 之后、
+    //    worker 抛错未执行到），故 evictSession(null) 是 no-op（第八轮收窄后于 catch 语境恒不命中会话）；
+    //    生产不漏槽：runWorker 在 registerInnerSession(dispatch-runner.ts:151，唯一占槽点)后无 throw 路径，
+    //    worker 抛错必在占槽之前；即便未来引入占槽后抛，该正崩 worker 槽靠 wrapper 10min idle + AC-7
+    //    reconcileOrphan 回收。吞 evict 错不盖原始 reason。
     let result;
     try {
       result = await doRunWorker({
@@ -164,9 +169,9 @@ export async function runPipeline(
       });
     } catch (error) {
       try {
-        await doEvict(projectRoot, stage.agentId);
+        await doEvict(projectRoot, stage.sessionId);
       } catch {
-        /* best-effort 释槽：worker 内已建会话后 throw 时兜底；evict 失败不盖原始 reason */
+        /* best-effort 释槽：stage.sessionId 恒 null→no-op（详上）；evict 失败不盖原始 reason */
       }
       return failRun(
         runStore,
@@ -182,9 +187,10 @@ export async function runPipeline(
     doSetOwner(projectRoot, result.sessionId, stage.agentId);
 
     // i. ★② 冻结释槽（F16，AC-2/3）：必须在 setOwner 之后、结果判定之前——completed/timeout/aborted/判空
-    //    四类 return 前都已 evict（不漏槽）。evict 只 destroy 不碰 owner map（evict-agent-sessions.ts:11-13 红线）；
-    //    对非 completed runWorker 内已自 abort，evict 再 destroy 幂等安全。
-    await doEvict(projectRoot, stage.agentId);
+    //    四类 return 前都已 evict（不漏槽）。第八轮按**本阶段 sessionId** 逐出（:181 已赋 result.sessionId），
+    //    只 destroy 本阶段 worker 会话、不连带逐出同 agent 用户接管会话（AC-1/3）；只 destroy 不碰 owner map
+    //    （evict-agent-sessions.ts:11-13 红线）；对非 completed runWorker 内已自 abort，evict 再 destroy 幂等安全。
+    await doEvict(projectRoot, stage.sessionId);
 
     // j. 结果判定（顺序同 orchestrator.ts:164-181）。
     if (result.reason === "timeout") {

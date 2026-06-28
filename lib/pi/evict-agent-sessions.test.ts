@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evictAgentSessions } from "./evict-agent-sessions";
+import { evictAgentSessions, evictSession } from "./evict-agent-sessions";
 import type { AgentSessionWrapper } from "../rpc-manager";
 
 /** 最小 faux wrapper：仅实现 evictAgentSessions 用到的 isAlive/inner.isStreaming/send/destroy。 */
@@ -72,5 +72,88 @@ describe("evictAgentSessions（方案B：改 mode 逐出存活会话）", () => 
       getSession: () => undefined,
     });
     expect(evicted).toEqual([]);
+  });
+});
+
+describe("evictSession（第八轮：按单个 sessionId 逐出、不误删同 agent 其他会话）", () => {
+  /**
+   * faux registry：sidA/sidB **同属 agentX**（模拟「本阶段 worker sidA + 用户跨 run 接管 sidB」）。
+   * `order` 跨会话共享调用序（断 abort 在 destroy 之前）；`ownerBySession` 模拟 owner-map（getOwner 反查、本测验零碰）。
+   * faux destroy 只翻 alive（与生产 onDestroy→registry.delete 解耦：本测只验「目标 destroy / 同伴不动」，
+   * 经 isAlive 观测，不依赖删 Map）。
+   */
+  function makeRegistry() {
+    const order: string[] = [];
+    const ownerBySession = new Map<string, string>();
+    const map: Record<string, AgentSessionWrapper> = {};
+
+    function mk(sid: string, agentId: string, opts: { streaming?: boolean } = {}) {
+      let alive = true;
+      const w = {
+        isAlive: () => alive,
+        inner: { isStreaming: opts.streaming ?? false },
+        send: async (c: { type: string }) => {
+          order.push(`${sid}:send:${c.type}`);
+          return null;
+        },
+        destroy: () => {
+          order.push(`${sid}:destroy`);
+          alive = false;
+        },
+      };
+      map[sid] = w as unknown as AgentSessionWrapper;
+      ownerBySession.set(sid, agentId);
+      return map[sid];
+    }
+
+    return { order, ownerBySession, map, mk, getSession: (sid: string) => map[sid] };
+  }
+
+  it("① 逐 sidA 只 destroy sidA、同 agent 的 sidB 仍 alive（不误删）", async () => {
+    const r = makeRegistry();
+    r.mk("sidA", "agentX");
+    r.mk("sidB", "agentX");
+
+    await evictSession("/root", "sidA", { getSession: r.getSession });
+
+    expect(r.map.sidA.isAlive()).toBe(false); // sidA 被 destroy
+    expect(r.map.sidB.isAlive()).toBe(true); // sidB 未被触碰
+    expect(r.order).toEqual(["sidA:destroy"]); // 全程只动 sidA
+  });
+
+  it("② 流式会话先 abort 再 destroy（顺序）", async () => {
+    const r = makeRegistry();
+    r.mk("sidA", "agentX", { streaming: true });
+
+    await evictSession("/root", "sidA", { getSession: r.getSession });
+
+    expect(r.order).toEqual(["sidA:send:abort", "sidA:destroy"]); // abort 严格在 destroy 之前
+  });
+
+  it("③ evict 后 owner-map 仍映射 sidA→agentX（绝不碰 bySession/removeOwner）", async () => {
+    const r = makeRegistry();
+    r.mk("sidA", "agentX");
+    r.mk("sidB", "agentX");
+
+    await evictSession("/root", "sidA", { getSession: r.getSession });
+
+    // getOwner 反查不变（owner-map 零碰、第五轮红线）
+    expect(r.ownerBySession.get("sidA")).toBe("agentX");
+    expect(r.ownerBySession.get("sidB")).toBe("agentX");
+    expect(r.ownerBySession.size).toBe(2);
+  });
+
+  it("不存在 / 已死 / null 的 sid → 安全跳过、不 destroy、不抛", async () => {
+    const r = makeRegistry();
+    const dead = r.mk("dead", "agentX");
+    (dead as unknown as { isAlive: () => boolean }).isAlive = () => false;
+
+    await expect(
+      evictSession("/root", "missing", { getSession: r.getSession }),
+    ).resolves.toBeUndefined();
+    await evictSession("/root", "dead", { getSession: r.getSession });
+    await evictSession("/root", null, { getSession: r.getSession }); // catch 路径恒 null → no-op
+
+    expect(r.order).toEqual([]); // 什么都没 destroy
   });
 });

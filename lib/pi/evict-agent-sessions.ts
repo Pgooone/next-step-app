@@ -48,3 +48,26 @@ export async function evictAgentSessions(
   }
   return evicted;
 }
+
+/**
+ * 第八轮：按**单个 sessionId** 逐出（流水线编排器每阶段释槽收窄用，防跨 run 误杀同 agent 的用户接管会话）。
+ * 复用上方 `:44-46` 单会话配方，但**跳过 `sessionsForAgent` 反查**、直接对目标 sid 操作——这正是
+ * 「只销毁本阶段 worker 会话、绝不连带逐出同 agent 其他活会话」的关键（D-V1.2-50 轮次2 / 第八轮 T1 命门）。
+ * 对不存在 / 已 idle 销毁的 sid 安全跳过（getSession 返 undefined / isAlive()=false）。
+ *
+ * ⚠️ 红线（同 evictAgentSessions :11-13）：**只 destroy registry，绝不碰 bySession/removeOwner**——
+ * 动 owner-map 会让 re-attach 的 getOwner 返 null、误反塞 write/edit/bash（第五轮修过的 bug）。
+ */
+export async function evictSession(
+  projectRoot: string,
+  sessionId: string | null,
+  deps?: EvictDeps,
+): Promise<void> {
+  void projectRoot; // 对齐 evictAgentSessions 签名；getSession 经 DI 缝、不需 cwd 反查
+  if (sessionId == null) return; // 编排器 catch 路径传 stage.sessionId 恒 null（:181 在 try 后）→ no-op
+  const getSession = deps?.getSession ?? getRpcSession;
+  const w = getSession(sessionId);
+  if (!w?.isAlive()) return; // 不存在 / 已死：安全跳过
+  if (w.inner.isStreaming) await w.send({ type: "abort" }); // 流式先终止在途回合（防 jsonl 双写）
+  w.destroy();
+}
