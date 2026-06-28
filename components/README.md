@@ -29,7 +29,15 @@ React 函数式组件（全部 `"use client"` + hooks）。基座组件（`ChatW
   `ChatWindow.tsx`（`isMainChat` 时 `extractTransferHistory(messages)` 透传 `transferHistory`）、
   `AppShell.tsx`（`atAgents`/`isMainChat`/`onAgentTransfer`——复用 `useAgentStore.startSession` 投递
   `POST /agents/[id]/session`、`handleAgentSessionStarted` 切会话接 SSE；决策 D-V1.1-03/04）。
-- **红线**：跨会话异步转交（非同窗口实时 agent team）；与 Dispatch 并存、不复用 Dispatch。
+- **红线**：跨会话异步转交（非同窗口实时 agent team）。Dispatch 已并入 `PipelineModal`「快速派发」tab
+  （`DispatchPanel` 提取出无壳的 `DispatchContent`、删独立 Dispatch 入口，第七轮 T7 / D-R7-08）。
+
+## 流水线与阶段看板区（第七轮，§3）
+- `PipelineModal.tsx` — 流水线工作台模态，两 tab：「流水线」=看板/编辑器 + 运行控制条（选蓝图 + ▶运行，D-R7-04）｜「快速派发」=内嵌 `DispatchContent`（旧 Dispatch 入口已并入，D-R7-08）。
+- `PipelineBoard.tsx` — run 的阶段看板（轮询刷新在跑的 run）；`PipelineStageCard.tsx` — 单阶段卡（头像 + 点阵进度 + 状态）；`StageDotMatrix.tsx` / `StageHoverPreview.tsx` — 阶段点阵与悬浮预览；`StageSessionMenu.tsx` — 左键点卡弹出的只读会话菜单（复用 `MessageView` 看 transcript，非整页跳转，T6）。
+- `PipelineEditor.tsx` — 蓝图（阶段序列）编辑器。
+- 看板视觉纯函数（点阵 / 头像 / 状态配色）在 `lib/pipeline`（见该区 README）。组件只 fetch JSON + `import type` 领域类型（D-R7B-07：领域层含 node:fs，禁 value-import）。
+- spec：`../docs/V1.2/第七轮-流水线与阶段看板/`（ADR `设计决策记录.md` D-R7-*）。
 
 ## 约定 / 红线
 - 函数式 + hooks；PascalCase 文件名；状态用 selector 订阅避免重渲染。

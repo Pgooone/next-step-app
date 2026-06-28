@@ -80,16 +80,16 @@
 - 调研留痕：ultracode 工作流 `pipeline-stageboard-plan`（7 agent：4 路采集→综合→对抗评审 REVISE→定稿）+ lead 亲核 file:line（尤其纠偏 F16 真根因 = completed 会话占槽 10min，非「撞墙报错」）
 - **状态**：✅ **T1~T8 全收官并 push**（蓝图/编排器/阶段看板 + 进会话/cancel/失败态 + 合并入口·两 tab + 收尾；15 commit `f430d95`→`0a877da`，origin/v1.2=origin/master 同步）。三承重卡 T1/T3/T6 全绿、真浏览器 AC-8~13 全 PASS。lead ADR `设计决策记录.md`（D-R7-01~09）。
 
-### 第八轮 · 计槽语义重构与误杀根治（`第八轮-计槽语义重构与误杀根治/`）— spec 待批准
+### 第八轮 · 计槽语义重构与误杀根治（`第八轮-计槽语义重构与误杀根治/`）— ✅ T1~T3 收官并 push（`54904e5`）
 
 主题：**根治第七轮 T6 揪出的「跨 run evict 误杀」**（D-R7-07 决策2 留二期）——把流水线编排器每阶段的 evict 从「按 agentId 一锅端」收窄为「只逐本阶段 sessionId」。保留 F16 释槽机制、不动并发计量语义。（文件夹名沿用立项时的「计槽语义重构」；最终落 **evict-by-sessionId**，不改计槽语义。）
 
 - **由来链（含一次设计评审门救场）**：T6 复活 worker 会话 → 揪出 evict 按 agentId 一锅端误杀同 agent 会话 → 资源实测（ADR D-R7-09：活会话仅 ~1MB 进程内对象、0 进程）→ 误杀去风险调查（ultracode 7-agent）→ **用户初拍方案 B**（改计槽语义为 in-flight）→ **🚨 ultracode 设计评审门判 NO-GO**（方案 B 承重命门 isStreaming 在 retry 退避窗口漏算、违 ≤3 红线，lead 亲核坐实，见 `方案B设计评审-NO-GO记录.md`）→ **用户改选 evict-by-sessionId**（D-V1.2-50 轮次2）。是「写代码前先证伪承重前提」的活案例。
 - 先读 `第八轮-计槽语义重构与误杀根治/README.md` → `需求文档.md` → `概要设计.md` → `详细设计.md`
 - 任务卡：`../../tasks/V1.2/第八轮-计槽语义重构与误杀根治/progress.md`（T1 承重 spike → T2 实现 → T3 双层验收）
-- 用户拍板 QA：`QA/第八轮-计槽语义重构决策.md`（D-V1.2-50）；lead ADR `设计决策记录.md`（D-R8-* 待开工填）
+- 用户拍板 QA：`QA/第八轮-计槽语义重构决策.md`（D-V1.2-50）；lead ADR `设计决策记录.md`（D-R8-01~04 已填）
 - 调研留痕：误杀去风险 ultracode 工作流（7 agent：机制核实 → 方案设计+对抗 → 定稿）+ 资源实测工作流（5 agent，ADR D-R7-09）
-- **状态**：三件套 + QA + 任务卡 spec **草拟完成、待用户复审批准后开 T1**（承重 spike）。
+- **状态**：✅ **T1~T3 全收官、双层验收通过、已 push `54904e5`**。spec 复审 GO_WITH_FIXES + 订正（`a65a0fe`）→ T1 承重 spike GO（`d090017`）→ T2 实现（`5bdc0df`）→ T3 双层验收 + 收尾（`eb059dc`）→ 回填（`54904e5`），ls-remote 实测四引用同步。承重命门 = **by-sessionId 逐出粒度正确**（hermetic spike，纯应用层、零内核时序依赖；保留在册计槽、不碰 in-flight 语义，从源头规避方案 B 被 NO-GO 的 isStreaming retry 漏算）。
 
 > ⚠️ **本（V1.2）第八轮 ≠ 下方 V1.1 时期的「第八轮·通用多 Agent 配置」**（那个已拆为 V1.2 第一轮 + 第七轮、见下节）。本第八轮是第七轮收官后新立的误杀根治轮、编号顺延。
 

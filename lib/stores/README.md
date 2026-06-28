@@ -29,6 +29,10 @@
   409/404/失败走 toast）。结构操作、不走 propose（D-V4-02）。
   **刻意不持久化**（全是会话内瞬态、刷新归零合理），故无 `hydrate`、天然无 SSR hydration 问题。
   渲染仍只读：不引入手动编辑器 / 绕过 PendingChange 的写路径（D-D5-1）。
+- `usePipelineStore.ts` — **阶段看板前端状态**（第七轮）：蓝图列表 + run 列表 + 当前 run（`PipelineModal`/
+  `PipelineBoard` 用），带 `loadedProjectId` 维度避免跨项目串显（仿 `useAgentStore`）；动作走 `app/api` 蓝图/run 路由。
+  领域**数据**经 fetch JSON 取、领域类型只 `import type`（D-R7B-07：领域层含 node:fs，value-import 会把
+  node:fs 拖进客户端 bundle）。spec：`docs/V1.2/第七轮-流水线与阶段看板/`。
 
 ## 约定 / 红线
 - 命名 `useXxxStore`，单一职责。

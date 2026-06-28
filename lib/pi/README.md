@@ -101,6 +101,23 @@
   V2-4 wiring 把它合进 `createAgentSession` 时，**docOptions 须 spread 在 profileOptions 之后**
   覆盖 profile.tools（两者都含 tools 键，防 profile.tools 的 write/edit/bash 泄漏）。
 
+### 第七 / 八轮（流水线与阶段看板）新增
+- `factory-config.ts` — **全局并发上限可配（T5 / D-V1.2-41）**。读用户级 `~/.pi/factory-config.json`，
+  缺省 / 损坏 / 越界一律静默回退 `DEFAULT_MAX=3`（封装层绝不抛，acquireSlot 是热路径），用户调高有
+  `HARD_CAP` 兜底。`concurrency-gate.ts` 经 `readMaxConcurrent()` 取上限。
+- `run-controllers.ts` — 进程级 `runId → AbortController` 注册表，挂 `globalThis` 单例（仿
+  `rpc-manager.ts` 的 `__piSessions`、dev 热重载不丢，ADR D-R7-03）；POST 起 run 时 `setRunController`，
+  T6 cancel 路由据 runId 取回 `abort()` 中断在跑的 run。
+- `coding-tools.ts` — 内置编码工具固定集（`CODING_TOOL_NAMES`）的**唯一真相源**（源 rpc-manager PRESET_FULL）。
+  中性叶子模块（无 `"use client"` / server-only 依赖），供 client（勾选 UI）与 server（编码型空 tools 兜底）共用，防漂移。
+- `evict-agent-sessions.ts` 的 **`evictSession(...)`（第八轮 / D-R8-01）** — 按**单个 sessionId** 逐出（abort-then-destroy），
+  把编排器每阶段还槽从「按 agentId 一锅端」收窄为「按本阶段 sessionId」，防跨 run 误杀同 agent 的用户接管会话。
+  **红线同 `evictAgentSessions`：只 destroy registry，绝不碰 bySession/removeOwner**（动 owner-map 会让 re-attach
+  的 getOwner 返 null、误反塞 write/edit/bash，第五轮修过的 bug）。
+
+> 流水线相关 spec：`../../docs/V1.2/第七轮-流水线与阶段看板/`、`第八轮-计槽语义重构与误杀根治/`，
+> ADR `../../docs/V1.2/设计决策记录.md` D-R7-* / D-R8-*。
+
 ## 约定 / 红线
 - **只封装不 fork 内核**：所有持久注入走内核原生钩子
   （`DefaultResourceLoader.appendSystemPromptOverride` / `skillsOverride`），

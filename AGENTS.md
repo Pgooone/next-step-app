@@ -1,11 +1,11 @@
-# Pi Agent Web - Development Notes
+# Next-Step - Development Notes（pi-web 基座技术笔记）
 
 > 🔗 **溯源 / Provenance**：本仓库是 **Next-Step** —— 基于开源项目 **pi-web** 打造的「多 Agent 软件工厂」本地工具。本文件是 **pi-web 基座**的内核 / 会话技术笔记；Next-Step 在其上叠加「项目 / 多 Agent / 派发 / 产物 Diff·版本·HITL」领域层，**pi 内核不 fork**。仓库总览见 `README.md` 与 `../README.md`。
 
 ## Quick Start
 
 ```bash
-npm run dev   # port 3030
+npm run dev   # port 30141
 ```
 
 Typecheck: `node_modules/.bin/tsc --noEmit`  
