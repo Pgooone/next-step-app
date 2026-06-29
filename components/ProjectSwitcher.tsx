@@ -40,6 +40,7 @@ export function ProjectSwitcher({ onProjectSelected }: Props) {
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
   const [root, setRoot] = useState("");
+  const [createIfMissing, setCreateIfMissing] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -57,6 +58,7 @@ export function ProjectSwitcher({ onProjectSelected }: Props) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);
         setCreateOpen(false);
+        setCreateIfMissing(false);
         setConfirmId(null);
       }
     };
@@ -79,10 +81,11 @@ export function ProjectSwitcher({ onProjectSelected }: Props) {
     setCreating(true);
     setCreateError(null);
     try {
-      const project = await useProjectStore.getState().create({ name, root });
+      const project = await useProjectStore.getState().create({ name, root, createIfMissing });
       setCreateOpen(false);
       setName("");
       setRoot("");
+      setCreateIfMissing(false);
       setOpen(false);
       onProjectSelected?.(project.root);
       toast.success(`已创建项目「${project.name}」`);
@@ -91,7 +94,7 @@ export function ProjectSwitcher({ onProjectSelected }: Props) {
     } finally {
       setCreating(false);
     }
-  }, [creating, name, root, onProjectSelected]);
+  }, [creating, name, root, createIfMissing, onProjectSelected]);
 
   const handleRemoveConfirm = useCallback(
     async (id: string) => {
@@ -298,7 +301,7 @@ export function ProjectSwitcher({ onProjectSelected }: Props) {
                 value={name}
                 onChange={(e) => { setName(e.target.value); setCreateError(null); }}
                 onKeyDown={(e) => {
-                  if (e.key === "Escape") { setCreateOpen(false); setName(""); setRoot(""); setCreateError(null); }
+                  if (e.key === "Escape") { setCreateOpen(false); setName(""); setRoot(""); setCreateIfMissing(false); setCreateError(null); }
                 }}
                 placeholder="项目名称"
                 style={{
@@ -313,7 +316,7 @@ export function ProjectSwitcher({ onProjectSelected }: Props) {
                 onChange={(e) => { setRoot(e.target.value); setCreateError(null); }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") { e.preventDefault(); void handleCreate(); }
-                  if (e.key === "Escape") { setCreateOpen(false); setName(""); setRoot(""); setCreateError(null); }
+                  if (e.key === "Escape") { setCreateOpen(false); setName(""); setRoot(""); setCreateIfMissing(false); setCreateError(null); }
                 }}
                 placeholder="/path/to/project"
                 style={{
@@ -323,6 +326,20 @@ export function ProjectSwitcher({ onProjectSelected }: Props) {
                   boxSizing: "border-box",
                 }}
               />
+              <label style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 5, fontSize: 11, color: "var(--text-muted)", cursor: "pointer", userSelect: "none" }}>
+                <input
+                  type="checkbox"
+                  checked={createIfMissing}
+                  onChange={(e) => setCreateIfMissing(e.target.checked)}
+                  style={{ width: 12, height: 12, cursor: "pointer" }}
+                />
+                目录不存在则自动创建
+              </label>
+              {createIfMissing && (
+                <div style={{ marginTop: 4, fontSize: 11, color: "#16a34a", lineHeight: 1.35 }}>
+                  将自动创建该目录后进入项目
+                </div>
+              )}
               {createError && (
                 <div style={{ marginTop: 5, color: "#dc2626", fontSize: 11, lineHeight: 1.35, overflowWrap: "anywhere" }}>
                   {createError}
@@ -343,7 +360,7 @@ export function ProjectSwitcher({ onProjectSelected }: Props) {
                   {creating ? "创建中…" : "创建"}
                 </button>
                 <button
-                  onClick={() => { setCreateOpen(false); setName(""); setRoot(""); setCreateError(null); }}
+                  onClick={() => { setCreateOpen(false); setName(""); setRoot(""); setCreateIfMissing(false); setCreateError(null); }}
                   style={{
                     flex: 1, padding: "4px 0",
                     background: "var(--bg-hover)", border: "1px solid var(--border)", borderRadius: 5,

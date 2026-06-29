@@ -16,10 +16,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
-    const body = (await req.json().catch(() => ({}))) as { name?: unknown; root?: unknown };
-    const patch: { name?: string; root?: string } = {};
+    const body = (await req.json().catch(() => ({}))) as { name?: unknown; root?: unknown; createIfMissing?: unknown };
+    const patch: { name?: string; root?: string; createIfMissing?: boolean } = {};
     if (typeof body.name === "string") patch.name = body.name;
     if (typeof body.root === "string") patch.root = body.root;
+    if (body.createIfMissing === true) patch.createIfMissing = true;
     return NextResponse.json(new ProjectRegistry().update(id, patch));
   } catch (error) {
     return domainErrorResponse(error);

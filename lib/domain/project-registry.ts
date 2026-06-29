@@ -71,11 +71,11 @@ export class ProjectRegistry {
     return found;
   }
 
-  create(input: { name: string; root: string }): Project {
+  create(input: { name: string; root: string; createIfMissing?: boolean }): Project {
     const name = (input.name ?? "").trim();
     if (!name) throw new ProjectError("INVALID", "name 不能为空");
 
-    const root = this.validateRoot(input.root);
+    const root = this.validateRoot(input.root, input.createIfMissing);
 
     const projects = this.list();
     if (projects.some((p) => p.name === name)) {
@@ -92,7 +92,7 @@ export class ProjectRegistry {
     return project;
   }
 
-  update(id: string, patch: { name?: string; root?: string }): Project {
+  update(id: string, patch: { name?: string; root?: string; createIfMissing?: boolean }): Project {
     const projects = this.list();
     const idx = projects.findIndex((p) => p.id === id);
     if (idx === -1) throw new ProjectError("NOT_FOUND", `项目不存在: ${id}`);
@@ -107,7 +107,7 @@ export class ProjectRegistry {
       next.name = name;
     }
     if (patch.root !== undefined) {
-      next.root = this.validateRoot(patch.root);
+      next.root = this.validateRoot(patch.root, patch.createIfMissing);
     }
 
     projects[idx] = next;
@@ -124,7 +124,7 @@ export class ProjectRegistry {
     this.writeAll(projects.filter((p) => p.id !== id));
   }
 
-  private validateRoot(rootRaw: string): string {
+  private validateRoot(rootRaw: string, createIfMissing = false): string {
     const trimmed = (rootRaw ?? "").trim();
     if (!trimmed) throw new ProjectError("INVALID", "root 不能为空");
     const root = normalizeRoot(trimmed);
@@ -132,7 +132,23 @@ export class ProjectRegistry {
     try {
       stat = statSync(root);
     } catch {
-      throw new ProjectError("INVALID", `root 路径不存在: ${root}`);
+      // 仅当用户显式勾选「不存在则自动创建」时才建目录（默认不触盘，守「删项目不删盘」契约）。
+      if (!createIfMissing) {
+        throw new ProjectError("INVALID", `root 路径不存在: ${root}`);
+      }
+      // mkdir 的 fs error（ENOTDIR/EACCES/ENOENT 等）必须转 ProjectError → 422，
+      // 否则裸 ErrnoException 经 errors.ts 的 STATUS_BY_CODE 映射会落 500、泄 raw 路径/errno。
+      try {
+        mkdirSync(root, { recursive: true });
+      } catch (e) {
+        throw new ProjectError("INVALID", `无法创建目录: ${root}（${(e as NodeJS.ErrnoException).code}）`);
+      }
+      // 建好后再 statSync 复查 isDirectory()，防 TOCTOU（建成功但被替换/竞态变成非目录）。
+      try {
+        stat = statSync(root);
+      } catch {
+        throw new ProjectError("INVALID", `root 路径不存在: ${root}`);
+      }
     }
     if (!stat.isDirectory()) {
       throw new ProjectError("INVALID", `root 不是目录: ${root}`);

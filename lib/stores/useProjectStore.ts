@@ -57,7 +57,7 @@ interface ProjectState {
   /** 选中 / 取消选中（null）项目，并持久化。 */
   select: (id: string | null) => void;
   /** 新建项目：POST 后 refresh，再选中新项目。失败时抛出（含后端 422 的 error 文本）。 */
-  create: (input: { name: string; root: string }) => Promise<Project>;
+  create: (input: { name: string; root: string; createIfMissing?: boolean }) => Promise<Project>;
   /** 删除项目：仅移除注册项（后端不删盘）；若删的是当前项目则取消选中。 */
   remove: (id: string) => Promise<void>;
 }

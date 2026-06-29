@@ -26,6 +26,7 @@ export function ProjectHome() {
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
   const [root, setRoot] = useState("");
+  const [createIfMissing, setCreateIfMissing] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -48,6 +49,7 @@ export function ProjectHome() {
     setCreateOpen(false);
     setName("");
     setRoot("");
+    setCreateIfMissing(false);
     setCreateError(null);
   }, []);
 
@@ -57,14 +59,14 @@ export function ProjectHome() {
     setCreateError(null);
     try {
       // create 成功后 store 内部会 select 新项目 → 入口分流自动切到工作台
-      await useProjectStore.getState().create({ name, root });
+      await useProjectStore.getState().create({ name, root, createIfMissing });
       closeCreate();
     } catch (e) {
       setCreateError(e instanceof Error ? e.message : String(e));
     } finally {
       setCreating(false);
     }
-  }, [creating, name, root, closeCreate]);
+  }, [creating, name, root, createIfMissing, closeCreate]);
 
   const handleEnter = useCallback((p: Project) => {
     // 选中即进工作台（入口分流据 currentProjectId 切换）
@@ -149,6 +151,20 @@ export function ProjectHome() {
                 boxSizing: "border-box",
               }}
             />
+            <label style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 8, fontSize: 12, color: "var(--text-muted)", cursor: "pointer", userSelect: "none" }}>
+              <input
+                type="checkbox"
+                checked={createIfMissing}
+                onChange={(e) => setCreateIfMissing(e.target.checked)}
+                style={{ cursor: "pointer" }}
+              />
+              目录不存在则自动创建
+            </label>
+            {createIfMissing && (
+              <div style={{ marginTop: 6, fontSize: 12, color: "#16a34a", lineHeight: 1.4 }}>
+                将自动创建该目录后进入项目
+              </div>
+            )}
             {createError && (
               <div style={{ marginTop: 8, color: "#dc2626", fontSize: 12, lineHeight: 1.4, overflowWrap: "anywhere" }}>
                 {createError}

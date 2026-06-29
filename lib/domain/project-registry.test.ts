@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, existsSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -57,6 +57,50 @@ describe("ProjectRegistry", () => {
 
   it("create() root 不存在抛 INVALID", () => {
     expectCode(() => registry.create({ name: "demo", root: join(dir, "nope") }), "INVALID");
+  });
+
+  it("create() 不存在路径 + createIfMissing:true 自动建目录并放行", () => {
+    const newRoot = join(dir, "auto", "created");
+    const project = registry.create({ name: "demo", root: newRoot, createIfMissing: true });
+    expect(existsSync(newRoot)).toBe(true);
+    expect(project.root).toBe(newRoot);
+  });
+
+  it("create() 不存在路径 + 不传 createIfMissing 维持 INVALID（不触盘）", () => {
+    const newRoot = join(dir, "still-nope");
+    expectCode(() => registry.create({ name: "demo", root: newRoot }), "INVALID");
+    expect(existsSync(newRoot)).toBe(false);
+  });
+
+  it("update({root:不存在, createIfMissing:true}) 建目录并改 root", () => {
+    const a = registry.create({ name: "demo", root: dir });
+    const newRoot = join(dir, "moved", "here");
+    const updated = registry.update(a.id, { root: newRoot, createIfMissing: true });
+    expect(existsSync(newRoot)).toBe(true);
+    expect(updated.root).toBe(newRoot);
+    expect(registry.get(a.id).root).toBe(newRoot);
+  });
+
+  it("createIfMissing 遇 ENOTDIR（父级是文件）转 422 友好报错而非裸 fs error", () => {
+    // 父级路径段是一个文件 → mkdir 子目录会抛 ENOTDIR
+    const fileParent = join(dir, "a-file");
+    writeFileSync(fileParent, "x", "utf-8");
+    const badRoot = join(fileParent, "child");
+    expectCode(() => registry.create({ name: "demo", root: badRoot, createIfMissing: true }), "INVALID");
+  });
+
+  it("createIfMissing 遇 EACCES（父目录无写权限）转 422 友好报错而非裸 fs error", () => {
+    // chmod 0500 父目录后 mkdir 子目录 → uid 非 root 触发 EACCES
+    const ro = join(dir, "readonly");
+    mkdirSync(ro);
+    chmodSync(ro, 0o500);
+    try {
+      const badRoot = join(ro, "child");
+      expectCode(() => registry.create({ name: "demo", root: badRoot, createIfMissing: true }), "INVALID");
+    } finally {
+      // 复原权限，否则 afterEach rmSync 清理失败污染后续用例
+      chmodSync(ro, 0o700);
+    }
   });
 
   it("create() 重名抛 INVALID", () => {

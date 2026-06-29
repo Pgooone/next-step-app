@@ -589,8 +589,8 @@ export function AppShell() {
             style={{
               flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
               height: 32, padding: 0, background: "none", border: "none",
-              borderRadius: 9, color: "var(--text-muted)", cursor: disabled ? "default" : "pointer",
-              fontSize: 12, opacity: disabled ? 0.35 : 1,
+              borderRadius: 9, color: "var(--text)", cursor: disabled ? "default" : "pointer",
+              fontSize: 13, opacity: disabled ? 0.35 : 1,
               transition: "background 0.12s, color 0.12s",
             }}
             onMouseEnter={(e) => { if (!disabled) { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text)"; } }}

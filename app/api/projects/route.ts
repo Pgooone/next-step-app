@@ -14,10 +14,11 @@ export async function GET() {
 // POST /api/projects — 新建项目  body: { name, root }
 export async function POST(req: Request) {
   try {
-    const body = (await req.json().catch(() => ({}))) as { name?: unknown; root?: unknown };
+    const body = (await req.json().catch(() => ({}))) as { name?: unknown; root?: unknown; createIfMissing?: unknown };
     const name = typeof body.name === "string" ? body.name : "";
     const root = typeof body.root === "string" ? body.root : "";
-    const project = new ProjectRegistry().create({ name, root });
+    const createIfMissing = body.createIfMissing === true;
+    const project = new ProjectRegistry().create({ name, root, createIfMissing });
     return NextResponse.json(project, { status: 201 });
   } catch (error) {
     return domainErrorResponse(error);
