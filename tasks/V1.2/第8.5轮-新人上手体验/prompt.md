@@ -11,7 +11,8 @@
   - 设计稿留痕（行为基准、不入 git）：`Next-Step/.superpowers/brainstorm/9395-*/content/*.html`。
 - **任务卡**：本目录 `T1`~`T5` + `progress.md`。
 - **环境**：dev 跑 `:30141`（真应用验收用）；可视化伴侣 `:58888`（设计期产物，实现期可关）。
-- **状态**：🚧 设计定稿 → **2026-06-29 ultracode 对抗审计 + lead file:line 复核 + spec/任务卡订正完成**（裁决 `GO_WITH_FIXES`：2 道承重 blocker〔均 T1 深度轨〕+ 4 major + 数 minor，逐条订正进 spec/卡；剔除 9 条 over-claim。决策 D-V1.2-64~66、ADR D-R8.5-01~07）。**未实现、未 commit、未 push**；**节奏 D-V1.2-66 = 等用户复审订正后的 spec/卡、批准后才开工**。
+- **状态**：设计定稿 → ultracode 审计订正（`GO_WITH_FIXES`，2 承重 blocker〔均 T1〕+4 major 逐条订正、剔 9 over-claim）→ 用户批准 → **✅ 批次 1 主体 T2/T3/T4 全收官 + push**：agent team 串行 + lead 双层验收（亲读 diff/复跑门禁/独立逻辑复核/真浏览器亲看截图），T2 `47a46ac` 流水线 UI / T4 `4ad9764` 文案中文化 / T3 `2dc4b71` 入口+建项目，含回写共 9 commit `bca110f`→`cc76b64`，**已 ff master、ls-remote 实测 origin/v1.2=origin/master=本地=`cc76b64` 四引用全同步**。决策 D-V1.2-64~70、ADR D-R8.5-01~11。
+- **⏸ 剩余待续（用户拍板 D-V1.2-70）**：**T5 深色 shader 首页·试点**（prep 已 recon 就绪：shader 移植设计稿原生 WebGL 零依赖、字体取舍 D-V1.2-69 自托管标题+正文 CJK 系统回退、fontTools 已装、gstatic `--noproxy` 实测可下 woff2）+ **T1 首用引导 Tour·批次2**（先做 §0 两模态 `initial*` 承重改造 + mini-spike）。**👉 当前状态 / 每卡续做点以 [`progress.md`](progress.md) 为准**（读它 + 对应任务卡 + 前端设计 §1/§6 即可接上）。
 - **T1 承重前提订正（重要）**：原设计假定深度轨 `before()` 能「调模态 open/setView」**实则不存在**（两模态 view 是内部 useState）→ T1 §0 新增「两模态加 `initial*` props / 上提 tour 编排 state」承重改造 + mini-spike 先行；深度轨步 4/5/6 在新用户空环境改「锚恒在元素 + 降级文案」（不锚 run 态元素）。详 `前端设计.md` §1 订正。
 
 ## 1. 角色与目标
