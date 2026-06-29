@@ -1101,6 +1101,10 @@ function AgentFields({
                   }))
                 }
                 style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
                   flex: 1,
                   padding: "6px 0",
                   borderRadius: 6,
@@ -1112,21 +1116,38 @@ function AgentFields({
                 }}
               >
                 {opt.label}
+                {/* C11：文档型为推荐默认，加小角标提示新用户优先选它。 */}
+                {opt.value === "doc" && (
+                  <span
+                    style={{
+                      flexShrink: 0,
+                      padding: "1px 6px",
+                      borderRadius: 8,
+                      fontSize: 10,
+                      fontWeight: 600,
+                      color: "var(--accent)",
+                      background: "var(--accent-soft)",
+                      border: "1px solid var(--accent)",
+                      lineHeight: 1.3,
+                    }}
+                  >
+                    推荐
+                  </span>
+                )}
               </button>
             );
           })}
         </div>
+        {/* C11：场景化引导——两种模式各自适用什么角色，文档型为推荐默认（spec §5.3 定稿）。 */}
         <div
           style={{
             fontSize: 11,
             lineHeight: 1.5,
             marginTop: 4,
-            color: form.mode === "coding" ? "#dc2626" : "var(--text-dim)",
+            color: "var(--text-dim)",
           }}
         >
-          {form.mode === "coding"
-            ? "编码型：使用下方勾选的内置工具（含 bash/write/edit），可直接读写磁盘、执行命令，不经提议确认。"
-            : "文档型：使用受限工具集（read/grep/find/ls + 提议工具），改受管文档须经按块确认；不支持 bash/write/edit。"}
+          文档型（推荐）：写需求/设计/文档等产物，改动按块确认更安全（不写盘、不跑命令）。编码型：直接读写文件、跑命令，适合落地写代码的角色。
         </div>
       </div>
 

@@ -11,6 +11,7 @@ import { useAgentSession, type AgentPhase } from "@/hooks/useAgentSession";
 import { useAudio } from "@/hooks/useAudio";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { useArtifactStore } from "@/lib/stores/useArtifactStore";
+import { sliceByCodePoint, codePointLength } from "@/lib/code-point-slice";
 import { PendingChangeCard } from "./PendingChangeCard";
 
 /**
@@ -93,34 +94,24 @@ interface Props {
 function phaseLabel(phase: AgentPhase): string {
   if (phase?.kind === "running_tools") {
     const names = phase.tools.map((t) => t.name);
-    if (names.length === 0) return "Running tool...";
-    if (names.length === 1) return `Running ${names[0]}...`;
-    if (names.length <= 3) return `Running ${names.join(", ")}...`;
-    return `Running ${names.slice(0, 2).join(", ")} (+${names.length - 2})...`;
+    if (names.length === 0) return "运行工具中…";
+    if (names.length === 1) return `运行 ${names[0]} 中…`;
+    if (names.length <= 3) return `运行 ${names.join("、")} 中…`;
+    return `运行 ${names.slice(0, 2).join("、")}（+${names.length - 2}）中…`;
   }
-  if (phase?.kind === "waiting_model") return "Waiting for model...";
-  return "Thinking...";
+  if (phase?.kind === "waiting_model") return "等待模型中…";
+  return "思考中…";
 }
 
 const TYPEWRITER_PHRASES = [
-  "ready when you are.",
-  "ask me anything.",
-  "let's build something cool.",
-  "explore your codebase.",
-  "draft an email.",
-  "summarize that paper.",
-  "plan your weekend.",
-  "explain it like I'm five.",
-  "pair-program with me.",
-  "fix that pesky bug.",
-  "translate to 中文.",
-  "write a haiku.",
-  "brainstorm ideas.",
-  "review my pull request.",
-  "what should we cook tonight?",
-  "ship it.",
-  "make it pretty.",
-  "rubber-duck with me.",
+  "派一次多 Agent 协作",
+  "写一份需求文档",
+  "让架构师出技术方案",
+  "审查这段实现",
+  "拆解一个新功能",
+  "为项目排条流水线",
+  "总结这份文档",
+  "和某个 Agent 单聊",
 ];
 
 function Typewriter({ phrases }: { phrases: string[] }) {
@@ -143,8 +134,10 @@ function Typewriter({ phrases }: { phrases: string[] }) {
       setDeleting(false);
       setPhraseIdx((i) => (i + 1) % phrases.length);
     } else {
-      const next = deleting ? current.slice(0, text.length - 1) : current.slice(0, text.length + 1);
-      timeout = setTimeout(() => setText(next), deleting ? 28 : 55);
+      // 按码点推进/回删，避免把 emoji/生僻字（代理对）切成半个字符。
+      const len = codePointLength(text);
+      const next = deleting ? sliceByCodePoint(current, len - 1) : sliceByCodePoint(current, len + 1);
+      timeout = setTimeout(() => setText(next), deleting ? 28 : 90);
     }
     return () => clearTimeout(timeout);
   }, [text, deleting, phraseIdx, phrases]);
@@ -274,7 +267,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center text-text-muted">
-        Loading session...
+        加载会话中…
       </div>
     );
   }

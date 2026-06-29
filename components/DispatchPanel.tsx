@@ -281,6 +281,10 @@ function DispatchForm({
         <label style={labelStyle}>
           选择 Agent（{selectedIds.length}/{MAX_AGENTS}，至少 {MIN_AGENTS} 个）
         </label>
+        {/* C7：解释「最多 3 个」来自全局并发上限（非子任务上限），并指出可在配置文件调整。 */}
+        <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5, marginBottom: 8 }}>
+          最多 3 个：受并发上限约束，可在 ~/.pi/factory-config.json 调整。
+        </div>
         {/* F6：串行执行提示——选中顺序即执行顺序。 */}
         <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5, marginBottom: 8 }}>
           将按勾选顺序串行执行，上游产物自动喂给下游。
