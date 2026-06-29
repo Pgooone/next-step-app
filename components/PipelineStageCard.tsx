@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { agentAvatarDataUri } from "@/lib/pipeline/avatar";
 import { statusToProgress } from "@/lib/pipeline/dot-matrix";
 import StageDotMatrix from "@/components/StageDotMatrix";
@@ -62,12 +62,38 @@ export default function PipelineStageCard({
   // click 二级菜单（T6）：与 hover 浮窗分属两套独立 state，互不合并。
   const [menuOpen, setMenuOpen] = useState(false);
   const badge = badgeFor(stage);
+
+  // N2：锚父卡 ref，传给两浮层做 fixed 定位的 getBoundingClientRect 基准（脱离 overflow:hidden 裁切）。
+  const browRef = useRef<HTMLDivElement | null>(null);
+  // N2 防闪烁：hover 隐藏 140ms 防抖——鼠标穿过 6px 间隙进浮层时不立即 setHover(false)，
+  // 配合浮层自身 onMouseEnter 取消隐藏（使浮层可达可滚）。
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelHide = () => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+  };
+  const scheduleHide = () => {
+    cancelHide();
+    hideTimerRef.current = setTimeout(() => setHover(false), 140);
+  };
+  // menuOpen 时无需 hover 浮层（已抑制）→ 清计时器；unmount 兜底清。
+  useEffect(() => {
+    if (menuOpen) cancelHide();
+  }, [menuOpen]);
+  useEffect(() => () => cancelHide(), []);
+
   return (
     <div
+      ref={browRef}
       className={`brow ${statusClass(stage)}`}
       style={{ position: "relative" }}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
+      onMouseEnter={() => {
+        cancelHide();
+        setHover(true);
+      }}
+      onMouseLeave={scheduleHide}
       onClick={() => setMenuOpen(true)}
     >
       {/* 区1 头像（dicebear data: URI，无法走 next/image，沿用既有 <img> 约定） */}
@@ -96,12 +122,19 @@ export default function PipelineStageCard({
       {/* 区4 右箭头 */}
       <span className="chev">›</span>
 
-      {/* hover 浮窗：menuOpen 时抑制（避免两浮层叠加） */}
+      {/* hover 浮窗：menuOpen 时抑制（避免两浮层叠加）。N2：传 anchorRef 做 fixed 定位 + 浮层自身 hover 防抖。 */}
       {hover && !menuOpen && (
-        <StageHoverPreview stage={stage} stageName={stageName} totalStages={totalStages} />
+        <StageHoverPreview
+          stage={stage}
+          stageName={stageName}
+          totalStages={totalStages}
+          anchorRef={browRef}
+          onMouseEnter={cancelHide}
+          onMouseLeave={scheduleHide}
+        />
       )}
 
-      {/* click 二级菜单（T6） */}
+      {/* click 二级菜单（T6）。N2：传 anchorRef 做 fixed 定位（脱离 overflow:hidden）。 */}
       {menuOpen && (
         <StageSessionMenu
           stage={stage}
@@ -109,6 +142,7 @@ export default function PipelineStageCard({
           onOpenSession={onOpenSession}
           onOpenArtifact={onOpenArtifact}
           onClose={() => setMenuOpen(false)}
+          anchorRef={browRef}
         />
       )}
     </div>

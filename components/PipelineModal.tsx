@@ -245,6 +245,7 @@ export default function PipelineModal({
                   onOpenArtifact={onOpenArtifact}
                   onOpenSession={onOpenSession}
                   onEditBlueprint={() => setView("editor")}
+                  onSessionsChanged={onSessionsChanged}
                 />
               </>
             ) : (
@@ -275,6 +276,9 @@ export default function PipelineModal({
                 data-testid="pipeline-edit-btn"
                 onClick={() => setView("editor")}
                 style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
                   fontSize: 12,
                   padding: "5px 12px",
                   background: "var(--bg-hover)",
@@ -284,7 +288,22 @@ export default function PipelineModal({
                   cursor: "pointer",
                 }}
               >
-                + 新建流水线
+                {/* lucide Pencil 内联 SVG（避免 obscure 字形豆腐块，仿 PipelineBoard fork 图标用法）。 */}
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                  <path d="m15 5 4 4" />
+                </svg>
+                编辑流水线
               </button>
             </div>
           )}

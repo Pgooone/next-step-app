@@ -1,7 +1,9 @@
 "use client";
 
+import { useLayoutEffect, useState } from "react";
 import { agentAvatarDataUri } from "@/lib/pipeline/avatar";
 import { STATUS_META } from "@/lib/pipeline/status-meta";
+import { computeFixedPopover } from "@/lib/pipeline/popover-position";
 import type { PipelineRunStage } from "@/lib/domain/pipeline-run-store"; // 仅类型
 
 /** 把 startedAt/finishedAt 算成「耗时 1m23s」；未完成显「运行中」、未起显「—」。 */
@@ -38,33 +40,66 @@ const bodyTextStyle: React.CSSProperties = {
  * MVP：run 模型只有 subTask/artifactId/startedAt/finishedAt，范围/上游/验收/最近动作无对应字段 → 渲染「暂无」；
  * 耗时用 startedAt/finishedAt 真实算。
  */
+const POPOVER_WIDTH = 330;
+const MAX_HEIGHT_CAP = 330;
+
 export default function StageHoverPreview({
   stage,
   stageName,
   totalStages,
+  anchorRef,
+  onMouseEnter,
+  onMouseLeave,
 }: {
   stage: PipelineRunStage;
   stageName?: string;
   totalStages?: number;
+  /** 锚父卡（.brow）的 ref，用于 getBoundingClientRect 算 fixed 坐标（N2 脱离 overflow:hidden 裁切）。 */
+  anchorRef?: React.RefObject<HTMLElement | null>;
+  /** N2 防闪烁：浮层自身成为 hover 目标——鼠标进浮层取消隐藏 / 离开浮层重新计时隐藏。 */
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
 }) {
   const meta = STATUS_META[stage.status];
   const roleLabel = totalStages
     ? `阶段 ${stage.order} / ${totalStages}`
     : `阶段 ${stage.order}`;
+
+  // N2：fixed 坐标必须在 useLayoutEffect 测量后存 state（渲染期/SSR 不能同步 getBoundingClientRect、首帧 rect 为 0）。
+  const [placement, setPlacement] = useState<{
+    left: number;
+    top: number | null;
+    bottom: number | null;
+    maxHeight: number;
+  } | null>(null);
+  useLayoutEffect(() => {
+    const el = anchorRef?.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const p = computeFixedPopover(rect, POPOVER_WIDTH, MAX_HEIGHT_CAP);
+    setPlacement({ left: p.left, top: p.top, bottom: p.bottom, maxHeight: p.maxHeight });
+  }, [anchorRef]);
+
   return (
     <div
+      data-testid="stage-hover-preview"
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
       style={{
-        position: "absolute",
-        top: "calc(100% + 6px)",
-        left: 0,
+        position: "fixed",
+        // 未测量出坐标前先隐藏（避免首帧落 0,0 闪一下）；above 用 bottom 锚、below 用 top 锚。
+        top: placement ? (placement.top ?? undefined) : 0,
+        bottom: placement?.bottom ?? undefined,
+        left: placement?.left ?? 0,
+        visibility: placement ? "visible" : "hidden",
         zIndex: 50,
-        width: 330,
-        maxWidth: "100%",
+        width: POPOVER_WIDTH,
+        maxWidth: "calc(100vw - 16px)",
         background: "var(--pop)",
         border: "1px solid var(--line)",
         borderRadius: 13,
         padding: "0.9rem",
-        maxHeight: 300,
+        maxHeight: placement?.maxHeight ?? MAX_HEIGHT_CAP,
         overflowY: "auto",
         color: "var(--task)",
         boxShadow: "0 12px 34px rgba(0,0,0,0.18)",

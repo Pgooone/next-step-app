@@ -18,11 +18,14 @@ export default function PipelineBoard({
   onOpenArtifact,
   onOpenSession,
   onEditBlueprint,
+  onSessionsChanged,
 }: {
   isDark: boolean;
   onOpenArtifact?: (artifactId: string) => void;
   onOpenSession?: (sessionId: string) => void;
   onEditBlueprint?: () => void;
+  /** N3：board 开着时 currentRun 跑到终态 → 通知一次刷新左栏会话分组（仿 DispatchPanel）。 */
+  onSessionsChanged?: () => void;
 }) {
   const { currentRun, runs, pollCurrentRun, selectRun, cancelRun } = usePipelineStore(
     useShallow((s) => ({
@@ -44,6 +47,18 @@ export default function PipelineBoard({
     }, POLL_INTERVAL);
     return () => clearInterval(timer);
   }, [currentRun?.id, currentRun?.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // N3：currentRun 进终态（done/failed）即通知一次刷新「会话分组」（仿 DispatchPanel.tsx:117-123）。
+  // 独立 ref 按 run.id 去重——pollCurrentRun 每 2s 产新 currentRun 对象，依赖只钉 id/status，不依赖整对象。
+  // 已接受限制：本 effect 随 board 卸载（模态关/切 tab）停 → 仅保证「board 开着时」run 跑完刷新。
+  const notifiedRunRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!currentRun) return;
+    if (currentRun.status !== "done" && currentRun.status !== "failed") return; // 仅终态
+    if (notifiedRunRef.current === currentRun.id) return; // 已通知过
+    notifiedRunRef.current = currentRun.id;
+    onSessionsChanged?.();
+  }, [currentRun?.id, currentRun?.status, onSessionsChanged]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const themeClass = isDark ? "t-kimi-dark" : "t-kimi-light";
 
@@ -78,23 +93,38 @@ export default function PipelineBoard({
       )}
 
       {isEmpty ? (
-        <button
-          data-testid="pipeline-empty-new"
-          onClick={onEditBlueprint}
-          style={{
-            display: "block",
-            width: "100%",
-            padding: "2rem 1rem",
-            background: "var(--container)",
-            border: "1px dashed var(--line)",
-            borderRadius: 12,
-            color: "var(--sub)",
-            fontSize: "0.85rem",
-            cursor: "pointer",
-          }}
-        >
-          + 新建流水线
-        </button>
+        <>
+          {/* N4：空态说明（流水线 vs 快速派发），与 DispatchPanel 引导文案同风格。 */}
+          <div
+            data-testid="pipeline-empty-note"
+            style={{
+              fontSize: "0.8rem",
+              color: "var(--sub)",
+              lineHeight: 1.5,
+              marginBottom: "0.6rem",
+              textAlign: "center",
+            }}
+          >
+            流水线 = 多个 Agent 按固定顺序接力、可保存复用；只想临时派一次 → 用上方「快速派发」。
+          </div>
+          <button
+            data-testid="pipeline-empty-new"
+            onClick={onEditBlueprint}
+            style={{
+              display: "block",
+              width: "100%",
+              padding: "2rem 1rem",
+              background: "var(--container)",
+              border: "1px dashed var(--line)",
+              borderRadius: 12,
+              color: "var(--sub)",
+              fontSize: "0.85rem",
+              cursor: "pointer",
+            }}
+          >
+            + 新建流水线
+          </button>
+        </>
       ) : currentRun ? (
         <>
           {/* 容器头：行1 分支图标 + 名 + ④/N；行2 全局进度条 + 状态字 */}

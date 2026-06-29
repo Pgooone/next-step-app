@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { MessageView } from "@/components/MessageView";
+import { computeFixedPopover } from "@/lib/pipeline/popover-position";
 // D-R7B-07：领域层（pipeline-run-store）含 node:fs，只能 import type，绝不 value-import
 // （否则 "use client" 链把 node:fs 拖进客户端 bundle → 全站 500）。会话记录经 fetch JSON 取。
 import type { PipelineRunStage } from "@/lib/domain/pipeline-run-store";
@@ -20,6 +21,8 @@ import type { AgentMessage, ToolResultMessage } from "@/lib/types";
  *
  * hover 浮窗（StageHoverPreview）与本 click 菜单分属两套独立 state，互不合并。
  */
+const MENU_WIDTH = 380;
+
 export default function StageSessionMenu({
   stage,
   stages,
@@ -27,6 +30,7 @@ export default function StageSessionMenu({
   onOpenArtifact,
   onSelectStage,
   onClose,
+  anchorRef,
 }: {
   stage: PipelineRunStage;
   stages: PipelineRunStage[];
@@ -34,9 +38,29 @@ export default function StageSessionMenu({
   onOpenArtifact?: (artifactId: string) => void;
   onSelectStage?: (stage: PipelineRunStage) => void;
   onClose?: () => void;
+  /** 锚父卡（.brow）的 ref，用于 getBoundingClientRect 算 fixed 坐标（N2 脱离 overflow:hidden 裁切）。 */
+  anchorRef?: React.RefObject<HTMLElement | null>;
 }) {
   // 当前查看的 stage：初始 = 传入 stage；区3 切换它（菜单自管理，onSelectStage 仅作可选回调透出）。
   const [viewStage, setViewStage] = useState<PipelineRunStage>(stage);
+
+  // N2：fixed 坐标在 useLayoutEffect 测量后存 state（渲染期/SSR 不能同步 getBoundingClientRect）。
+  // maxHeightCap = 80vh，helper 再按选中侧可用空间钳到 min(80vh, 可用)。
+  const [placement, setPlacement] = useState<{
+    left: number;
+    top: number | null;
+    bottom: number | null;
+    maxHeight: number;
+  } | null>(null);
+  useLayoutEffect(() => {
+    const el = anchorRef?.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const cap = typeof window !== "undefined" ? window.innerHeight * 0.8 : 600;
+    const p = computeFixedPopover(rect, MENU_WIDTH, cap);
+    setPlacement({ left: p.left, top: p.top, bottom: p.bottom, maxHeight: p.maxHeight });
+  }, [anchorRef]);
+
   const [messages, setMessages] = useState<AgentMessage[] | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -100,12 +124,16 @@ export default function StageSessionMenu({
       data-testid="stage-session-menu"
       onClick={(e) => e.stopPropagation()}
       style={{
-        position: "absolute",
-        top: "calc(100% + 6px)",
-        left: 0,
+        position: "fixed",
+        // 未测量出坐标前先隐藏（避免首帧落 0,0 闪一下）；above 用 bottom 锚、below 用 top 锚。
+        top: placement ? (placement.top ?? undefined) : 0,
+        bottom: placement?.bottom ?? undefined,
+        left: placement?.left ?? 0,
+        visibility: placement ? "visible" : "hidden",
         zIndex: 60,
-        width: 380,
-        maxWidth: "100%",
+        width: MENU_WIDTH,
+        maxWidth: "calc(100vw - 16px)",
+        maxHeight: placement?.maxHeight ?? "80vh",
         background: "var(--pop)",
         border: "1px solid var(--line)",
         borderRadius: 13,
@@ -117,8 +145,8 @@ export default function StageSessionMenu({
         gap: "0.6rem",
       }}
     >
-      {/* 头部：名 + 序号 + 关闭 */}
-      <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+      {/* 头部：名 + 序号 + 关闭（钉死不跟滚：flex none） */}
+      <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", flex: "none" }}>
         <span style={{ fontWeight: 700, fontSize: "0.86rem", color: "var(--text)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {viewStage.agentName ?? viewStage.agentId}
         </span>
@@ -142,12 +170,13 @@ export default function StageSessionMenu({
         </button>
       </div>
 
-      {/* 区1 只读 transcript（≤ ~320px 可滚动） */}
+      {/* 区1 只读 transcript（flex:1 填充、内部滚动；底部按钮钉死不跟滚） */}
       <div
         style={{
           borderTop: "1px solid var(--line)",
           paddingTop: "0.55rem",
-          maxHeight: 320,
+          flex: 1,
+          minHeight: 0,
           overflowY: "auto",
         }}
       >
@@ -174,58 +203,61 @@ export default function StageSessionMenu({
         )}
       </div>
 
-      {/* 区2 产物 */}
-      {viewStage.artifactId && (
-        <button
-          data-testid="stage-menu-open-artifact"
-          onClick={() => onOpenArtifact?.(viewStage.artifactId!)}
-          style={menuActionStyle}
-        >
-          📄 打开受管文档
-        </button>
-      )}
+      {/* 底部钉死区（不跟滚：flex none）：区2 产物 + 区4 进入对话 + 区3 切换条 */}
+      <div style={{ flex: "none", display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+        {/* 区2 产物 */}
+        {viewStage.artifactId && (
+          <button
+            data-testid="stage-menu-open-artifact"
+            onClick={() => onOpenArtifact?.(viewStage.artifactId!)}
+            style={menuActionStyle}
+          >
+            📄 打开受管文档
+          </button>
+        )}
 
-      {/* 区4「进入完整对话」（done/历史也显示，re-attach 解冻合法） */}
-      {sid !== null && (
-        <button
-          data-testid="stage-menu-open-session"
-          onClick={() => onOpenSession?.(sid)}
-          style={menuActionStyle}
-        >
-          进入完整对话 →
-        </button>
-      )}
+        {/* 区4「进入完整对话」（done/历史也显示，re-attach 解冻合法） */}
+        {sid !== null && (
+          <button
+            data-testid="stage-menu-open-session"
+            onClick={() => onOpenSession?.(sid)}
+            style={menuActionStyle}
+          >
+            进入完整对话 →
+          </button>
+        )}
 
-      {/* 区3 底部 agent 切换条：全枚举 stages，sessionId==null 置灰 */}
-      {stages.length > 0 && (
-        <div style={{ borderTop: "1px solid var(--line)", paddingTop: "0.5rem", display: "flex", flexWrap: "wrap", gap: "0.3rem" }}>
-          {stages.map((s) => {
-            const disabled = s.sessionId === null;
-            const active = s.order === viewStage.order;
-            return (
-              <button
-                key={s.order}
-                disabled={disabled}
-                onClick={() => selectStage(s)}
-                title={disabled ? "该阶段尚未开始" : s.agentName ?? s.agentId}
-                style={{
-                  fontSize: "0.66rem",
-                  padding: "0.12rem 0.45rem",
-                  borderRadius: 999,
-                  border: active ? "1px solid var(--accent)" : "1px solid var(--line)",
-                  background: active ? "var(--run-bg)" : "none",
-                  color: disabled ? "var(--task)" : active ? "var(--accent)" : "var(--sub)",
-                  cursor: disabled ? "default" : "pointer",
-                  opacity: disabled ? 0.5 : 1,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {String(s.order).padStart(2, "0")} {s.agentName ?? s.agentId}
-              </button>
-            );
-          })}
-        </div>
-      )}
+        {/* 区3 底部 agent 切换条：全枚举 stages，sessionId==null 置灰 */}
+        {stages.length > 0 && (
+          <div style={{ borderTop: "1px solid var(--line)", paddingTop: "0.5rem", display: "flex", flexWrap: "wrap", gap: "0.3rem" }}>
+            {stages.map((s) => {
+              const disabled = s.sessionId === null;
+              const active = s.order === viewStage.order;
+              return (
+                <button
+                  key={s.order}
+                  disabled={disabled}
+                  onClick={() => selectStage(s)}
+                  title={disabled ? "该阶段尚未开始" : s.agentName ?? s.agentId}
+                  style={{
+                    fontSize: "0.66rem",
+                    padding: "0.12rem 0.45rem",
+                    borderRadius: 999,
+                    border: active ? "1px solid var(--accent)" : "1px solid var(--line)",
+                    background: active ? "var(--run-bg)" : "none",
+                    color: disabled ? "var(--task)" : active ? "var(--accent)" : "var(--sub)",
+                    cursor: disabled ? "default" : "pointer",
+                    opacity: disabled ? 0.5 : 1,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {String(s.order).padStart(2, "0")} {s.agentName ?? s.agentId}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
