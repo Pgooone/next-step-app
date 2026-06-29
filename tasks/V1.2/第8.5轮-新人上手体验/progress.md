@@ -15,7 +15,7 @@
 |---|---|---|---|
 | **T1** | 首用引导 Tour（方案 B 分层 · overlay 引擎 + 总览5/深度6 + **两模态加 `initial*` 承重改造〔blocker1〕** + **深度轨空环境降级〔blocker2〕** + seen 持久化 + 新手引导按钮 + mini-spike + ADR） | medium→偏大 · tentpole · **批次2** | 🟡 审计订正完·待复审 |
 | **T2** | 流水线 UI N1/N2/**N3**/N4（N2 hover 闪烁修〔**真根因订正**〕+ 两浮层边界感知/内部滚；**N3 board 终态自动刷会话·补回**） | small→偏中 · 批次1 | ✅ **收官 `47a46ac`**（双层验收过：computeFixedPopover 单测 6/6 + 真浏览器 N1/N2/N4+above-flip 修正 pageErrors=0；ADR D-R8.5-09） |
-| **T3** | 入口 C3（`devIndicators:false` 移除 N + 提权〔**图标已在=提权非新增、删当前项 accent**〕）+ 建项目 C1（前端勾选 + 后端 opt-in mkdir〔**+try/catch→422 边界**〕） | small（C1 带后端） · 批次1 | 🟡 审计订正完·待复审 |
+| **T3** | 入口 C3（`devIndicators:false` 移除 N + 提权〔**图标已在=提权非新增、删当前项 accent**〕）+ 建项目 C1（前端勾选 + 后端 opt-in mkdir〔**+try/catch→422 边界**〕） | small（C1 带后端） · 批次1 | ✅ **收官 `2dc4b71`**（双层验收过：lead 独立 7 断言复核承重〔含不勾不触盘红线/ENOTDIR·EACCES→422〕+ 真浏览器 C3 N移除/提权 + C1 disk 实证、uncaught=0；ADR D-R8.5-11） |
 | **T4** | 文案中文化（C2/C12 短语+打字机 90ms·Array.from / C7 / C11 / C14 集中扫〔**EXPLORER 确实存在·纳入译表**〕） | small · 批次1 | ✅ **收官 `4ad9764`**（双层验收过：code-point-slice 5 测 + 真浏览器 C14/C2/C11/C7 pageErrors=0；范围=主线四区、OUT 三件留后续；ADR D-R8.5-10） |
 | **T5** | 炫酷深色首页（shader 组件 + 深色玻璃首页 + 字体自托管 woff2〔**+迁 layout 旧 google mono**〕 + 性能/降级护栏 + 试点开关 + **真浏览器作 build oracle**） | medium（新依赖 three + WebGL） · 批次1 | 🟡 审计订正完·待复审 |
 
