@@ -107,6 +107,7 @@ export default function PipelineEditor({
         </label>
         <input
           data-testid="pipeline-name"
+          data-tour-id="pipeline-editor-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="如：CS2 饰品监控流水线"

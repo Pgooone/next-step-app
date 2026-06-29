@@ -20,6 +20,14 @@ type PipelineModalProps = {
   onOpenSession: (sessionId: string) => void;
   onArtifactsChanged?: () => void;
   onSessionsChanged?: () => void;
+  /**
+   * 第8.5轮 T1·§0 承重改造（附加式，不改既有交互语义；ADR D-R8.5-02）：
+   * 引导深度轨经 AppShell 编排 state 把模态开到指定子视图。三者均**仅 mount 时取一次初值**
+   * （lazy useState 初值），不传时行为 100% 同现状；之后用户操作 tab/view/选蓝图照常生效、不被覆盖。
+   */
+  initialTab?: "pipeline" | "dispatch";
+  initialView?: "board" | "editor";
+  initialBlueprintId?: string;
 };
 
 /**
@@ -35,12 +43,16 @@ export default function PipelineModal({
   onOpenSession,
   onArtifactsChanged,
   onSessionsChanged,
+  initialTab,
+  initialView,
+  initialBlueprintId,
 }: PipelineModalProps) {
   const { isDark } = useTheme();
-  const [tab, setTab] = useState<"pipeline" | "dispatch">("pipeline");
-  const [view, setView] = useState<"board" | "editor">("board");
+  // T1·§0：initial* 仅作 useState 初值（mount 时取一次）→ 之后用户切 tab/view/选蓝图照常、不被 prop 覆盖。
+  const [tab, setTab] = useState<"pipeline" | "dispatch">(initialTab ?? "pipeline");
+  const [view, setView] = useState<"board" | "editor">(initialView ?? "board");
   // 运行控制条选中的蓝图（D-R7-04：起 run 触发放模态、board 保持纯渲染）。
-  const [selectedBlueprintId, setSelectedBlueprintId] = useState("");
+  const [selectedBlueprintId, setSelectedBlueprintId] = useState(initialBlueprintId ?? "");
   const [starting, setStarting] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
 

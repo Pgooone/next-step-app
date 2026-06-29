@@ -11,6 +11,7 @@ import { ModelsConfig } from "./ModelsConfig";
 import { SkillsConfig } from "./SkillsConfig";
 import { AgentManager } from "./AgentManager";
 import PipelineModal from "./PipelineModal";
+import { OnboardingTour } from "./OnboardingTour";
 import { ArtifactPanel } from "./ArtifactPanel";
 import { BranchNavigator } from "./BranchNavigator";
 import { useArtifactStore } from "@/lib/stores/useArtifactStore";
@@ -59,6 +60,17 @@ export function AppShell() {
   const [skillsConfigOpen, setSkillsConfigOpen] = useState(false);
   const [agentManagerOpen, setAgentManagerOpen] = useState(false);
   const [pipelineModalOpen, setPipelineModalOpen] = useState(false);
+  // 第8.5轮 T1·§0：引导编排 state（决定深度轨某步要把哪个模态开到哪个子视图）。
+  // 仅作 initial* 透传给两模态（mount 一次取初值），不改两模态既有布尔开关语义；不传时同现状。
+  // mini-spike 先打通 pipeline·editor 一条；Phase B 扩成总览/深度全步。
+  const [tourPipelineInit, setTourPipelineInit] = useState<{
+    tab?: "pipeline" | "dispatch";
+    view?: "board" | "editor";
+    blueprintId?: string;
+  } | null>(null);
+  const [tourAgentsInit, setTourAgentsInit] = useState<"list" | "create" | null>(null);
+  // mini-spike 触发：临时悬浮按钮点开（Phase B 换成首启无 tour-seen 自动开 + 🧭 按钮）。
+  const [tourActive, setTourActive] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   // 右侧面板是否处于「产物视图」（artifact 打开时盖过文件视图，D-D3-7）
   const selectedArtifactId = useArtifactStore((s) => s.selectedArtifactId);
@@ -459,6 +471,44 @@ export function AppShell() {
     setRightPanelOpen(true);
   }, []);
 
+  // 第8.5轮 T1·§0：引导步 before() 的编排——按请求把对应模态开到指定子视图。
+  // 先 set 编排 state、再 open 模态：模态此前未挂载，open 触发的 fresh mount 即取到 initial*。
+  // （mini-spike：模态从「关」到「开」一条；Phase B 若需在已开模态间切子视图，需 close+reopen 或 key 重挂。）
+  const handleTourOrchestrate = useCallback(
+    (req:
+      | { kind: "none" }
+      | { kind: "pipeline"; tab?: "pipeline" | "dispatch"; view?: "board" | "editor"; blueprintId?: string }
+      | { kind: "agents"; view?: "list" | "create" }) => {
+      if (req.kind === "pipeline") {
+        setTourAgentsInit(null);
+        setAgentManagerOpen(false);
+        setTourPipelineInit({ tab: req.tab, view: req.view, blueprintId: req.blueprintId });
+        setPipelineModalOpen(true);
+      } else if (req.kind === "agents") {
+        setTourPipelineInit(null);
+        setPipelineModalOpen(false);
+        setTourAgentsInit(req.view ?? "list");
+        setAgentManagerOpen(true);
+      } else {
+        // none：锚工作台顶层元素，关掉两模态、复位编排。
+        setTourPipelineInit(null);
+        setTourAgentsInit(null);
+        setPipelineModalOpen(false);
+        setAgentManagerOpen(false);
+      }
+    },
+    [],
+  );
+
+  // 引导结束（完成 / 跳过）：复位编排 + 关两模态（不残留打开的模态）。
+  const handleTourFinish = useCallback(() => {
+    setTourActive(false);
+    setTourPipelineInit(null);
+    setTourAgentsInit(null);
+    setPipelineModalOpen(false);
+    setAgentManagerOpen(false);
+  }, []);
+
   const handleCloseFileTab = useCallback((tabId: string) => {
     setFileTabs((prev) => {
       const next = prev.filter((t) => t.id !== tabId);
@@ -583,6 +633,7 @@ export function AppShell() {
           <button
             key={label}
             data-testid={`open-${label.toLowerCase()}-btn`}
+            data-tour-id={`tour-${label.toLowerCase()}-entry`}
             onClick={onClick}
             disabled={disabled}
             title={label}
@@ -1108,15 +1159,19 @@ export function AppShell() {
       <AgentManager
         projectId={currentProjectId}
         projectRoot={currentRoot}
-        onClose={() => setAgentManagerOpen(false)}
+        onClose={() => { setAgentManagerOpen(false); setTourAgentsInit(null); }}
         onSessionStarted={handleAgentSessionStarted}
+        initialView={tourAgentsInit ?? undefined}
       />
     )}
     {pipelineModalOpen && currentProjectId && (
       <PipelineModal
         projectId={currentProjectId}
         projectRoot={currentRoot}
-        onClose={() => setPipelineModalOpen(false)}
+        initialTab={tourPipelineInit?.tab}
+        initialView={tourPipelineInit?.view}
+        initialBlueprintId={tourPipelineInit?.blueprintId}
+        onClose={() => { setPipelineModalOpen(false); setTourPipelineInit(null); }}
         onOpenArtifact={handleOpenArtifact}
         onOpenFile={handleOpenFile}
         onOpenSession={(sessionId) => {
@@ -1135,6 +1190,30 @@ export function AppShell() {
         }}
         onArtifactsChanged={() => setExplorerRefreshKey((k) => k + 1)}
         onSessionsChanged={handleDispatchSessionsChanged}
+      />
+    )}
+    {/* 第8.5轮 T1·mini-spike：临时触发按钮（Phase B 移除，换成首启自动 + 🧭 按钮）。
+        仅在已进项目（有 currentProjectId）时显示——深度轨锚 Pipeline 入口/编辑器需项目在场。 */}
+    {currentProjectId && !tourActive && (
+      <button
+        data-testid="tour-spike-trigger"
+        onClick={() => setTourActive(true)}
+        title="新手引导（mini-spike）"
+        style={{
+          position: "fixed", bottom: 16, right: 52, zIndex: 1500,
+          padding: "7px 12px", background: "var(--accent)", border: "none",
+          borderRadius: 8, color: "#fff", fontSize: 12, fontWeight: 600,
+          cursor: "pointer", boxShadow: "0 4px 16px rgba(0,0,0,0.25)",
+        }}
+      >
+        🧭 引导
+      </button>
+    )}
+    {tourActive && (
+      <OnboardingTour
+        autoStart
+        onOrchestrate={handleTourOrchestrate}
+        onFinish={handleTourFinish}
       />
     )}
     </>

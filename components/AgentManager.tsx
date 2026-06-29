@@ -21,6 +21,12 @@ interface Props {
   onClose: () => void;
   /** B4：用某档案起会话成功后回调（sessionId + cwd），由 AppShell 接管会话切换/SSE。 */
   onSessionStarted: (sessionId: string, cwd: string) => void;
+  /**
+   * 第8.5轮 T1·§0 承重改造（附加式，不改既有交互语义；ADR D-R8.5-02）：
+   * 引导深度轨经此把管理器开到「新建表单」。**仅 mount 时取一次初值**映射成 View，
+   * 不传时同现状（默认列表）；之后用户返回列表 / 进二级菜单照常、不被覆盖。
+   */
+  initialView?: "list" | "create";
 }
 
 type ModelOption = { id: string; name: string; provider: string };
@@ -66,7 +72,7 @@ function fromProfile(p: AgentProfile): FormState {
   };
 }
 
-export function AgentManager({ projectId, projectRoot, onClose, onSessionStarted }: Props) {
+export function AgentManager({ projectId, projectRoot, onClose, onSessionStarted, initialView }: Props) {
   const { agents, loadedProjectId, refresh, create, update, remove, startSession } = useAgentStore(
     useShallow((s) => ({
       agents: s.agents,
@@ -90,7 +96,10 @@ export function AgentManager({ projectId, projectRoot, onClose, onSessionStarted
 
   // 视图：列表（默认） | 新建表单（create）| 某档案的二级菜单（menu）。三者互斥。
   type View = { kind: "list" } | { kind: "create" } | { kind: "menu"; id: string };
-  const [view, setView] = useState<View>({ kind: "list" });
+  // T1·§0：initialView 仅 mount 时映射成初始 View（lazy 初值），不传时同现状（默认列表）。
+  const [view, setView] = useState<View>(() =>
+    initialView === "create" ? { kind: "create" } : { kind: "list" },
+  );
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
