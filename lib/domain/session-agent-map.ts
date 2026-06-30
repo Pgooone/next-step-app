@@ -11,6 +11,13 @@ export interface SessionMap {
   mainSessionId: string | null;
   /** sessionId → agentId（某会话属于哪个 agent）。 */
   bySession: Record<string, string>;
+  /**
+   * 第 8.6 轮（D-R8.6-09）：被装为「主脑（总管）」的会话 id 集合。idle 重建时据此识别主脑会话、
+   * 重装总管 resourceLoader + 派活工具（resolver 主脑分支）。**与 mainSessionId 语义独立**——主脑会话
+   * 不一定是 mainSessionId（同项目第 2+ 个主脑会话根本不是首个会话；关掉总管的主对话也是 mainSessionId
+   * 却非主脑），故不复用 getMain 识别。绝不与 bySession/owner-map 语义重叠。
+   */
+  mastermindSessions: string[];
 }
 
 /** 映射存盘位置：项目本地 `<cwd>/.pi/ns-session-map.json`（D-V1.1-01）。 */
@@ -20,7 +27,7 @@ function mapPath(cwd: string): string {
 
 /** 空映射（文件不存在 / 解析失败时的兜底值）。 */
 function emptyMap(): SessionMap {
-  return { mainSessionId: null, bySession: {} };
+  return { mainSessionId: null, bySession: {}, mastermindSessions: [] };
 }
 
 /** 读映射；文件不存在或内容损坏均回退空映射（领域层不抛 HTTP 错误）。 */
@@ -43,6 +50,10 @@ export function readMap(cwd: string): SessionMap {
       obj.bySession && typeof obj.bySession === "object"
         ? (obj.bySession as Record<string, string>)
         : {},
+    // D-R8.6-09 命门：必须重建保留 mastermindSessions，否则 marker 写了读不回、idle 主脑哑火无报错。
+    mastermindSessions: Array.isArray(obj.mastermindSessions)
+      ? obj.mastermindSessions.filter((s): s is string => typeof s === "string")
+      : [],
   };
 }
 
@@ -68,7 +79,11 @@ export function pruneMissing(map: SessionMap, liveSessionIds: Set<string>): Sess
   }
   const mainSessionId =
     map.mainSessionId && liveSessionIds.has(map.mainSessionId) ? map.mainSessionId : null;
-  return { mainSessionId, bySession };
+  // D-R8.6-09：同 mainSessionId 处理——剔除已死的主脑会话 id（外部直接删 .jsonl 后映射不残留）。
+  const mastermindSessions = (map.mastermindSessions ?? []).filter((sid) =>
+    liveSessionIds.has(sid),
+  );
+  return { mainSessionId, bySession, mastermindSessions };
 }
 
 /** 读某会话的归属 agentId；无归属返回 null。 */
@@ -119,4 +134,23 @@ export function setMain(cwd: string, sid: string | null): SessionMap {
   map.mainSessionId = sid;
   writeMap(cwd, map);
   return map;
+}
+
+/**
+ * 第 8.6 轮（D-R8.6-09）：标记某会话为「主脑（总管）」（原子落盘，幂等——已含则无副作用）。
+ * 由 /api/agent/new 主脑分支在拿到 realSessionId 后服务端同步调用（零窗口）。
+ * **绝不**碰 bySession/owner-map 既有语义——只增 mastermindSessions 一个集合。
+ */
+export function markMastermind(cwd: string, sid: string): SessionMap {
+  const map = readMap(cwd);
+  if (!map.mastermindSessions.includes(sid)) {
+    map.mastermindSessions.push(sid);
+    writeMap(cwd, map);
+  }
+  return map;
+}
+
+/** 第 8.6 轮（D-R8.6-09）：某会话是否被标记为「主脑」。idle 重建时 resolver 据此分流到主脑 reattach。 */
+export function isMastermind(cwd: string, sid: string): boolean {
+  return readMap(cwd).mastermindSessions.includes(sid);
 }

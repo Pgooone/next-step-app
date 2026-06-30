@@ -9,7 +9,7 @@
 | 第一步 确定需求 | ✅ 需求文档（含 7 要素 + 9 缺口） |
 | 第二步 设计 | ✅ 概要设计 + 详细设计 + **设计评审**（spike-1 去风险 GO + 完整性 self-review，详设 §12） |
 | 第三步 划分任务（本文档）| ✅ |
-| 第四步 实现 | ✅ **T1 spike-1 GO**（去风险 GO + agent team 实现 + lead 三重复验：复跑 5/5 + 亲读 + 变异）；T2~T7 后续会话 |
+| 第四步 实现 | ✅ **T1 spike-1 GO** + ✅ **T2 收官**（去风险 workflow `wrtzcbbd0` GO → agent team 实现 → lead 三重复验 → 独立 verifier → 真浏览器 smoke 全 PASS）；T3~T7 后续 |
 
 ## 任务卡（承重优先 · 串行 · OOM 安全）
 
@@ -19,10 +19,15 @@
 - **落点**：lib/pi/orchestrator-session.ts（M1 雏形）+ orchestrator-session.spike.test.ts（spike 后删、迁正式单测）。
 - **依赖**：无。**状态**：✅ **GO**——去风险（whyfwemtj）→ ns-spike1 实现（orchestrator-session.ts M1 雏形 + spike.test 5 断言 A1~A5）→ lead 三重复验（独立复跑 5/5 + 亲读非 vacuous + 变异命门 A2/A3 即红即绿）。子路线倾向 A（独立装配函数、不硬塞 startRpcSessionInner）。spike.test 待 T2 迁正式单测后删——迁时**加固 A3**：加「回合正常结束·stopReason 非 timeout」断言（adversary 捞回的有效质疑、防超时致 calls 空假绿；现 A3 靠 (a)active 无名 +(b)getToolDefinition undefined 兜底已非 vacuous、非 blocker）。
 
-### T2 · 主脑会话装配 + 起会话链分支（M1+M2）[🔴承重]
+### T2 · 主脑会话装配 + 起会话链分支（M1+M2）[🔴承重 · ✅收官]
 - **目标**：/api/agent/new 加「主脑模式」分支装 orchestrator 装配；**处理 idle 重建 gap**（详设 §12②，纳入 re-attach 分流，ADR D-R8.6-07）。
 - **AC**：主脑模式起会话带派活工具+总管 prompt / 普通主会话零回归（强变异对照）/ idle 重建不丢能力。
 - **依赖**：T1 GO。**承重**：A 路线不硬塞 startRpcSessionInner（撞 :380-382/:361-375）→ 走独立装配函数。
+- **状态**：✅ **收官**。去风险 workflow `wrtzcbbd0`（4 probe 自带证伪 + final falseGoTraps）GO，**lead file:line 亲核**揪定承重命门：marker **不可复用 getMain**（`main-session.ts:18` 只认首个会话为 main、多会话/关总管都漏判）→ 专属 `mastermindSessions` 字段（ADR **D-R8.6-09/10**）。
+  - **落点**：M1 加 `ORCHESTRATOR_SYSTEM_PROMPT` 常量 + `buildMastermindTools(calls?)` 可选；新建 `lib/pi/orchestrator-session-wiring.ts`（startOrchestratorSession + reattachOrchestratorSession，惰性 import 避环、绝不调 setActiveToolsByName 绕三坑）；`session-agent-map.ts` 加 marker 字段 + `markMastermind/isMastermind` + **readMap/emptyMap/pruneMissing 三处同步保留**（头号坑）；`/api/agent/new` `mastermind===true` 分支 + 服务端写 marker（普通分支字节级零回归）；`session-reattach.ts` resolver 主脑分支（profile 后、generic 前）+ DI 缝；hooks 透传 `mastermind:true`；迁 spike A1~A5 → `orchestrator-session.test.ts` + A3 加固（endFired/stopReason 三连）。
+  - **双层验收全 PASS**：①lead 三重复验（独立门禁 lint0/tsc0/**test534→536** + 亲读非 vacuous + 变异两命门〔字段保留 / resolver 分流〕即红即绿）②独立 verifier ns-t2-verify（干净门禁 + 红线 grep 逐条 + 自写 fixture 交叉验、未发现真问题）③真浏览器 smoke `scripts/verify-r86-t2-smoke.mjs`（pageErrors=0 + 主脑路由 200+sessionId + **marker 落盘 `mastermindSessions` 只含主脑会话不含普通会话**确定性区分判据 + `bySession:{}` 不碰 owner-map）。
+  - **lead 亲读揪修**：主脑分支首条消息丢 images（mastermind 默认开→零回归缺口）→ 已加 `images?` 透传 + 2 测试。
+  - commit：本卡单独提交（`feat(core): 第8.6轮 T2 …`，本地 v1.2、未 push）。
 
 ### T3 · 计划确认闸（M3）[🔴承重 · spike-3]
 - **目标**：submit_plan 落 awaiting_approval + 暂停 → 确认/否决/打回路由 → 计划卡（**含成本感知：显示派 N 个队员**，详设 §12③）。
@@ -54,4 +59,4 @@
 
 ---
 
-> **本次会话范围**：推进到 T1 spike-1（去风险 GO → 实现 → lead 复验 → 结论）即暂停（用户定）。T2~T7 + 验收为后续会话。
+> **进度**：T1 spike-1 GO + **T2 收官**（双层验收全 PASS）。下一步 **T3 计划确认闸**（依赖 T2 已满足）。T2~T7 已建 task 跟踪。

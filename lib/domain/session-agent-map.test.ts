@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   getMain,
   getOwner,
+  isMastermind,
+  markMastermind,
   pruneMissing,
   readMap,
   removeOwner,
@@ -28,7 +30,7 @@ const mapFile = () => join(cwd, ".pi", "ns-session-map.json");
 
 describe("session-agent-map · 文件不存在", () => {
   it("readMap 在文件不存在时返回空映射", () => {
-    expect(readMap(cwd)).toEqual({ mainSessionId: null, bySession: {} });
+    expect(readMap(cwd)).toEqual({ mainSessionId: null, bySession: {}, mastermindSessions: [] });
   });
 
   it("getOwner / getMain 在无映射时返回 null", () => {
@@ -113,23 +115,69 @@ describe("session-agent-map · sessionsForAgent 反查（方案B 逐出用）", 
   });
 });
 
+describe("session-agent-map · 主脑 marker（第 8.6 轮 D-R8.6-09）", () => {
+  it("markMastermind 后跨实例 readMap 重读：isMastermind=true + 裸字段含 sid（防 getter/setter typo 双错抵消）", () => {
+    markMastermind(cwd, "mm-1");
+    // getter
+    expect(isMastermind(cwd, "mm-1")).toBe(true);
+    expect(isMastermind(cwd, "other")).toBe(false);
+    // 裸字段（不复用内存，跨实例重读证落盘）
+    expect(readMap(cwd).mastermindSessions).toContain("mm-1");
+  });
+
+  it("markMastermind 不碰 bySession（owner-map 红线）", () => {
+    setOwner(cwd, "s1", "agent-A");
+    markMastermind(cwd, "mm-1");
+    expect(readMap(cwd).bySession).toEqual({ s1: "agent-A" }); // 未被 marker 改动
+    expect(getOwner(cwd, "s1")).toBe("agent-A");
+  });
+
+  it("markMastermind 幂等（同 sid 多次只一条、无副作用）", () => {
+    markMastermind(cwd, "mm-1");
+    markMastermind(cwd, "mm-1");
+    expect(readMap(cwd).mastermindSessions).toEqual(["mm-1"]);
+  });
+
+  it("字段保留往返：写含 mastermindSessions 后 setMain/setOwner（RMW）不抹 mastermindSessions", () => {
+    markMastermind(cwd, "mm-1");
+    // 两个走 readMap→改→writeMap 的 RMW 操作，必须保留 mastermindSessions（命门：readMap 重建保字段）
+    setMain(cwd, "main-1");
+    setOwner(cwd, "s1", "agent-A");
+    const map = readMap(cwd);
+    expect(map.mastermindSessions).toEqual(["mm-1"]); // 未被 setMain/setOwner 抹掉
+    expect(map.mainSessionId).toBe("main-1");
+    expect(map.bySession).toEqual({ s1: "agent-A" });
+  });
+
+  it("pruneMissing：已死的主脑 sid 从 mastermindSessions 剔除、存活保留", () => {
+    const map: SessionMap = {
+      mainSessionId: null,
+      bySession: {},
+      mastermindSessions: ["alive-mm", "dead-mm"],
+    };
+    const pruned = pruneMissing(map, new Set(["alive-mm"]));
+    expect(pruned.mastermindSessions).toEqual(["alive-mm"]);
+  });
+});
+
 describe("session-agent-map · 惰性清理（pruneMissing 纯函数）", () => {
   it("丢弃 bySession 中已不存在的会话项，存活项保留", () => {
     const map: SessionMap = {
       mainSessionId: null,
       bySession: { s1: "agent-A", s2: "agent-B", dead: "agent-C" },
+      mastermindSessions: [],
     };
     const pruned = pruneMissing(map, new Set(["s1", "s2"]));
     expect(pruned.bySession).toEqual({ s1: "agent-A", s2: "agent-B" });
   });
 
   it("mainSessionId 已不存在时清为 null", () => {
-    const map: SessionMap = { mainSessionId: "dead", bySession: {} };
+    const map: SessionMap = { mainSessionId: "dead", bySession: {}, mastermindSessions: [] };
     expect(pruneMissing(map, new Set(["alive"])).mainSessionId).toBeNull();
   });
 
   it("mainSessionId 仍存活时保留", () => {
-    const map: SessionMap = { mainSessionId: "alive", bySession: {} };
+    const map: SessionMap = { mainSessionId: "alive", bySession: {}, mastermindSessions: [] };
     expect(pruneMissing(map, new Set(["alive"])).mainSessionId).toBe("alive");
   });
 
@@ -137,12 +185,17 @@ describe("session-agent-map · 惰性清理（pruneMissing 纯函数）", () => 
     const map: SessionMap = {
       mainSessionId: "main-1",
       bySession: { s1: "agent-A" },
+      mastermindSessions: [],
     };
-    expect(pruneMissing(map, new Set())).toEqual({ mainSessionId: null, bySession: {} });
+    expect(pruneMissing(map, new Set())).toEqual({
+      mainSessionId: null,
+      bySession: {},
+      mastermindSessions: [],
+    });
   });
 
   it("pruneMissing 不修改入参（纯函数）", () => {
-    const map: SessionMap = { mainSessionId: "m", bySession: { s1: "a", dead: "b" } };
+    const map: SessionMap = { mainSessionId: "m", bySession: { s1: "a", dead: "b" }, mastermindSessions: [] };
     pruneMissing(map, new Set(["s1"]));
     expect(map.bySession).toEqual({ s1: "a", dead: "b" });
     expect(map.mainSessionId).toBe("m");
@@ -165,6 +218,6 @@ describe("session-agent-map · 损坏文件兜底", () => {
     setOwner(cwd, "s1", "agent-A");
     // 写入损坏内容
     writeFileSync(mapFile(), "{ not json", "utf-8");
-    expect(readMap(cwd)).toEqual({ mainSessionId: null, bySession: {} });
+    expect(readMap(cwd)).toEqual({ mainSessionId: null, bySession: {}, mastermindSessions: [] });
   });
 });

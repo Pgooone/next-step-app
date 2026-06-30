@@ -382,6 +382,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             type: "prompt",
             message: finalMessage,
             toolNames,
+            // 第 8.6 轮（详设 §10-④）：主脑（总管）旗标默认开——新建主对话即总管会话；
+            // 服务端据此装总管 prompt + 派活工具（D-R8.6-10②）。用户可覆盖（二期关总管 UI）。
+            mastermind: true,
             ...(piImages?.length ? { images: piImages } : {}),
             ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),
             ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}),

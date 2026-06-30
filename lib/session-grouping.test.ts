@@ -42,7 +42,7 @@ const resolver =
 describe("groupSessionsByOwner", () => {
   it("空映射 → 全部进 others，main 为 null，无 agent 分组", () => {
     const sessions = [sess("a"), sess("b")];
-    const map: SessionMap = { mainSessionId: null, bySession: {} };
+    const map: SessionMap = { mainSessionId: null, bySession: {}, mastermindSessions: [] };
     const g = groupSessionsByOwner(sessions, map, resolver({}));
     expect(g.main).toBeNull();
     expect(g.agentGroups).toEqual([]);
@@ -51,7 +51,7 @@ describe("groupSessionsByOwner", () => {
 
   it("mainSessionId 命中 → 进 main 区、不进其它区", () => {
     const sessions = [sess("main"), sess("x")];
-    const map: SessionMap = { mainSessionId: "main", bySession: {} };
+    const map: SessionMap = { mainSessionId: "main", bySession: {}, mastermindSessions: [] };
     const g = groupSessionsByOwner(sessions, map, resolver({}));
     expect(g.main?.id).toBe("main");
     expect(g.others.map((s) => s.id)).toEqual(["x"]);
@@ -59,7 +59,7 @@ describe("groupSessionsByOwner", () => {
 
   it("主对话即便也有 owner，也只进 main 区（不重复进 agent 分组）", () => {
     const sessions = [sess("m")];
-    const map: SessionMap = { mainSessionId: "m", bySession: { m: "agent-1" } };
+    const map: SessionMap = { mainSessionId: "m", bySession: { m: "agent-1" }, mastermindSessions: [] };
     const g = groupSessionsByOwner(sessions, map, resolver({ "agent-1": "甲" }));
     expect(g.main?.id).toBe("m");
     expect(g.agentGroups).toEqual([]);
@@ -68,7 +68,7 @@ describe("groupSessionsByOwner", () => {
 
   it("mainSessionId 指向不在列表中的会话 → main 为 null（惰性容错）", () => {
     const sessions = [sess("a")];
-    const map: SessionMap = { mainSessionId: "ghost", bySession: {} };
+    const map: SessionMap = { mainSessionId: "ghost", bySession: {}, mastermindSessions: [] };
     const g = groupSessionsByOwner(sessions, map, resolver({}));
     expect(g.main).toBeNull();
     expect(g.others.map((s) => s.id)).toEqual(["a"]);
@@ -79,6 +79,7 @@ describe("groupSessionsByOwner", () => {
     const map: SessionMap = {
       mainSessionId: null,
       bySession: { s1: "agent-A", s2: "agent-A", s3: "agent-B" },
+      mastermindSessions: [],
     };
     const g = groupSessionsByOwner(sessions, map, resolver({ "agent-A": "阿尔法", "agent-B": "贝塔" }));
     const a = g.agentGroups.find((x) => x.agentId === "agent-A")!;
@@ -92,7 +93,7 @@ describe("groupSessionsByOwner", () => {
 
   it("agent 档案缺失 → 名回退 agentId 短串、色为 null", () => {
     const sessions = [sess("s1")];
-    const map: SessionMap = { mainSessionId: null, bySession: { s1: "deadbeef-uuid-1234" } };
+    const map: SessionMap = { mainSessionId: null, bySession: { s1: "deadbeef-uuid-1234" }, mastermindSessions: [] };
     const g = groupSessionsByOwner(sessions, map, resolver({}));
     expect(g.agentGroups[0].agentName).toBe("deadbeef");
     expect(g.agentGroups[0].color).toBeNull();
@@ -103,6 +104,7 @@ describe("groupSessionsByOwner", () => {
     const map: SessionMap = {
       mainSessionId: null,
       bySession: { s1: "id-c", s2: "id-a", s3: "id-b" },
+      mastermindSessions: [],
     };
     const g = groupSessionsByOwner(
       sessions,
@@ -114,7 +116,7 @@ describe("groupSessionsByOwner", () => {
 
   it("三区并存：main + agent 分组 + others", () => {
     const sessions = [sess("m"), sess("a1"), sess("o1"), sess("o2")];
-    const map: SessionMap = { mainSessionId: "m", bySession: { a1: "agent-1" } };
+    const map: SessionMap = { mainSessionId: "m", bySession: { a1: "agent-1" }, mastermindSessions: [] };
     const g = groupSessionsByOwner(sessions, map, resolver({ "agent-1": "甲" }));
     expect(g.main?.id).toBe("m");
     expect(g.agentGroups).toHaveLength(1);

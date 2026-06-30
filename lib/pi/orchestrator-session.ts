@@ -30,6 +30,25 @@ import {
 import { CODING_TOOL_NAMES } from "./coding-tools";
 
 /**
+ * 总管（主脑）系统提示——**模块级常量**，初建（{@link startOrchestratorSession}）与 idle 重建
+ * （{@link reattachOrchestratorSession}）共用**同一份**注入块（D-R8.6-10⑤：防两端现算漂移）。
+ * 内核不持久化 systemPrompt（每次构造期由 resourceLoader 现算），故 re-attach 必须用同一常量
+ * 重注入，否则总管角色静默丢失。
+ */
+export const ORCHESTRATOR_SYSTEM_PROMPT = [
+  "你是本项目的总管（主脑）。你拥有完整的编码工具（bash / write / edit / read 等），既能亲自动手，也能拆活派人。",
+  "",
+  "处理用户需求的规矩：",
+  "- 小任务（能自己直接完成、或仅需回答）：直接动手或回答，不必派人。",
+  "- 大任务（需要多人协作）：先调 `submit_plan` 工具提交一份多队员协作计划，",
+  "  每个队员含 name（队员名）/ role（角色）/ subTask（子任务）/ acceptanceCriteria（验收标准）。",
+  "  提交计划后**暂停等待用户确认**，不要立即开工。",
+  "- 用户确认计划后，再调 `dispatch_task` 工具放行执行。",
+  "",
+  "纪律：未经用户确认计划前，绝不调用 `dispatch_task`。",
+].join("\n");
+
+/**
  * 与 doc-tools 同因（异构具体 ToolDefinition 收数组会因 parameters 逆变方差报错）：
  * 本地等价 `ToolDefinition<any,any>`，`any` 限定在这一行。
  */
@@ -101,9 +120,10 @@ export type MastermindToolCall = { tool: string; params: unknown };
 /**
  * 用内核 `defineTool` 造派活工具集（spike 最小集）。
  *
- * @param calls 外部注入的记录数组——execute 闭包内 push，spike 断言它「行为侧真被调」（非静态在场）。
+ * @param calls 可选的记录数组——execute 闭包内 `calls?.push(...)`。**生产不传**（桩工具只回占位
+ *   planId/runId）；**测试传**以断言「execute 行为侧真被调」（非静态在场，spike A2/A3 命门）。
  */
-export function buildMastermindTools(calls: MastermindToolCall[]): MastermindToolDef[] {
+export function buildMastermindTools(calls?: MastermindToolCall[]): MastermindToolDef[] {
   const submitPlan = defineTool({
     name: "submit_plan",
     label: "submit_plan",
@@ -118,8 +138,8 @@ export function buildMastermindTools(calls: MastermindToolCall[]): MastermindToo
       _onUpdate,
       _ctx,
     ): Promise<AgentToolResult<undefined>> {
-      calls.push({ tool: "submit_plan", params });
-      // spike 桩：返回一个固定 planId；生产落 MastermindRun{awaiting_plan_approval} 留 T3。
+      calls?.push({ tool: "submit_plan", params });
+      // 桩：返回一个固定 planId；生产落 MastermindRun{awaiting_plan_approval} 留 T3。
       return jsonResult({ planId: "spike-plan-1", status: "awaiting_approval" });
     },
   });
@@ -137,7 +157,7 @@ export function buildMastermindTools(calls: MastermindToolCall[]): MastermindToo
       _onUpdate,
       _ctx,
     ): Promise<AgentToolResult<undefined>> {
-      calls.push({ tool: "dispatch_task", params });
+      calls?.push({ tool: "dispatch_task", params });
       return jsonResult({ runId: "spike-run-1", status: "dispatched" });
     },
   });

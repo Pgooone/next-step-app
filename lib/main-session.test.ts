@@ -5,6 +5,7 @@ import type { SessionMap } from "./domain/session-agent-map";
 const map = (mainSessionId: string | null): SessionMap => ({
   mainSessionId,
   bySession: {},
+  mastermindSessions: [],
 });
 
 describe("pickMainOnSessionCreated", () => {

@@ -24,7 +24,7 @@ interface SessionMapState {
   reset: () => void;
 }
 
-const emptyMap = (): SessionMap => ({ mainSessionId: null, bySession: {} });
+const emptyMap = (): SessionMap => ({ mainSessionId: null, bySession: {}, mastermindSessions: [] });
 
 const mapBase = (projectId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/session-map`;
@@ -84,7 +84,8 @@ export function selectMapForProject(
   loadedProjectId: string | null,
   projectId: string | null,
 ): SessionMap {
-  if (!projectId || loadedProjectId !== projectId) return { mainSessionId: null, bySession: {} };
+  if (!projectId || loadedProjectId !== projectId)
+    return { mainSessionId: null, bySession: {}, mastermindSessions: [] };
   return map;
 }
 

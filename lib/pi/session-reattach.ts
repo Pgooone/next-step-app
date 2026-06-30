@@ -8,8 +8,10 @@
  *
  * 本解析器在重开前先判：该 sessionId 是否「按档案起的会话」（M5 映射 `bySession` 有 agentId）——
  *   - 是且能反查到 project+档案 → 走 {@link reattachProfileSession}（带注入块 loader + 7 名受限白名单）；
+ *   - 否则判是否「主脑会话」（第 8.6 轮 D-R8.6-09/10：`mastermindSessions` 含该 sid）→ 走
+ *     {@link reattachOrchestratorSession}（重装总管 prompt + 派活工具，否则 idle 重建静默丢工具）；
  *   - 否（主对话/孤儿）或档案/项目已删 → 走 generic（{@link startRpcSessionInner}）。
- * 三分支统一返回 `{ session, realSessionId }`（两路由 `const { session } = await ...` 解构，
+ * 各分支统一返回 `{ session, realSessionId }`（两路由 `const { session } = await ...` 解构，
  * 且 session 同型 AgentSessionWrapper、都能 `isAlive()`）。
  *
  * 并发去重（方案 A，用户拍板）：复用 rpc-manager 的 {@link withStartLock}（同一把 `__piStartLocks`），
@@ -24,7 +26,7 @@ import {
   type AgentProfile,
 } from "../domain/agent-profile-store";
 import { ProjectRegistry, normalizeRoot } from "../domain/project-registry";
-import { getOwner } from "../domain/session-agent-map";
+import { getOwner, isMastermind } from "../domain/session-agent-map";
 import {
   registerInnerSession,
   startRpcSessionInner,
@@ -33,6 +35,7 @@ import {
   type StartLockDeps,
 } from "../rpc-manager";
 import { reattachProfileSession } from "./profile-session-wiring";
+import { reattachOrchestratorSession } from "./orchestrator-session-wiring";
 
 type ResolveResult = { session: AgentSessionWrapper; realSessionId: string };
 
@@ -83,6 +86,14 @@ export interface ResolveReattachDeps extends StartLockDeps {
     projectRoot: string;
     profile: AgentProfile;
   }) => Promise<ResolveResult>;
+  /** 第 8.6 轮：该 sid 是否「主脑会话」（默认 {@link isMastermind}，按 mastermindSessions 判）。 */
+  isMastermind?: (cwd: string, sid: string) => boolean;
+  /** 第 8.6 轮：主脑 reattach 分支（默认 {@link reattachOrchestratorSession}，重装总管 prompt + 派活工具）。 */
+  reattachOrchestrator?: (args: {
+    sessionId: string;
+    filePath: string;
+    cwd: string;
+  }) => Promise<ResolveResult>;
   /** generic 分支（默认不带锁的 {@link startRpcSessionInner}）。 */
   startGeneric?: (filePath: string, cwd: string) => Promise<ResolveResult>;
 }
@@ -106,6 +117,10 @@ export function resolveOrReattachSession(
     deps?.reattach ??
     ((args) =>
       reattachProfileSession<AgentSessionWrapper>({ ...args, registerInnerSession }));
+  const lookupMastermind = deps?.isMastermind ?? isMastermind;
+  const reattachOrch =
+    deps?.reattachOrchestrator ??
+    ((args) => reattachOrchestratorSession<AgentSessionWrapper>({ ...args, registerInnerSession }));
   const startGeneric = deps?.startGeneric ?? startRpcSessionInner;
 
   // 复用 startRpcSession 的同一把锁（方案 A）：快路径 + inflight 去重 + locks.set(build().finally) 全在此。
@@ -125,7 +140,13 @@ export function resolveOrReattachSession(
           });
         }
       }
-      // 主对话（getOwner 返 null）/ 孤儿 / 档案被删 → generic（不带锁内层，外层 withStartLock 已加锁）。
+      // 第 8.6 轮（D-R8.6-09/10④）：主脑会话（不在 bySession、但已 markMastermind）→ 重装总管 prompt +
+      // 派活工具，否则 idle 重建落 generic 静默丢工具。在 profile 分支之后、generic 之前判（主脑会话
+      // getOwner 返 null、不会进上面 profile 分支）；reattachOrch 走不带锁内层（外层已加锁、不双锁）。
+      if (lookupMastermind(cwd, sessionId)) {
+        return reattachOrch({ sessionId, filePath, cwd });
+      }
+      // 主对话（getOwner 返 null 且非主脑）/ 孤儿 / 档案被删 → generic（不带锁内层，外层 withStartLock 已加锁）。
       return startGeneric(filePath, cwd);
     },
     { registry: deps?.registry, locks: deps?.locks },

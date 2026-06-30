@@ -133,6 +133,83 @@ describe("resolveOrReattachSession 路由分流", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// 第 8.6 轮（D-R8.6-09/10④）：主脑会话分流。主脑会话 getOwner 返 null（不在 bySession）→ 不会进
+// profile 分支；在 generic 之前判 isMastermind → 走 reattachOrchestrator。
+// ---------------------------------------------------------------------------
+describe("resolveOrReattachSession 主脑会话分流（D-R8.6-09/10）", () => {
+  it("isMastermind=true（且 getOwner 返 null）→ 走 reattachOrchestrator 分支（不走 generic）", async () => {
+    const lock = makeLockState();
+    const reattachOrchestrator = vi.fn(async () => ({
+      session: makeFauxWrapper({ sessionId: "real-orch" }),
+      realSessionId: "real-orch",
+    }));
+    const startGeneric = vi.fn(async () => ({
+      session: makeFauxWrapper({ sessionId: "real-generic" }),
+      realSessionId: "real-generic",
+    }));
+    const { realSessionId } = await resolveOrReattachSession("mm-sid", "/f.jsonl", "/proj", {
+      ...lock,
+      getOwner: () => null, // 主脑会话不在 bySession
+      isMastermind: () => true,
+      reattachOrchestrator,
+      startGeneric,
+    });
+    expect(reattachOrchestrator).toHaveBeenCalledTimes(1);
+    expect(startGeneric).not.toHaveBeenCalled();
+    expect(realSessionId).toBe("real-orch");
+    // reattachOrchestrator 收到对的入参（sessionId / filePath / cwd，不含 projectId/profile）
+    expect(reattachOrchestrator).toHaveBeenCalledWith({
+      sessionId: "mm-sid",
+      filePath: "/f.jsonl",
+      cwd: "/proj",
+    });
+  });
+
+  it("isMastermind=false 且 getOwner 返 null（普通主对话）→ 落 generic（主脑分流零影响普通主对话）", async () => {
+    const lock = makeLockState();
+    const reattachOrchestrator = vi.fn();
+    const startGeneric = vi.fn(async () => ({
+      session: makeFauxWrapper({ sessionId: "real-generic" }),
+      realSessionId: "real-generic",
+    }));
+    const { realSessionId } = await resolveOrReattachSession("main-sid", "/f.jsonl", "/proj", {
+      ...lock,
+      getOwner: () => null,
+      isMastermind: () => false,
+      reattachOrchestrator,
+      startGeneric,
+    });
+    expect(startGeneric).toHaveBeenCalledTimes(1);
+    expect(startGeneric).toHaveBeenCalledWith("/f.jsonl", "/proj");
+    expect(reattachOrchestrator).not.toHaveBeenCalled();
+    expect(realSessionId).toBe("real-generic");
+  });
+
+  it("profile 会话（getOwner 返 agentId）优先 profile 分支，不进主脑判（即便 isMastermind=true 也不命中）", async () => {
+    const lock = makeLockState();
+    const reattach = vi.fn(async () => ({
+      session: makeFauxWrapper({ sessionId: "real-reattach" }),
+      realSessionId: "real-reattach",
+    }));
+    const reattachOrchestrator = vi.fn();
+    const startGeneric = vi.fn();
+    const { realSessionId } = await resolveOrReattachSession("sid-prof", "/f.jsonl", "/proj", {
+      ...lock,
+      getOwner: () => "agent-x",
+      lookupProfile: () => ({ projectId: "p1", profile: { name: "doc" } as AgentProfile }),
+      isMastermind: () => true, // 即便标了主脑，profile 会话仍优先 profile 分支（getOwner 命中在前）
+      reattach,
+      reattachOrchestrator,
+      startGeneric,
+    });
+    expect(reattach).toHaveBeenCalledTimes(1);
+    expect(reattachOrchestrator).not.toHaveBeenCalled();
+    expect(startGeneric).not.toHaveBeenCalled();
+    expect(realSessionId).toBe("real-reattach");
+  });
+});
+
 describe("resolveOrReattachSession 并发去重（方案 A 共享 __piStartLocks）", () => {
   it("AC⑤：同 sessionId 并发两次 → build 只调一次、registry 只一个 wrapper", async () => {
     const lock = makeLockState();
