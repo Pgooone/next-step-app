@@ -17,7 +17,7 @@
 - **目标**：验「给主会话装总管 resourceLoader + 派活工具 customTools」可行。
 - **AC**：A1 注入不覆盖 / A2 命门正(execute calls 非空) / A3 命门负对照(漏名调不到) / A4 编码+派活并存 / A5 独立函数 —— 5 断言全绿。
 - **落点**：lib/pi/orchestrator-session.ts（M1 雏形）+ orchestrator-session.spike.test.ts（spike 后删、迁正式单测）。
-- **依赖**：无。**状态**：✅ **GO**——去风险（whyfwemtj）→ ns-spike1 实现（orchestrator-session.ts M1 雏形 + spike.test 5 断言 A1~A5）→ lead 三重复验（独立复跑 5/5 + 亲读非 vacuous + 变异命门 A2/A3 即红即绿）。子路线倾向 A（独立装配函数、不硬塞 startRpcSessionInner）。spike.test 待 T2 迁正式单测后删。
+- **依赖**：无。**状态**：✅ **GO**——去风险（whyfwemtj）→ ns-spike1 实现（orchestrator-session.ts M1 雏形 + spike.test 5 断言 A1~A5）→ lead 三重复验（独立复跑 5/5 + 亲读非 vacuous + 变异命门 A2/A3 即红即绿）。子路线倾向 A（独立装配函数、不硬塞 startRpcSessionInner）。spike.test 待 T2 迁正式单测后删——迁时**加固 A3**：加「回合正常结束·stopReason 非 timeout」断言（adversary 捞回的有效质疑、防超时致 calls 空假绿；现 A3 靠 (a)active 无名 +(b)getToolDefinition undefined 兜底已非 vacuous、非 blocker）。
 
 ### T2 · 主脑会话装配 + 起会话链分支（M1+M2）[🔴承重]
 - **目标**：/api/agent/new 加「主脑模式」分支装 orchestrator 装配；**处理 idle 重建 gap**（详设 §12②，纳入 re-attach 分流，ADR D-R8.6-07）。
