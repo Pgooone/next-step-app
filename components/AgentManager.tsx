@@ -993,6 +993,7 @@ function AgentFields({
         </label>
         <input
           data-testid="agent-form-name"
+          data-tour-id="agent-form-name"
           value={form.name}
           onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
           placeholder="例如：方案设计员"

@@ -97,6 +97,7 @@ export default function PipelineBoard({
           {/* N4：空态说明（流水线 vs 快速派发），与 DispatchPanel 引导文案同风格。 */}
           <div
             data-testid="pipeline-empty-note"
+            data-tour-id="pipeline-empty-note"
             style={{
               fontSize: "0.8rem",
               color: "var(--sub)",
@@ -109,6 +110,7 @@ export default function PipelineBoard({
           </div>
           <button
             data-testid="pipeline-empty-new"
+            data-tour-id="pipeline-empty-new"
             onClick={onEditBlueprint}
             style={{
               display: "block",

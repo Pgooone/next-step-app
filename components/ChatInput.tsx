@@ -355,6 +355,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   return (
     <div
+      data-tour-id="tour-chat-input"
       style={{
         flexShrink: 0,
         background: "transparent",

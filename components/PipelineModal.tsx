@@ -339,6 +339,7 @@ function TabButton({
   return (
     <button
       data-testid={testid}
+      data-tour-id={testid}
       onClick={onClick}
       style={{
         padding: "6px 14px",

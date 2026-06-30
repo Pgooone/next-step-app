@@ -11,7 +11,7 @@ import { ModelsConfig } from "./ModelsConfig";
 import { SkillsConfig } from "./SkillsConfig";
 import { AgentManager } from "./AgentManager";
 import PipelineModal from "./PipelineModal";
-import { OnboardingTour } from "./OnboardingTour";
+import { OnboardingTour, TOUR_SEEN_KEY, type TourScene } from "./OnboardingTour";
 import { ArtifactPanel } from "./ArtifactPanel";
 import { BranchNavigator } from "./BranchNavigator";
 import { useArtifactStore } from "@/lib/stores/useArtifactStore";
@@ -62,14 +62,16 @@ export function AppShell() {
   const [pipelineModalOpen, setPipelineModalOpen] = useState(false);
   // 第8.5轮 T1·§0：引导编排 state（决定深度轨某步要把哪个模态开到哪个子视图）。
   // 仅作 initial* 透传给两模态（mount 一次取初值），不改两模态既有布尔开关语义；不传时同现状。
-  // mini-spike 先打通 pipeline·editor 一条；Phase B 扩成总览/深度全步。
   const [tourPipelineInit, setTourPipelineInit] = useState<{
     tab?: "pipeline" | "dispatch";
     view?: "board" | "editor";
     blueprintId?: string;
   } | null>(null);
   const [tourAgentsInit, setTourAgentsInit] = useState<"list" | "create" | null>(null);
-  // mini-spike 触发：临时悬浮按钮点开（Phase B 换成首启无 tour-seen 自动开 + 🧭 按钮）。
+  // 模态 remount key：深度轨连续步切同一模态的子视图时 +1 强制 fresh mount → 重新取 initial*
+  // （initial* 只在 mount 取一次；不 bump key 则已开模态不会换子视图）。
+  const [tourModalKey, setTourModalKey] = useState(0);
+  // 引导是否激活；首启无 tour-seen 自动开（见下方 effect）+ 🧭 按钮 / 临时触发。
   const [tourActive, setTourActive] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   // 右侧面板是否处于「产物视图」（artifact 打开时盖过文件视图，D-D3-7）
@@ -89,6 +91,16 @@ export function AppShell() {
   useEffect(() => { refreshHealth(); }, [refreshHealth]);
   // 挂载后从 localStorage 恢复当前项目（store 初始为 null 以避免 SSR hydration mismatch）
   useEffect(() => { useProjectStore.getState().hydrate(); }, []);
+
+  // 第8.5轮 T1：首启自动弹引导——无 tour-seen 标记则进工作台自动开总览轨（仅客户端、只判一次）。
+  // 顶层锚点（项目切换器 / 底栏入口）恒在工作台，无需等项目；深度轨步内部再按需开模态。
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem(TOUR_SEEN_KEY)) setTourActive(true);
+    } catch {
+      // localStorage 不可用 → 不自动弹（用户可点 🧭 按钮手动开），不阻塞渲染。
+    }
+  }, []);
 
   // M7·5.4：当前项目变化时拉一次会话归属映射，使左栏一进项目即可分组；
   // 切回项目墙（null）则清空，避免跨项目串显（仿 store 既有 loadedProjectId 把关）。
@@ -471,42 +483,45 @@ export function AppShell() {
     setRightPanelOpen(true);
   }, []);
 
-  // 第8.5轮 T1·§0：引导步 before() 的编排——按请求把对应模态开到指定子视图。
-  // 先 set 编排 state、再 open 模态：模态此前未挂载，open 触发的 fresh mount 即取到 initial*。
-  // （mini-spike：模态从「关」到「开」一条；Phase B 若需在已开模态间切子视图，需 close+reopen 或 key 重挂。）
-  const handleTourOrchestrate = useCallback(
-    (req:
-      | { kind: "none" }
-      | { kind: "pipeline"; tab?: "pipeline" | "dispatch"; view?: "board" | "editor"; blueprintId?: string }
-      | { kind: "agents"; view?: "list" | "create" }) => {
-      if (req.kind === "pipeline") {
-        setTourAgentsInit(null);
-        setAgentManagerOpen(false);
-        setTourPipelineInit({ tab: req.tab, view: req.view, blueprintId: req.blueprintId });
-        setPipelineModalOpen(true);
-      } else if (req.kind === "agents") {
-        setTourPipelineInit(null);
-        setPipelineModalOpen(false);
-        setTourAgentsInit(req.view ?? "list");
-        setAgentManagerOpen(true);
-      } else {
-        // none：锚工作台顶层元素，关掉两模态、复位编排。
-        setTourPipelineInit(null);
-        setTourAgentsInit(null);
-        setPipelineModalOpen(false);
-        setAgentManagerOpen(false);
-      }
-    },
-    [],
-  );
+  // 第8.5轮 T1：引导每步进入时的「场景」编排（before）——把哪个模态开到哪个子视图、是否开右侧面板。
+  // 先 set 编排 state、再 open 模态；每次都 bump tourModalKey → 模态强制 fresh mount，取到最新 initial*
+  // （含「已开模态间切子视图」：close+key 重挂；同一 tick 批处理，React 直接以新 key + 新 initial* 重挂）。
+  const handleTourOrchestrate = useCallback((scene: TourScene) => {
+    if (scene.modal === "pipeline") {
+      setTourAgentsInit(null);
+      setAgentManagerOpen(false);
+      setTourPipelineInit({ tab: scene.tab, view: scene.view, blueprintId: scene.blueprintId });
+      setTourModalKey((k) => k + 1);
+      setPipelineModalOpen(true);
+    } else if (scene.modal === "agents") {
+      setTourPipelineInit(null);
+      setPipelineModalOpen(false);
+      setTourAgentsInit(scene.agentsView ?? "list");
+      setTourModalKey((k) => k + 1);
+      setAgentManagerOpen(true);
+    } else {
+      // none：锚工作台顶层元素，关掉两模态、复位编排。
+      setTourPipelineInit(null);
+      setTourAgentsInit(null);
+      setPipelineModalOpen(false);
+      setAgentManagerOpen(false);
+    }
+    // 右侧面板：步5「产物面板」要它展开后再 spotlight（恒在但折叠态 0 宽）。
+    if (scene.openRightPanel) setRightPanelOpen(true);
+  }, []);
 
-  // 引导结束（完成 / 跳过）：复位编排 + 关两模态（不残留打开的模态）。
+  // 引导结束（完成 / 跳过）：复位编排 + 关两模态（不残留打开的模态）+ 落 seen 标记。
   const handleTourFinish = useCallback(() => {
     setTourActive(false);
     setTourPipelineInit(null);
     setTourAgentsInit(null);
     setPipelineModalOpen(false);
     setAgentManagerOpen(false);
+    try {
+      localStorage.setItem(TOUR_SEEN_KEY, "1");
+    } catch {
+      // localStorage 不可用（隐私模式等）→ 静默；至多本会话内再弹一次，不阻塞。
+    }
   }, []);
 
   const handleCloseFileTab = useCallback((tabId: string) => {
@@ -572,7 +587,31 @@ export function AppShell() {
               </svg>
               <span>回到项目墙</span>
             </button>
-            <ProjectSwitcher onProjectSelected={handleCwdChange} />
+            {/* T1：「新手引导」常驻按钮（落点 = sidebar headerSlot，紧邻「回到项目墙」；ADR D-R8.5-08）。
+                随时重看总览/深度轨；用 lucide compass 内联 SVG（避免 🧭 emoji 字形豆腐块）。 */}
+            <button
+              data-testid="tour-open-btn"
+              onClick={() => setTourActive(true)}
+              title="新手引导"
+              style={{
+                display: "flex", alignItems: "center", gap: 7,
+                width: "100%", padding: "5px 10px", marginBottom: 6,
+                background: "none", border: "1px solid var(--border)", borderRadius: 7,
+                color: "var(--text-muted)", cursor: "pointer", fontSize: 11,
+                textAlign: "left", transition: "color 0.12s, background 0.12s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.background = "none"; }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <circle cx="12" cy="12" r="10" /><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+              </svg>
+              <span>新手引导</span>
+            </button>
+            {/* T1 总览轨步1 锚点：项目切换器（恒在 header 内）。 */}
+            <div data-tour-id="tour-project-switcher">
+              <ProjectSwitcher onProjectSelected={handleCwdChange} />
+            </div>
           </>
         }
       />
@@ -1052,6 +1091,7 @@ export function AppShell() {
       {/* Right panel: file viewer — always mounted, width animated via CSS；全屏态切 right-panel-fullscreen */}
       <div
         ref={panelRef}
+        data-tour-id="tour-artifact-panel"
         className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelFullscreen ? " right-panel-fullscreen" : ""}`}
         style={{
           display: "flex",
@@ -1157,6 +1197,7 @@ export function AppShell() {
     )}
     {agentManagerOpen && currentProjectId && (
       <AgentManager
+        key={`am-${tourModalKey}`}
         projectId={currentProjectId}
         projectRoot={currentRoot}
         onClose={() => { setAgentManagerOpen(false); setTourAgentsInit(null); }}
@@ -1166,6 +1207,7 @@ export function AppShell() {
     )}
     {pipelineModalOpen && currentProjectId && (
       <PipelineModal
+        key={`pm-${tourModalKey}`}
         projectId={currentProjectId}
         projectRoot={currentRoot}
         initialTab={tourPipelineInit?.tab}
@@ -1192,26 +1234,34 @@ export function AppShell() {
         onSessionsChanged={handleDispatchSessionsChanged}
       />
     )}
-    {/* 第8.5轮 T1·mini-spike：临时触发按钮（Phase B 移除，换成首启自动 + 🧭 按钮）。
-        仅在已进项目（有 currentProjectId）时显示——深度轨锚 Pipeline 入口/编辑器需项目在场。 */}
-    {currentProjectId && !tourActive && (
+    {/* T1：🧭 主入口在 sidebar headerSlot；sidebar 折叠时 headerSlot 随之 width:0 隐藏 →
+        给一个仅「折叠态」出现的悬浮兜底（左下角，避开右上文件面板 toggle），保证引导恒可达（ADR D-R8.5-08）。
+        引导激活时不显（已有 overlay）。 */}
+    {currentProjectId && !sidebarOpen && !tourActive && (
       <button
-        data-testid="tour-spike-trigger"
+        data-testid="tour-open-fallback"
         onClick={() => setTourActive(true)}
-        title="新手引导（mini-spike）"
+        title="新手引导"
         style={{
-          position: "fixed", bottom: 16, right: 52, zIndex: 1500,
-          padding: "7px 12px", background: "var(--accent)", border: "none",
-          borderRadius: 8, color: "#fff", fontSize: 12, fontWeight: 600,
-          cursor: "pointer", boxShadow: "0 4px 16px rgba(0,0,0,0.25)",
+          position: "fixed", bottom: 14, left: 14, zIndex: 1500,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          width: 34, height: 34, padding: 0,
+          background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 9,
+          color: "var(--text-muted)", cursor: "pointer", boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
         }}
+        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
       >
-        🧭 引导
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10" /><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+        </svg>
       </button>
     )}
+    {/* 第8.5轮 T1：首用引导 overlay。首启无 tour-seen 自动开（见上方 effect）、🧭 按钮随时重看。
+        深度轨需开模态（须有项目）→ canDeepTrack 控制总览末步「深入引导」是否出现。 */}
     {tourActive && (
       <OnboardingTour
-        autoStart
+        canDeepTrack={!!currentProjectId}
         onOrchestrate={handleTourOrchestrate}
         onFinish={handleTourFinish}
       />
