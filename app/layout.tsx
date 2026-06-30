@@ -1,14 +1,8 @@
 import type { Metadata } from "next";
-import { Noto_Sans_Mono } from "next/font/google";
 import "katex/dist/katex.min.css";
 import "./globals.css";
 import { Toaster } from "@/components/Toaster";
-
-const notoSansMono = Noto_Sans_Mono({
-  subsets: ["latin", "cyrillic"],
-  variable: "--font-noto-mono",
-  display: "swap",
-});
+import { notoSansMono } from "./fonts";
 
 export const metadata: Metadata = {
   title: "Next-Step",
