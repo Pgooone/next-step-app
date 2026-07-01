@@ -45,10 +45,12 @@
 - **双层验收全 PASS**：①lead 三重复验（独立门禁 lint0/tsc0/**test536→563** + 亲读全部承重文件非 vacuous + 变异 spike-2 evict 命门即红即绿）②独立 verifier ns-t3t4-verify（干净门禁 + 红线 grep 逐条〔否决 dispatch/owner-map/acquireSlot Infinity/D-R7B-07/spike-3 结构封死〕+ 自写 fixture〔approve 幂等门/reconcileOrphan/spike-2 负对照〕、未发现真问题）③路由集成 smoke `scripts/verify-r86-t3t4-routes-smoke.sh`（curl 真运行时 6/6：approve 幂等门 200→409 + 拒非 awaiting + cancel-paused→failed + GET reconcile 不翻 awaiting/paused）。**spike-2**（真 runMastermind + faux 三闭包 fauxMap + destroy 真删 + sizeAtEnter===1 证回落非本就 0 + AC-2.2 负对照）**spike-3**（submit_plan faux spy acquireSlot/setRunController 调 0 次 + 源码 grep 结构封死）均确定性坐实。
 - commit：本批次单独提交（本地 v1.2、未 push）。
 
-### T5 · 队员卡片内联·乙 + 临时造角色（M5+M6）[🔴UI承重]
-- **目标**：队员卡片内联 ChatWindow（乙·对标 Kimi、冒回复下）+ GSAP 动效 + 临时造角色。
+### T5 · 队员卡片内联·乙 + 计划卡 + 临时造角色（M5+M6）[🔴UI承重 · ✅收官]
+- **目标**：队员卡片内联 ChatWindow（乙·对标 Kimi、冒回复下）+ 计划卡 UI + GSAP 动效 + 临时造角色。
 - **AC**：卡片冒主脑回复下 + 实时状态 + 点进详情 + 底部切换条 / 临时造避重名(uuid) / 动效克制(reduced-motion) / 守 D-R7B-07（真浏览器验收兜底）。
-- **依赖**：T2~T4。
+- **依赖**：T2~T4。**状态**：✅ **收官**（commit `0536aa6`，本地 v1.2、未 push）。去风险 workflow `w0kbl3j1m`（7 agent、9 falseGoTraps）GO_WITH_MITIGATION → ns-t5-impl 实现（8 新 + 7 改）→ **lead 三重复验**（亲读非 vacuous 9 traps 逐条 / 独立门禁 lint0/tsc0/test596=563+33 / 变异命门：收窄 StageCardStage→tsc 红 3 处、删 STATUS_META.skipped→TS2741）→ **独立 verifier ns-t5-verify 双层验收全 PASS**（干净门禁 + 红线 grep + 真浏览器亮暗双主题 6 态全渲 + skipped hover 不崩 + pageErrors=0，hybrid fixture）→ lead 亲读 4 截图。
+  - **两大待设计点终裁**（ADR D-R8.6-12）：①entryId→runId=否决独立 store、按 runId 从 transcript 就地派生（`derive-run-ids.ts` filter 非 find、卡片主键 runId 非 entryIds）②卡片族吃超集=新建 `stage-card-stage.ts` StageCardStage（详设「extends」措辞与代码不符、status 实际更宽）+ status-meta 补 skipped 键。
+  - **落点**：新建 useMastermindStore/MastermindPlanCard/PollDriver/TeammateCards/PipelineBoardStyles + lib/pipeline/stage-card-stage + lib/mastermind/{derive-run-ids,friendly-name}；改 ChatWindow/AppShell/PipelineBoard/PipelineStageCard/StageHoverPreview/StageSessionMenu/status-meta。
 
 ### T6 · 长上下文 + spike-4 真模型（M7）[🔴承重 · spike-4]
 - **目标**：长上下文策略（队员短命会话 + 主脑轻读汇总）+ 真模型端到端验。
