@@ -6,14 +6,17 @@ import { statusToProgress } from "@/lib/pipeline/dot-matrix";
 import StageDotMatrix from "@/components/StageDotMatrix";
 import StageHoverPreview from "@/components/StageHoverPreview";
 import StageSessionMenu from "@/components/StageSessionMenu";
-import type { PipelineRunStage } from "@/lib/domain/pipeline-run-store"; // 仅类型
+import { friendlyAgentName } from "@/lib/mastermind/friendly-name";
+// 第 8.6 轮 T5：卡片族收超集 StageCardStage（status 含 "skipped"），协变兼容第七轮的窄 PipelineRunStage。
+import type { StageCardStage } from "@/lib/pipeline/stage-card-stage"; // 仅类型
 
 /** status → .brow 修饰类（视觉 §6/§7；running 用 Kimi 蓝 run-accent，非 emerald）。 */
-function statusClass(stage: PipelineRunStage): string {
+function statusClass(stage: StageCardStage): string {
   switch (stage.status) {
     case "running":
       return "running";
     case "done":
+    case "skipped": // skipped 归 done 变体（灰化名，非红/非蓝）
       return "done";
     case "failed":
       return "failed";
@@ -24,7 +27,7 @@ function statusClass(stage: PipelineRunStage): string {
 }
 
 /** 状态徽章内容（排队态优先显「排队中·等会话槽」，AC-5）。 */
-function badgeFor(stage: PipelineRunStage): { text: string; cls: string } {
+function badgeFor(stage: StageCardStage): { text: string; cls: string } {
   if (stage.statusDetail === "queued") return { text: "排队中·等会话槽", cls: "badge-wait" };
   switch (stage.status) {
     case "running":
@@ -33,6 +36,8 @@ function badgeFor(stage: PipelineRunStage): { text: string; cls: string } {
       return { text: "✓", cls: "badge-done" };
     case "failed":
       return { text: "✕", cls: "badge-failed" };
+    case "skipped":
+      return { text: "已跳过", cls: "badge-wait" };
     case "pending":
     default:
       return { text: "待执行", cls: "badge-wait" };
@@ -51,10 +56,10 @@ export default function PipelineStageCard({
   onOpenSession,
   onOpenArtifact,
 }: {
-  stage: PipelineRunStage;
+  stage: StageCardStage;
   stageName?: string;
   totalStages?: number;
-  stages?: PipelineRunStage[];
+  stages?: StageCardStage[];
   onOpenSession?: (sessionId: string) => void;
   onOpenArtifact?: (artifactId: string) => void;
 }) {
@@ -62,6 +67,9 @@ export default function PipelineStageCard({
   // click 二级菜单（T6）：与 hover 浮窗分属两套独立 state，互不合并。
   const [menuOpen, setMenuOpen] = useState(false);
   const badge = badgeFor(stage);
+  // 喂给点阵/进度的窄 status（skipped 归一化为 done，语义=已完成态的满格进度、不改共享签名）。
+  const dotStatus: import("@/lib/domain/dispatch-store").DispatchStatus =
+    stage.status === "skipped" ? "done" : stage.status;
 
   // N2：锚父卡 ref，传给两浮层做 fixed 定位的 getBoundingClientRect 基准（脱离 overflow:hidden 裁切）。
   const browRef = useRef<HTMLDivElement | null>(null);
@@ -106,13 +114,14 @@ export default function PipelineStageCard({
       <div className="rmain">
         <div className="rtop">
           <span className="rname">{stageName ?? `阶段 ${stage.order}`}</span>
-          <span className="rrole">· {stage.agentName ?? stage.agentId}</span>
+          <span className="rrole">· {friendlyAgentName(stage.agentName ?? stage.agentId)}</span>
           <span className="rno">{String(stage.order).padStart(2, "0")}</span>
         </div>
         <div className="rtask">
           <span className="tline">└</span>
           <span className="tk">{stage.subTask}</span>
-          <StageDotMatrix progress={statusToProgress(stage.status)} status={stage.status} />
+          {/* dot-matrix/StageDotMatrix 签名收窄 DispatchStatus（共享·爆炸半径大不改）→ skipped 卡内归一化为 done。 */}
+          <StageDotMatrix progress={statusToProgress(dotStatus)} status={dotStatus} />
         </div>
       </div>
 

@@ -1055,6 +1055,21 @@ export function AppShell() {
               atAgents={atAgents}
               isMainChat={isMainChat}
               onAgentTransfer={handleAgentTransfer}
+              onOpenArtifact={handleOpenArtifact}
+              onOpenSession={(sessionId) => {
+                // T5 主脑派活块「进入完整对话」：切到该阶段会话（同 PipelineModal 的 onOpenSession 模式，
+                // 但主对话视图无模态需关）。
+                handleSelectSession({
+                  id: sessionId,
+                  path: "",
+                  cwd: currentRoot ?? "",
+                  name: undefined,
+                  created: new Date().toISOString(),
+                  modified: new Date().toISOString(),
+                  messageCount: 1,
+                  firstMessage: "",
+                });
+              }}
             />
           ) : showPlaceholder ? (
             activeCwd ? (

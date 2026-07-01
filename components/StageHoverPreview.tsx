@@ -4,7 +4,7 @@ import { useLayoutEffect, useState } from "react";
 import { agentAvatarDataUri } from "@/lib/pipeline/avatar";
 import { STATUS_META } from "@/lib/pipeline/status-meta";
 import { computeFixedPopover } from "@/lib/pipeline/popover-position";
-import type { PipelineRunStage } from "@/lib/domain/pipeline-run-store"; // 仅类型
+import type { StageCardStage } from "@/lib/pipeline/stage-card-stage"; // 仅类型（超集，含 skipped）
 
 /** 把 startedAt/finishedAt 算成「耗时 1m23s」；未完成显「运行中」、未起显「—」。 */
 function formatDuration(startedAt: string | null, finishedAt: string | null): string {
@@ -51,7 +51,7 @@ export default function StageHoverPreview({
   onMouseEnter,
   onMouseLeave,
 }: {
-  stage: PipelineRunStage;
+  stage: StageCardStage;
   stageName?: string;
   totalStages?: number;
   /** 锚父卡（.brow）的 ref，用于 getBoundingClientRect 算 fixed 坐标（N2 脱离 overflow:hidden 裁切）。 */

@@ -3,9 +3,9 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import { MessageView } from "@/components/MessageView";
 import { computeFixedPopover } from "@/lib/pipeline/popover-position";
-// D-R7B-07：领域层（pipeline-run-store）含 node:fs，只能 import type，绝不 value-import
-// （否则 "use client" 链把 node:fs 拖进客户端 bundle → 全站 500）。会话记录经 fetch JSON 取。
-import type { PipelineRunStage } from "@/lib/domain/pipeline-run-store";
+// D-R7B-07：领域层含 node:fs，UI 只 import type + fetch JSON。第 8.6 轮 T5：收超集 StageCardStage
+// （status 含 "skipped"，协变兼容第七轮窄 PipelineRunStage）。
+import type { StageCardStage } from "@/lib/pipeline/stage-card-stage";
 import type { AgentMessage, ToolResultMessage } from "@/lib/types";
 
 /**
@@ -32,17 +32,17 @@ export default function StageSessionMenu({
   onClose,
   anchorRef,
 }: {
-  stage: PipelineRunStage;
-  stages: PipelineRunStage[];
+  stage: StageCardStage;
+  stages: StageCardStage[];
   onOpenSession?: (sessionId: string) => void;
   onOpenArtifact?: (artifactId: string) => void;
-  onSelectStage?: (stage: PipelineRunStage) => void;
+  onSelectStage?: (stage: StageCardStage) => void;
   onClose?: () => void;
   /** 锚父卡（.brow）的 ref，用于 getBoundingClientRect 算 fixed 坐标（N2 脱离 overflow:hidden 裁切）。 */
   anchorRef?: React.RefObject<HTMLElement | null>;
 }) {
   // 当前查看的 stage：初始 = 传入 stage；区3 切换它（菜单自管理，onSelectStage 仅作可选回调透出）。
-  const [viewStage, setViewStage] = useState<PipelineRunStage>(stage);
+  const [viewStage, setViewStage] = useState<StageCardStage>(stage);
 
   // N2：fixed 坐标在 useLayoutEffect 测量后存 state（渲染期/SSR 不能同步 getBoundingClientRect）。
   // maxHeightCap = 80vh，helper 再按选中侧可用空间钳到 min(80vh, 可用)。
@@ -114,7 +114,7 @@ export default function StageSessionMenu({
     }
   }
 
-  const selectStage = (s: PipelineRunStage) => {
+  const selectStage = (s: StageCardStage) => {
     setViewStage(s);
     onSelectStage?.(s);
   };
