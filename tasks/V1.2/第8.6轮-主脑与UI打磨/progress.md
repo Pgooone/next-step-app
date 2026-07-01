@@ -52,10 +52,13 @@
   - **两大待设计点终裁**（ADR D-R8.6-12）：①entryId→runId=否决独立 store、按 runId 从 transcript 就地派生（`derive-run-ids.ts` filter 非 find、卡片主键 runId 非 entryIds）②卡片族吃超集=新建 `stage-card-stage.ts` StageCardStage（详设「extends」措辞与代码不符、status 实际更宽）+ status-meta 补 skipped 键。
   - **落点**：新建 useMastermindStore/MastermindPlanCard/PollDriver/TeammateCards/PipelineBoardStyles + lib/pipeline/stage-card-stage + lib/mastermind/{derive-run-ids,friendly-name}；改 ChatWindow/AppShell/PipelineBoard/PipelineStageCard/StageHoverPreview/StageSessionMenu/status-meta。
 
-### T6 · 长上下文 + spike-4 真模型（M7）[🔴承重 · spike-4]
+### T6 · 长上下文 + spike-4 真模型（M7）[🔴承重 · spike-4 · ✅收官]
 - **目标**：长上下文策略（队员短命会话 + 主脑轻读汇总）+ 真模型端到端验。
 - **AC**：compaction 真触发不崩 / context% 可控 / **sf-mini 标杆场景产「好看好用可运行 UI 原型」**。
-- **依赖**：T2~T5（编排骨架就位）。
+- **依赖**：T2~T5（编排骨架就位）。**状态**：✅ **收官**（commit `80177eb`，本地 v1.2、未 push）。去风险 P1/P2/P4 GO + 专项补做 P3（长上下文·队员上游全文拼接辨析）→ ns-t6-impl 实现 S1+S2 → **lead 三重复验**（亲读非 vacuous / 独立门禁 lint0/tsc0/test599 / 变异 reattach idle gap 即红即绿 / D-R7B-07 smoke）→ **spike-4 真模型端到端坐实**（真 DeepSeek 跑 2 队员协作 → 主脑 list_artifacts→read 相对 filePath **真读到产物正文**→create_artifact 产汇总受管文档，transcript+截图+受管文档三重铁证；**sf-mini 标杆端到端达成**）。
+  - **落点**：wiring.ts 两处 concat 汇总工具（create_artifact/list_artifacts 经 buildDispatchDocTools、无 propose_edit、D-R7B-07 只在 wiring import）+ doc-tools.ts list_artifacts 加相对 filePath（补 P3-Q4 缺口）+ ORCHESTRATOR_SYSTEM_PROMPT 汇总纪律。
+  - **lead 决策（ADR D-R8.6-13）**：队员 accumulate 不改轻读（P3-Q3 (A)：sf-mini 规模两数量级余量、改破坏累积语义+撞 filePath blocker、失败态优雅、不加 teammates 上限）；compact-and-retry 内核自带不实现；汇总触发 MVP=用户/主脑本轮、自动 nudge 留二期。
+  - **⚠️遗留**：compaction/overflow 真触发（P3-Q5，DeepSeek overflow 串是否命中内核 OVERFLOW_PATTERNS）= spike-4 best-effort、待 ns-t6-spike4 回；非阻塞（内核机制已 P3 坐实、正常 sf-mini 规模触发不到）。
 
 ### T7 · UI 打磨（M8）[与 T5 卡片交汇]
 - **目标**：.btn 四型六态 token/类 + 修流水线卡片真 bug + 补 a11y（需求 §三）。
