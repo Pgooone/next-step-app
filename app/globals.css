@@ -402,12 +402,155 @@ span.linenumber {
   --mode-coding-fg: #b45309;
   --mode-coding-bg: rgba(245,158,11,0.12);
   --mode-coding-bd: rgba(245,158,11,0.32);
+
+  /* ── 第 8.6 轮 T7 · P0 语义色 token ────────────────────────────────
+     on-accent = primary 按钮文字色（贴在 --accent 实心底上）。
+     亮色 --accent=#2563eb 配白字 = 5.17:1（AA 达标）→ 白字。 */
+  --color-on-accent: #ffffff;
+  /* danger 实心色：#ef4444(白字 3.76 FAIL) → #dc2626(白字 4.83 PASS·WCAG AA)。 */
+  --color-danger: #dc2626;
+  --color-danger-hover: #b91c1c;         /* 悬停加深，白字 6.47:1 */
+  --color-on-danger: #ffffff;
 }
 html.dark {
   --accent-soft: rgba(96, 165, 250, 0.16);
   --mode-coding-fg: #fbbf24;
   --mode-coding-bg: rgba(245,158,11,0.14);
   --mode-coding-bd: rgba(245,158,11,0.34);
+
+  /* 暗色 --accent=#60a5fa（浅蓝）配白字仅 2.54:1 FAIL → primary 按钮改用**深字**。
+     #08111f on #60a5fa = 7.44:1（AAA，达 spec ≥7:1 目标）。 */
+  --color-on-accent: #08111f;
+  --color-danger: #dc2626;
+  --color-danger-hover: #ef4444;         /* 暗底上悬停用更亮的红更醒目 */
+  --color-on-danger: #ffffff;
+}
+
+/* ── 第 8.6 轮 T7 · P1 `.btn` 语义类层（四型 × 六态，亮暗双主题）─────────
+   自建、不引组件库（D-R8.6-04）。适配现有 token 体系（--accent/--bg/--text…），
+   不新开命名空间。**本轮只建模板供后续用 + 修 P0/P1**，存量 182 个内联按钮不迁（P2）。
+   Swiss 语言：细边 + 纯色、无渐变/毛玻璃；press 只改色不位移邻居（不 transform 撑开）。 */
+:root {
+  --btn-radius: 7px;                     /* 项目内 7px 最常见（收敛 16 种取值） */
+  --btn-focus-ring: var(--accent-soft);  /* focus-visible 软环，复用 accent-soft */
+  --btn-disabled-opacity: 0.5;           /* WCAG 建议 0.38–0.5 */
+  --btn-transition: background-color 0.16s ease, border-color 0.16s ease,
+                    color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  border-radius: var(--btn-radius);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: var(--btn-transition);
+  /* 触控目标 ≥ 一定高度、且 focus 环不被裁切 */
+  min-height: 32px;
+}
+.btn:focus { outline: none; }
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--btn-focus-ring);
+}
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: var(--btn-disabled-opacity);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+/* loading：文字变淡 + 前置转圈（消费方给 <span class="btn-spinner"/>），期间禁点。 */
+.btn[aria-busy="true"] {
+  cursor: progress;
+  color: transparent;              /* 文字隐去，只留 spinner，避免宽度跳动 */
+  position: relative;
+}
+.btn[aria-busy="true"] .btn-spinner {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  opacity: 0.9;
+}
+
+/* primary：accent 实心 + on-accent 文字（暗色深字达 7:1）。 */
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--color-on-accent);
+}
+.btn-primary:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.btn-primary:active:not(:disabled):not([aria-disabled="true"]) {
+  /* press 用内阴影压暗，不位移 */
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.22);
+}
+.btn-primary[aria-busy="true"] .btn-spinner { color: var(--color-on-accent); }
+
+/* secondary：surface 底 + 细边（Swiss 主力次级按钮）。 */
+.btn-secondary {
+  background: var(--bg-panel);
+  border-color: var(--border);
+  color: var(--text);
+}
+.btn-secondary:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+.btn-secondary:active:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--bg-selected);
+}
+
+/* ghost：透明底、无边，仅 hover 显软底（工具栏图标按钮/文字按钮）。 */
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+}
+.btn-ghost:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.btn-ghost:active:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--bg-selected);
+}
+
+/* danger：实心红（#dc2626 白字 AA），删除/危险动作。 */
+.btn-danger {
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+  color: var(--color-on-danger);
+}
+.btn-danger:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--color-danger-hover);
+  border-color: var(--color-danger-hover);
+}
+.btn-danger:active:not(:disabled):not([aria-disabled="true"]) {
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.25);
+}
+.btn-danger[aria-busy="true"] .btn-spinner { color: var(--color-on-danger); }
+
+/* 尺寸修饰（可选）：小按钮。 */
+.btn-sm { padding: 3px 9px; font-size: 12px; min-height: 26px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn { transition: none; }
+  .btn[aria-busy="true"] .btn-spinner { animation: none; }
 }
 
 /* Swiss agent 卡片：纯 surface（基类已给 bg+细边），仅 10px 圆角；

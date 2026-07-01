@@ -26,16 +26,20 @@ function statusClass(stage: StageCardStage): string {
   }
 }
 
-/** 状态徽章内容（排队态优先显「排队中·等会话槽」，AC-5）。 */
-function badgeFor(stage: StageCardStage): { text: string; cls: string } {
-  if (stage.statusDetail === "queued") return { text: "排队中·等会话槽", cls: "badge-wait" };
+/**
+ * 状态徽章内容（排队态优先显「排队中·等会话槽」，AC-5）。
+ * T7 P1：emoji（⏳/✓/✕）→ chip 文字标签（更统一、可读、a11y 友好）；running 带脉动 LED 圆点（led）。
+ */
+function badgeFor(stage: StageCardStage): { text: string; cls: string; led?: boolean } {
+  if (stage.statusDetail === "queued")
+    return { text: "排队中·等会话槽", cls: "badge-run", led: true };
   switch (stage.status) {
     case "running":
-      return { text: "⏳", cls: "badge-run" };
+      return { text: "执行中", cls: "badge-run", led: true };
     case "done":
-      return { text: "✓", cls: "badge-done" };
+      return { text: "已完成", cls: "badge-done" };
     case "failed":
-      return { text: "✕", cls: "badge-failed" };
+      return { text: "失败", cls: "badge-failed" };
     case "skipped":
       return { text: "已跳过", cls: "badge-wait" };
     case "pending":
@@ -95,14 +99,26 @@ export default function PipelineStageCard({
   return (
     <div
       ref={browRef}
-      className={`brow ${statusClass(stage)}`}
+      className={`brow ${statusClass(stage)}${menuOpen ? " selected" : ""}`}
       style={{ position: "relative" }}
+      // T7 P1 a11y：卡片可聚焦 + 键盘触发（Enter/Space 等价点击弹菜单），role=button 让读屏正确识别。
+      role="button"
+      tabIndex={0}
+      aria-haspopup="dialog"
+      aria-expanded={menuOpen}
+      aria-label={`阶段 ${stage.order}${stageName ? ` ${stageName}` : ""}·${badge.text}`}
       onMouseEnter={() => {
         cancelHide();
         setHover(true);
       }}
       onMouseLeave={scheduleHide}
       onClick={() => setMenuOpen(true)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          setMenuOpen(true);
+        }
+      }}
     >
       {/* 区1 头像（dicebear data: URI，无法走 next/image，沿用既有 <img> 约定） */}
       <span className="ava">
@@ -125,8 +141,11 @@ export default function PipelineStageCard({
         </div>
       </div>
 
-      {/* 区3 状态徽章 */}
-      <span className={`badge ${badge.cls}`}>{badge.text}</span>
+      {/* 区3 状态徽章（chip；running/queued 带脉动 LED 圆点） */}
+      <span className={`badge ${badge.cls}`}>
+        {badge.led && <span className="chip-dot led-live" />}
+        {badge.text}
+      </span>
 
       {/* 区4 右箭头 */}
       <span className="chev">›</span>
@@ -140,6 +159,10 @@ export default function PipelineStageCard({
           anchorRef={browRef}
           onMouseEnter={cancelHide}
           onMouseLeave={scheduleHide}
+          onDismiss={() => {
+            cancelHide();
+            setHover(false);
+          }}
         />
       )}
 

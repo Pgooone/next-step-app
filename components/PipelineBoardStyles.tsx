@@ -27,12 +27,20 @@ export default function PipelineBoardStyles() {
 .pipeline-board .gbar{display:inline-flex;gap:2px;vertical-align:middle}
 .pipeline-board .gbar i{width:8px;height:10px;border-radius:2px;display:block}
 .pipeline-board .clist{background:var(--container);border-radius:11px;padding:.35rem}
-.pipeline-board .brow{display:flex;align-items:center;gap:.65rem;padding:.5rem .65rem;border-radius:10px;background:var(--card);border:1px solid var(--card-bd);margin-bottom:.35rem;cursor:pointer}
+/* T7 P1：hover/选中/聚焦从「硬 outline 瞬切」升级为平滑过渡 + box-shadow 环（不撑开布局、不位移邻卡）。 */
+.pipeline-board .brow{display:flex;align-items:center;gap:.65rem;padding:.5rem .65rem;border-radius:10px;background:var(--card);border:1px solid var(--card-bd);margin-bottom:.35rem;cursor:pointer;transition:background-color .16s ease,box-shadow .16s ease,border-color .16s ease}
 .pipeline-board .brow:last-child{margin-bottom:0}
 .pipeline-board .brow.running{background:var(--run-bg);border-left:3px solid var(--run-accent);animation:pb-breathe 2.8s ease-in-out infinite}
 .pipeline-board .brow.failed{border-left:3px solid var(--error)}
 .pipeline-board .brow.wait{opacity:.5}
-.pipeline-board .brow:hover{outline:2px solid var(--accent);outline-offset:1px}
+/* T7 P1：hover 用平滑 box-shadow 环（替代瞬切 outline）；选中态 .selected 常驻软环 + 微亮底；
+   键盘 focus-visible 与 hover 同款环（三卡片 role=button+tabIndex=0，AC 键盘可达）。 */
+.pipeline-board .brow:hover{box-shadow:0 0 0 2px var(--accent);background:var(--bg-hover)}
+.pipeline-board .brow.running:hover{background:var(--run-bg)}
+.pipeline-board .brow:focus{outline:none}
+.pipeline-board .brow:focus-visible{outline:none;box-shadow:0 0 0 2px var(--accent)}
+.pipeline-board .brow.selected{box-shadow:0 0 0 2px var(--accent);background:var(--bg-hover)}
+.pipeline-board .brow.running.selected{background:var(--run-bg)}
 .pipeline-board .ava{width:32px;height:32px;border-radius:50%;overflow:hidden;flex-shrink:0;box-shadow:inset 0 0 0 1px var(--avab)}
 .pipeline-board .ava img{width:100%;height:100%;display:block}
 .pipeline-board .rmain{flex:1;min-width:0}
@@ -47,7 +55,9 @@ export default function PipelineBoardStyles() {
 .pipeline-board .brow.running .rtask .tline{color:var(--run-accent)}
 .pipeline-board .rtask .tk{font-size:.72rem;color:var(--task);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;line-height:1.3}
 .pipeline-board .chev{font-size:.95rem;flex-shrink:0;color:var(--line)}
-.pipeline-board .badge{font-size:.63rem;padding:.1rem .45rem;border-radius:999px;white-space:nowrap;flex-shrink:0;font-weight:500}
+/* T7 P1：状态徽章 = chip（inline-flex 对齐、可含 chip 圆点 + 文字标签，替代裸 emoji）。 */
+.pipeline-board .badge{display:inline-flex;align-items:center;gap:.22rem;font-size:.63rem;padding:.1rem .5rem;border-radius:999px;white-space:nowrap;flex-shrink:0;font-weight:600;line-height:1.5}
+.pipeline-board .badge .chip-dot{width:.4rem;height:.4rem;border-radius:50%;background:currentColor;flex-shrink:0}
 .pipeline-board .badge.badge-wait{background:var(--badge-bg);color:var(--badge-fg)}
 .pipeline-board .badge.badge-run{background:var(--run-bg);color:var(--run-accent);border:1px solid var(--run-accent)}
 .pipeline-board .badge.badge-done{background:var(--done-bg);color:var(--done-fg)}
@@ -55,6 +65,13 @@ export default function PipelineBoardStyles() {
 @keyframes pb-breathe{0%,100%{box-shadow:0 0 0 0 transparent}50%{box-shadow:0 0 0 3px var(--run-glow)}}
 @keyframes pb-pulse-led{0%,100%{opacity:1}50%{opacity:.55}}
 .pipeline-board .led-live{animation:pb-pulse-led 1.5s ease-in-out infinite}
+/* T7 P1：reduced-motion 守卫——覆盖本轮新 transition + T5 遗留未守卫的 running 呼吸(pb-breathe)/LED 循环(pb-pulse-led)。 */
+@media (prefers-reduced-motion: reduce){
+  .pipeline-board .brow{transition:none}
+  .pipeline-board .brow.running{animation:none}
+  .pipeline-board .led-live{animation:none}
+  .pipeline-board .badge.badge-run .chip-dot{animation:none}
+}
 `}</style>
   );
 }

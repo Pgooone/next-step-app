@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { agentAvatarDataUri } from "@/lib/pipeline/avatar";
 import { STATUS_META } from "@/lib/pipeline/status-meta";
 import { computeFixedPopover } from "@/lib/pipeline/popover-position";
@@ -50,6 +50,7 @@ export default function StageHoverPreview({
   anchorRef,
   onMouseEnter,
   onMouseLeave,
+  onDismiss,
 }: {
   stage: StageCardStage;
   stageName?: string;
@@ -59,8 +60,23 @@ export default function StageHoverPreview({
   /** N2 防闪烁：浮层自身成为 hover 目标——鼠标进浮层取消隐藏 / 离开浮层重新计时隐藏。 */
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
+  /** T7 P1 a11y：Esc 关（键盘用户）——由父卡透出，落到 setHover(false)。 */
+  onDismiss?: () => void;
 }) {
-  const meta = STATUS_META[stage.status];
+  // T7 P1 a11y：Esc 关只读浮窗（与 StageSessionMenu 一致的键盘退出路径）。
+  useEffect(() => {
+    if (!onDismiss) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onDismiss();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onDismiss]);
+
+  // P0③：排队态优先——queued 在领域模型是 statusDetail（底层 status 仍 pending/running），
+  // 卡片 badgeFor 已优先显「排队中·等会话槽」，浮窗头徽章同步取 queued 键，消「卡片排队/浮窗待执行」矛盾。
+  const meta =
+    stage.statusDetail === "queued" ? STATUS_META.queued : STATUS_META[stage.status];
   const roleLabel = totalStages
     ? `阶段 ${stage.order} / ${totalStages}`
     : `阶段 ${stage.order}`;
@@ -83,6 +99,7 @@ export default function StageHoverPreview({
   return (
     <div
       data-testid="stage-hover-preview"
+      role="tooltip"
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       style={{

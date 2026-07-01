@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { MessageView } from "@/components/MessageView";
 import { computeFixedPopover } from "@/lib/pipeline/popover-position";
 // D-R7B-07：领域层含 node:fs，UI 只 import type + fetch JSON。第 8.6 轮 T5：收超集 StageCardStage
@@ -43,6 +43,32 @@ export default function StageSessionMenu({
 }) {
   // 当前查看的 stage：初始 = 传入 stage；区3 切换它（菜单自管理，onSelectStage 仅作可选回调透出）。
   const [viewStage, setViewStage] = useState<StageCardStage>(stage);
+
+  // T7 P1 a11y：菜单容器 ref——用于 focus 管理 + 外点关判定。
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  // T7 P1 a11y：打开即把焦点移入菜单（focus 管理），并监听 Esc 关 + 外点关。
+  // 外点用 pointerdown（早于 click，避免与父卡 onClick 冒泡竞争重开）；锚卡自身点击也算「外部」→ 关闭。
+  useEffect(() => {
+    menuRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose?.();
+      }
+    };
+    const onPointerDown = (e: PointerEvent) => {
+      const t = e.target as Node | null;
+      if (menuRef.current && t && !menuRef.current.contains(t)) onClose?.();
+    };
+    document.addEventListener("keydown", onKey);
+    // 捕获阶段监听，先于父卡 onClick 处理，确保外点即关。
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, [onClose]);
 
   // N2：fixed 坐标在 useLayoutEffect 测量后存 state（渲染期/SSR 不能同步 getBoundingClientRect）。
   // maxHeightCap = 80vh，helper 再按选中侧可用空间钳到 min(80vh, 可用)。
@@ -121,10 +147,23 @@ export default function StageSessionMenu({
 
   return (
     <div
+      ref={menuRef}
       data-testid="stage-session-menu"
+      role="dialog"
+      aria-modal="false"
+      aria-label={`阶段 ${viewStage.order} 会话菜单`}
+      tabIndex={-1}
       onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        // 冗余兜底：焦点在菜单内时 Esc 也关（document 监听已覆盖，双保险）。
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          onClose?.();
+        }
+      }}
       style={{
         position: "fixed",
+        outline: "none",
         // 未测量出坐标前先隐藏（避免首帧落 0,0 闪一下）；above 用 bottom 锚、below 用 top 锚。
         top: placement ? (placement.top ?? undefined) : 0,
         bottom: placement?.bottom ?? undefined,
