@@ -3,6 +3,7 @@ import { existsSync } from "fs";
 import { startRpcSession } from "@/lib/rpc-manager";
 import { startOrchestratorSession, type PromptImage } from "@/lib/pi/orchestrator-session-wiring";
 import { markMastermind } from "@/lib/domain/session-agent-map";
+import { resolveProjectIdByCwd } from "@/lib/domain/resolve-project-id";
 
 // POST /api/agent/new  body: { cwd: string; type: string; message: string; ... }
 // Spawns a brand-new pi session and immediately sends the first command.
@@ -29,11 +30,15 @@ export async function POST(req: Request) {
     // set_model / set_thinking_level / 发 prompt 的普通序列（避免首条 message 重发）。
     const isMastermind = mastermind === true;
     if (isMastermind) {
+      // T3：按 cwd 反查 projectId 传下去，让 submit_plan 闭包能真落 MastermindRun（cwd 不在注册项目下则
+      // 为 null → submit_plan 退回桩行为、不崩）。
+      const projectId = resolveProjectIdByCwd(cwd);
       // session 不在本分支消费（model/thinking + 首条 message 已在 startOrchestratorSession 内处理）。
       // images 透传——普通分支 session.send(promptCommand) 带 images，主脑分支须对齐（零回归）。
       const { realSessionId } = await startOrchestratorSession({
         cwd,
         firstMessage: promptCommand.message as string,
+        ...(projectId ? { projectId } : {}),
         ...(Array.isArray(promptCommand.images) && promptCommand.images.length
           ? { images: promptCommand.images as PromptImage[] }
           : {}),

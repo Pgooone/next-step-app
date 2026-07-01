@@ -37,6 +37,8 @@ import {
   buildOrchestratorResourceLoader,
   ORCHESTRATOR_SYSTEM_PROMPT,
 } from "./orchestrator-session";
+import { MastermindRunStore } from "../domain/mastermind-run-store";
+import { resolveProjectIdByCwd } from "../domain/resolve-project-id";
 
 /**
  * 登记口（仿 profile-session-wiring.ts 的 ReattachInnerSession）：返回 `session` 用泛型 `S` 透传
@@ -71,6 +73,11 @@ export type PromptImage = { type: "image"; data: string; mimeType: string };
 export async function startOrchestratorSession<S = unknown>(args: {
   cwd: string;
   firstMessage: string;
+  /**
+   * 当前项目 id（route 经 resolveProjectIdByCwd(cwd) 反查后传）；供 submit_plan 闭包注入真落
+   * MastermindRun（T3）。cwd 未在任何注册项目下时可缺省 → submit_plan 退回桩行为（不崩、不落盘）。
+   */
+  projectId?: string | null;
   /** 首条 message 的图片附件；省略/空数组则不带（与普通分支同语义）。 */
   images?: PromptImage[];
   /** 新建会话 UI 预选模型（route 从请求体 provider/modelId 透传）；省略则用内核默认。 */
@@ -81,6 +88,8 @@ export async function startOrchestratorSession<S = unknown>(args: {
   sessionManager?: SessionManager;
   /** 测试注入 faux model/auth/modelRegistry，让无凭证环境也能起会话；生产省略 → 内核默认模型解析。 */
   createOptionsOverride?: Partial<CreateAgentSessionOptions>;
+  /** 测试注入 faux MastermindRunStore（hermetic）；生产省略 → new MastermindRunStore()（默认文件后端）。 */
+  runStore?: MastermindRunStore;
   /**
    * 登记口：测试注入 faux（不碰进程级 registry）；生产省略 → 惰性 import rpc-manager 的真实
    * `registerInnerSession`（动态 import 避免静态导入环）。
@@ -90,20 +99,26 @@ export async function startOrchestratorSession<S = unknown>(args: {
   const {
     cwd,
     firstMessage,
+    projectId,
     images,
     model,
     thinkingLevel,
     sessionManager,
     createOptionsOverride,
+    runStore,
     registerInnerSession,
   } = args;
 
   const agentDir = getAgentDir();
   const sm = sessionManager ?? SessionManager.create(cwd, undefined);
 
-  // 总管 prompt 注入 loader + 派活工具（生产不传 calls；桩只回占位 planId/runId）。
+  // 总管 prompt 注入 loader + 派活工具（承重·D-R8.6-11：submit_plan 闭包注入 {projectId,runStore} 才真落盘；
+  // 漏则又变桩、静默落不了盘）。projectId 缺省时 buildMastermindTools 退回桩行为、不崩。
   const resourceLoader = await buildOrchestratorResourceLoader(ORCHESTRATOR_SYSTEM_PROMPT, { cwd });
-  const mastermindTools = buildMastermindTools();
+  const mastermindTools = buildMastermindTools({
+    ...(projectId ? { projectId } : {}),
+    runStore: runStore ?? new MastermindRunStore(),
+  });
   const opts = assembleOrchestratorSessionOptions({ resourceLoader, mastermindTools });
 
   // 白名单 tools = 编码全集 ∪ 派活工具名（命门 D-V2-04：派活名漏掉则内核按名过滤、调不到）。
@@ -160,19 +175,31 @@ export async function reattachOrchestratorSession<S = unknown>(args: {
   sessionManager?: SessionManager;
   /** 测试注入 faux model/auth/modelRegistry，让无凭证环境也能起会话；生产省略。 */
   createOptionsOverride?: Partial<CreateAgentSessionOptions>;
+  /** 测试注入 faux MastermindRunStore（hermetic）；生产省略 → new MastermindRunStore()。 */
+  runStore?: MastermindRunStore;
+  /** 测试注入 projectId（hermetic 绕开真实 registry 反查）；生产省略 → resolveProjectIdByCwd(cwd)。 */
+  projectId?: string | null;
   /** 登记口：测试注入 faux；生产省略 → 惰性 import rpc-manager 的真实 `registerInnerSession`。 */
   registerInnerSession?: RegisterOrchestratorSession<S>;
 }): Promise<{ session: S; realSessionId: string }> {
   // sessionId 不在本体消费（inner.sessionId 为准）——仅作 resolver 调用契约的语义参数，故不解构。
-  const { filePath, cwd, sessionManager, createOptionsOverride, registerInnerSession } = args;
+  const { filePath, cwd, sessionManager, createOptionsOverride, runStore, registerInnerSession } =
+    args;
 
   const agentDir = getAgentDir();
   // 差异①：open 既有会话文件（非 create）。
   const sm = sessionManager ?? SessionManager.open(filePath, undefined);
 
+  // 承重·D-R8.6-11（idle gap）：re-attach 也须闭包注入 {projectId,runStore}——漏则 idle 后 submit_plan
+  // 又变桩、静默落不了盘。projectId 由 cwd 反查（生产）或测试注入。
+  const resolvedProjectId = args.projectId ?? resolveProjectIdByCwd(cwd);
+
   // 与 startOrchestratorSession 同源：同一 ORCHESTRATOR_SYSTEM_PROMPT + 同一派活工具 + 同一白名单。
   const resourceLoader = await buildOrchestratorResourceLoader(ORCHESTRATOR_SYSTEM_PROMPT, { cwd });
-  const mastermindTools = buildMastermindTools();
+  const mastermindTools = buildMastermindTools({
+    ...(resolvedProjectId ? { projectId: resolvedProjectId } : {}),
+    runStore: runStore ?? new MastermindRunStore(),
+  });
   const opts = assembleOrchestratorSessionOptions({ resourceLoader, mastermindTools });
 
   const { session: inner } = await createAgentSession({

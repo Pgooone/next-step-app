@@ -147,7 +147,7 @@ afterEach(() => {
 // startOrchestratorSession：装配 + register + 发首条 message
 // ===========================================================================
 describe("startOrchestratorSession（新建主脑会话）", () => {
-  it("激活集含派活工具 submit_plan/dispatch_task + 编码工具(bash/write/edit/read)；systemPrompt 含总管标记；首条 message 经 register.send 发出", async () => {
+  it("激活集含派活工具 submit_plan + 编码工具(bash/write/edit/read)；systemPrompt 含总管标记；首条 message 经 register.send 发出", async () => {
     const faux = makeFaux();
     const { register, captured } = makeFauxRegister();
     try {
@@ -165,8 +165,8 @@ describe("startOrchestratorSession（新建主脑会话）", () => {
 
       expect(captured.inner).not.toBeNull();
       const active = captured.inner!.getActiveToolNames();
-      // 派活工具在场（命门：白名单含派活名才注册得到）
-      for (const t of ["submit_plan", "dispatch_task"]) {
+      // 派活工具在场（命门：白名单含派活名才注册得到）。Q1：dispatch_task 已移除，只 submit_plan。
+      for (const t of ["submit_plan"]) {
         expect(active).toContain(t);
       }
       // 编码工具也在场（主脑要带 bash/write/edit 自己干活，A4 同款）
@@ -272,6 +272,7 @@ describe("reattachOrchestratorSession（idle 重建主脑会话）", () => {
         sessionId: "ignored-real-id-from-inner",
         filePath,
         cwd,
+        projectId: null, // hermetic：绕开真实 registry 反查（本用例只验工具集，不落盘）
         sessionManager: SessionManager.open(filePath, undefined),
         createOptionsOverride: {
           model: faux.model,
@@ -285,7 +286,6 @@ describe("reattachOrchestratorSession（idle 重建主脑会话）", () => {
       const active = captured.inner!.getActiveToolNames();
       // 反向防 generic：generic（startRpcSessionInner）激活集 allCodingToolNames 绝无 submit_plan
       expect(active).toContain("submit_plan");
-      expect(active).toContain("dispatch_task");
       for (const t of ["bash", "write", "edit", "read"]) {
         expect(active).toContain(t);
       }
@@ -312,6 +312,7 @@ describe("reattachOrchestratorSession（idle 重建主脑会话）", () => {
         sessionId: "ignored",
         filePath,
         cwd,
+        projectId: null, // hermetic：绕开真实 registry 反查
         sessionManager: SessionManager.open(filePath, undefined),
         createOptionsOverride: {
           model: faux.model,

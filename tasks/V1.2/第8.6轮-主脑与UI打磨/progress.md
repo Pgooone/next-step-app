@@ -9,7 +9,7 @@
 | 第一步 确定需求 | ✅ 需求文档（含 7 要素 + 9 缺口） |
 | 第二步 设计 | ✅ 概要设计 + 详细设计 + **设计评审**（spike-1 去风险 GO + 完整性 self-review，详设 §12） |
 | 第三步 划分任务（本文档）| ✅ |
-| 第四步 实现 | ✅ **T1 spike-1 GO** + ✅ **T2 收官**（去风险 workflow `wrtzcbbd0` GO → agent team 实现 → lead 三重复验 → 独立 verifier → 真浏览器 smoke 全 PASS）；T3~T7 后续 |
+| 第四步 实现 | ✅ **T1 spike-1 GO** + ✅ **T2 收官** + ✅ **T3+T4 编排核心批次收官**（各去风险 workflow GO → agent team 实现 → lead 三重复验 → 独立 verifier → 端到端 smoke 全 PASS）；T5/T6/T7 用户定留后续会话 |
 
 ## 任务卡（承重优先 · 串行 · OOM 安全）
 
@@ -29,15 +29,21 @@
   - **lead 亲读揪修**：主脑分支首条消息丢 images（mastermind 默认开→零回归缺口）→ 已加 `images?` 透传 + 2 测试。
   - commit：本卡单独提交（`feat(core): 第8.6轮 T2 …`，本地 v1.2、未 push）。
 
-### T3 · 计划确认闸（M3）[🔴承重 · spike-3]
+### T3 · 计划确认闸（M3）[🔴承重 · spike-3 · ✅收官]
 - **目标**：submit_plan 落 awaiting_approval + 暂停 → 确认/否决/打回路由 → 计划卡（**含成本感知：显示派 N 个队员**，详设 §12③）。
 - **AC**：产计划暂停(acquireSlot 零调用) / 确认放行 fire / 否决打回 / 计划卡渲队员+验收点+成本信号 / 不与 run-controllers globalThis 时序纠缠。
-- **依赖**：T2。
+- **依赖**：T2。**注**：计划卡 UI 留 T5（本批次只机制层，Q6）；submit_plan 真落盘 + approve/reject/revise 路由已实现。
 
-### T4 · 主脑编排器 · 失败处理（M4）[🔴承重 · spike-2]
+### T4 · 主脑编排器 · 失败处理（M4）[🔴承重 · spike-2 · ✅收官]
 - **目标**：mastermind-orchestrator（仿 pipeline-orchestrator）+ 失败处理（重试1次→暂停→选项）+ 动态 run + 终态扩展(paused/partial)。
 - **AC**：队员失败→暂停非 fail-fast / 选项(重试/换人/跳过/中止)各分支 / 暂停期 evict 释槽 / 只走 pipeline 族(否决 dispatch)。
 - **依赖**：T2。
+
+### T3+T4 收官（编排核心批次，用户拍板一起做）
+- **去风险**：workflow `wpjrwmijy`（3 probe 自带证伪 + final GO），lead file:line 亲核 spike-2/spike-3 两承重 HOLDS；6 决策 + 4 承重命门（idle 闭包重注入 / approve 幂等门 / resume 重建 controller / 临时造 agentId）+ projectId 缺口（cwd 反查 helper）→ **ADR D-R8.6-11**。
+- **落点**：新建 `mastermind-run-store.ts`（6 态 + reconcileOrphan 对 awaiting/paused early-return + pruneOld terminal=done/failed/partial）/ `mastermind-orchestrator.ts`（runMastermind 仿 runPipeline：resume 跳 done+从 artifactId 回读 cache / 临时造 agentId Q2 / retry attempt 小循环每 attempt 尾部 evict / 失败 pauseRun 非 fail-fast / partial-done 判定）/ `resolve-project-id.ts`（cwd→projectId）；submit_plan 真落 awaiting（dispatch_task 移除 Q1、teammate schema 加 mode Q3、prompt 改）；wiring 两处注入 {projectId,runStore}（含 reattach 反查、堵 idle gap 延伸）；6 路由（approve 幂等门→409 / reject / revise / resume 重建 controller + reassign 换池内 agent Q4 / mastermind-runs GET+cancel paused 分支）。**MVP 串行队员**（并行留二期）。
+- **双层验收全 PASS**：①lead 三重复验（独立门禁 lint0/tsc0/**test536→563** + 亲读全部承重文件非 vacuous + 变异 spike-2 evict 命门即红即绿）②独立 verifier ns-t3t4-verify（干净门禁 + 红线 grep 逐条〔否决 dispatch/owner-map/acquireSlot Infinity/D-R7B-07/spike-3 结构封死〕+ 自写 fixture〔approve 幂等门/reconcileOrphan/spike-2 负对照〕、未发现真问题）③路由集成 smoke `scripts/verify-r86-t3t4-routes-smoke.sh`（curl 真运行时 6/6：approve 幂等门 200→409 + 拒非 awaiting + cancel-paused→failed + GET reconcile 不翻 awaiting/paused）。**spike-2**（真 runMastermind + faux 三闭包 fauxMap + destroy 真删 + sizeAtEnter===1 证回落非本就 0 + AC-2.2 负对照）**spike-3**（submit_plan faux spy acquireSlot/setRunController 调 0 次 + 源码 grep 结构封死）均确定性坐实。
+- commit：本批次单独提交（本地 v1.2、未 push）。
 
 ### T5 · 队员卡片内联·乙 + 临时造角色（M5+M6）[🔴UI承重]
 - **目标**：队员卡片内联 ChatWindow（乙·对标 Kimi、冒回复下）+ GSAP 动效 + 临时造角色。
@@ -59,4 +65,4 @@
 
 ---
 
-> **进度**：T1 spike-1 GO + **T2 收官**（双层验收全 PASS）。下一步 **T3 计划确认闸**（依赖 T2 已满足）。T2~T7 已建 task 跟踪。
+> **进度**：T1 spike-1 GO + **T2 收官** + **T3+T4 编排核心批次收官**（均双层验收全 PASS，本地 v1.2 未 push）。**本会话范围到此（用户拍板 T3+T4 批次）**。**下一步（后续会话）= T5 队员卡片内联·乙 + 临时造角色 UI**（计划卡 UI 也并入 T5、同锚点 ChatWindow messages.map），然后 T6 长上下文真模型 + T7 UI 打磨。机制层地基（主脑装配 + 起会话链 + idle gap + 计划确认闸 + 编排器失败处理）已全部就位，T5 起接 UI 可视化。

@@ -16,6 +16,7 @@
  * `_refreshToolRegistry` 按白名单名过滤掉它们——连注册都不到、faux 产该调用时 execute 静默不触发。
  */
 
+import { randomUUID } from "node:crypto";
 import { type Static, Type } from "typebox";
 import {
   DefaultResourceLoader,
@@ -28,6 +29,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 import { CODING_TOOL_NAMES } from "./coding-tools";
+import type { MastermindRunStore } from "../domain/mastermind-run-store";
 
 /**
  * 总管（主脑）系统提示——**模块级常量**，初建（{@link startOrchestratorSession}）与 idle 重建
@@ -40,12 +42,10 @@ export const ORCHESTRATOR_SYSTEM_PROMPT = [
   "",
   "处理用户需求的规矩：",
   "- 小任务（能自己直接完成、或仅需回答）：直接动手或回答，不必派人。",
-  "- 大任务（需要多人协作）：先调 `submit_plan` 工具提交一份多队员协作计划，",
-  "  每个队员含 name（队员名）/ role（角色）/ subTask（子任务）/ acceptanceCriteria（验收标准）。",
-  "  提交计划后**暂停等待用户确认**，不要立即开工。",
-  "- 用户确认计划后，再调 `dispatch_task` 工具放行执行。",
-  "",
-  "纪律：未经用户确认计划前，绝不调用 `dispatch_task`。",
+  "- 大任务（需要多人协作）：调 `submit_plan` 工具提交一份多队员协作计划，",
+  "  每个队员含 name（队员名）/ role（角色）/ subTask（子任务）/ acceptanceCriteria（验收标准）；",
+  "  可按子任务性质给队员标 mode（`doc` 出文档 / `coding` 写代码，默认 `doc`）。",
+  "  提交计划后**暂停等待用户在计划卡上确认放行**——由用户点确认后系统才起编排，你无需（也无法）自行放行执行。",
 ].join("\n");
 
 /**
@@ -85,22 +85,23 @@ export async function buildOrchestratorResourceLoader(
 }
 
 // ---------------------------------------------------------------------------
-// 派活工具（spike 最小集：submit_plan / dispatch_task）的 TypeBox schema
+// 派活工具 submit_plan 的 TypeBox schema
+// （Q1：dispatch_task 已移除——放行执行由用户点计划卡「确认」= approve 路由唯一 fire 入口，
+//   不给 LLM 越权放行的枪；连带白名单去名 + system prompt 去「调 dispatch_task」。）
 // ---------------------------------------------------------------------------
 const teammateSchema = Type.Object({
   name: Type.String(),
   role: Type.String(),
   subTask: Type.String(),
   acceptanceCriteria: Type.String(),
+  // Q3：唯一 schema 扩展——主脑按子任务性质声明 mode（coding 队员真写代码、doc 队员受限省安全）；默认 doc。
+  mode: Type.Optional(Type.Union([Type.Literal("doc"), Type.Literal("coding")])),
 });
 const submitPlanSchema = Type.Object({
   plan: Type.Object({
     teammates: Type.Array(teammateSchema),
     notes: Type.String(),
   }),
-});
-const dispatchTaskSchema = Type.Object({
-  planId: Type.String(),
 });
 
 /** AgentToolResult 成功返回：结果 JSON 化进 text content（模型唯一真读的通道）。details→undefined。 */
@@ -113,23 +114,35 @@ function jsonResult(payload: unknown): AgentToolResult<undefined> {
 
 /**
  * 派活工具被调用时记一条到 `calls[]` 的最小记录（供 spike A2/A3 断言「execute 真被触发」）。
- * 生产实现（M3/M4：落 awaiting_plan_approval、approve 后 fire 编排器）留 T2~T4。
  */
 export type MastermindToolCall = { tool: string; params: unknown };
 
 /**
- * 用内核 `defineTool` 造派活工具集（spike 最小集）。
- *
- * @param calls 可选的记录数组——execute 闭包内 `calls?.push(...)`。**生产不传**（桩工具只回占位
- *   planId/runId）；**测试传**以断言「execute 行为侧真被调」（非静态在场，spike A2/A3 命门）。
+ * {@link buildMastermindTools} 的闭包注入依赖（T3 起 submit_plan 真落盘）：
+ * - projectId + runStore 都在场 → submit_plan **真落** MastermindRun{awaiting_plan_approval}（等计划卡确认）；
+ * - 缺任一（如 spike 纯装配测试）→ 退回**桩行为**（返固定 planId，不崩）；
+ * - calls：可选记录数组，execute 闭包内 `calls?.push(...)`——测试断言「execute 行为侧真被调」（A2/A3 命门），
+ *   生产不传。
  */
-export function buildMastermindTools(calls?: MastermindToolCall[]): MastermindToolDef[] {
+export interface BuildMastermindToolsDeps {
+  projectId?: string;
+  runStore?: MastermindRunStore;
+  calls?: MastermindToolCall[];
+}
+
+/**
+ * 用内核 `defineTool` 造派活工具集——**仅 submit_plan**（Q1：dispatch_task 已移除，放行走 approve 路由）。
+ *
+ * @param deps 闭包注入（见 {@link BuildMastermindToolsDeps}）；生产由 wiring 传 {projectId,runStore}。
+ */
+export function buildMastermindTools(deps?: BuildMastermindToolsDeps): MastermindToolDef[] {
   const submitPlan = defineTool({
     name: "submit_plan",
     label: "submit_plan",
     description:
-      "提交一份多队员协作计划等用户确认（不立即执行）。参数 plan.teammates=[{name,role,subTask,acceptanceCriteria}]、plan.notes。" +
-      "返回 planId；用户确认后再调 dispatch_task 放行。",
+      "提交一份多队员协作计划等用户在计划卡上确认放行（不立即执行）。" +
+      "参数 plan.teammates=[{name,role,subTask,acceptanceCriteria,mode?}]（mode 可选 doc/coding，默认 doc）、plan.notes。" +
+      "返回 runId；用户在计划卡点确认后系统才起编排，你无需自行放行。",
     parameters: submitPlanSchema,
     async execute(
       _toolCallId: string,
@@ -138,31 +151,30 @@ export function buildMastermindTools(calls?: MastermindToolCall[]): MastermindTo
       _onUpdate,
       _ctx,
     ): Promise<AgentToolResult<undefined>> {
-      calls?.push({ tool: "submit_plan", params });
-      // 桩：返回一个固定 planId；生产落 MastermindRun{awaiting_plan_approval} 留 T3。
-      return jsonResult({ planId: "spike-plan-1", status: "awaiting_approval" });
+      deps?.calls?.push({ tool: "submit_plan", params });
+      // 生产：deps 有 projectId+runStore → 真落 MastermindRun{awaiting_plan_approval}（stages 空，等 approve）。
+      if (deps?.projectId && deps.runStore) {
+        const id = randomUUID();
+        deps.runStore.create(deps.projectId, {
+          id,
+          projectId: deps.projectId,
+          status: "awaiting_plan_approval",
+          plan: params.plan,
+          stages: [],
+          currentStageIndex: 0,
+          createdAt: new Date().toISOString(),
+          finishedAt: null,
+          cancelRequested: false,
+          failedReason: null,
+        });
+        return jsonResult({ planId: id, runId: id, status: "awaiting_plan_approval" });
+      }
+      // 桩：deps 缺 projectId/runStore（如 spike 纯装配测试）→ 返固定 planId，不崩。
+      return jsonResult({ planId: "spike-plan-1", status: "awaiting_plan_approval" });
     },
   });
 
-  const dispatchTask = defineTool({
-    name: "dispatch_task",
-    label: "dispatch_task",
-    description:
-      "在用户确认计划后放行执行：据 planId 起多队员编排。参数 planId（submit_plan 返回的）。返回 runId。",
-    parameters: dispatchTaskSchema,
-    async execute(
-      _toolCallId: string,
-      params: Static<typeof dispatchTaskSchema>,
-      _signal: AbortSignal | undefined,
-      _onUpdate,
-      _ctx,
-    ): Promise<AgentToolResult<undefined>> {
-      calls?.push({ tool: "dispatch_task", params });
-      return jsonResult({ runId: "spike-run-1", status: "dispatched" });
-    },
-  });
-
-  return [submitPlan, dispatchTask];
+  return [submitPlan];
 }
 
 /**
