@@ -36,9 +36,32 @@ import {
   buildMastermindTools,
   buildOrchestratorResourceLoader,
   ORCHESTRATOR_SYSTEM_PROMPT,
+  type MastermindToolDef,
 } from "./orchestrator-session";
+// D-R7B-07 命门：doc-tools（经 artifact-service 链含 node:fs）只能在**本服务端文件** import——
+// orchestrator-session.ts 刻意保持「纯装配、绝不引 node:fs 链」，一旦它 import doc-tools，任何
+// "use client" 链值导入即 Turbopack node:fs 全站 500（lint/tsc/build 全漏、只真浏览器暴露）。
+// 故主脑的汇总工具（create_artifact/list_artifacts）在这里 concat 进 mastermindTools。
+import { buildDispatchDocTools } from "./doc-tools";
 import { MastermindRunStore } from "../domain/mastermind-run-store";
 import { resolveProjectIdByCwd } from "../domain/resolve-project-id";
+
+/**
+ * 主脑（总管）做汇总时用的 sourceActor 常量——写进 create_artifact 落的 version.author。
+ * 与 dispatch worker 的档案名一致语义：标记「这份受管文档是谁产的」。
+ */
+const ORCHESTRATOR_DOC_SOURCE_ACTOR = "总管";
+
+/**
+ * 给主脑追加「汇总能力」工具（create_artifact + list_artifacts，经 {@link buildDispatchDocTools}，
+ * 无 propose_edit——主脑只新建汇总文档、不改既有）。projectId 在场才追加（cwd 不在注册项目下 → 空数组、
+ * 与 submit_plan 桩退化对齐、不崩）。start 与 reattach 共用本函数（漏 reattach 则 idle 重建后主脑静默
+ * 丢 create_artifact/list_artifacts，承重·idle gap 与 T3 submit_plan 同源命门）。
+ */
+function buildOrchestratorDocTools(projectId?: string | null): MastermindToolDef[] {
+  if (!projectId) return [];
+  return buildDispatchDocTools({ projectId, sourceActor: ORCHESTRATOR_DOC_SOURCE_ACTOR });
+}
 
 /**
  * 登记口（仿 profile-session-wiring.ts 的 ReattachInnerSession）：返回 `session` 用泛型 `S` 透传
@@ -115,10 +138,16 @@ export async function startOrchestratorSession<S = unknown>(args: {
   // 总管 prompt 注入 loader + 派活工具（承重·D-R8.6-11：submit_plan 闭包注入 {projectId,runStore} 才真落盘；
   // 漏则又变桩、静默落不了盘）。projectId 缺省时 buildMastermindTools 退回桩行为、不崩。
   const resourceLoader = await buildOrchestratorResourceLoader(ORCHESTRATOR_SYSTEM_PROMPT, { cwd });
-  const mastermindTools = buildMastermindTools({
-    ...(projectId ? { projectId } : {}),
-    runStore: runStore ?? new MastermindRunStore(),
-  });
+  // T6：派活工具(submit_plan) ∪ 汇总工具(create_artifact/list_artifacts)。白名单 tools 由
+  // assembleOrchestratorSessionOptions 从 customTools.map(name) 自动派生，天然覆盖新增工具名（规避
+  // D-V2-04 漏名静默失效，无须手写字符串）。projectId 缺省 → buildOrchestratorDocTools 返空、只有 submit_plan。
+  const mastermindTools = [
+    ...buildMastermindTools({
+      ...(projectId ? { projectId } : {}),
+      runStore: runStore ?? new MastermindRunStore(),
+    }),
+    ...buildOrchestratorDocTools(projectId),
+  ];
   const opts = assembleOrchestratorSessionOptions({ resourceLoader, mastermindTools });
 
   // 白名单 tools = 编码全集 ∪ 派活工具名（命门 D-V2-04：派活名漏掉则内核按名过滤、调不到）。
@@ -194,12 +223,17 @@ export async function reattachOrchestratorSession<S = unknown>(args: {
   // 又变桩、静默落不了盘。projectId 由 cwd 反查（生产）或测试注入。
   const resolvedProjectId = args.projectId ?? resolveProjectIdByCwd(cwd);
 
-  // 与 startOrchestratorSession 同源：同一 ORCHESTRATOR_SYSTEM_PROMPT + 同一派活工具 + 同一白名单。
+  // 与 startOrchestratorSession 同源：同一 ORCHESTRATOR_SYSTEM_PROMPT + 同一派活工具 + 同一汇总工具 + 同一白名单。
+  // 承重·idle gap：汇总工具(create_artifact/list_artifacts)也须在 reattach 追加——漏则 idle 重建后主脑
+  // 静默丢汇总能力（与上方 submit_plan 桩注入同源命门）。
   const resourceLoader = await buildOrchestratorResourceLoader(ORCHESTRATOR_SYSTEM_PROMPT, { cwd });
-  const mastermindTools = buildMastermindTools({
-    ...(resolvedProjectId ? { projectId: resolvedProjectId } : {}),
-    runStore: runStore ?? new MastermindRunStore(),
-  });
+  const mastermindTools = [
+    ...buildMastermindTools({
+      ...(resolvedProjectId ? { projectId: resolvedProjectId } : {}),
+      runStore: runStore ?? new MastermindRunStore(),
+    }),
+    ...buildOrchestratorDocTools(resolvedProjectId),
+  ];
   const opts = assembleOrchestratorSessionOptions({ resourceLoader, mastermindTools });
 
   const { session: inner } = await createAgentSession({

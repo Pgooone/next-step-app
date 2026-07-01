@@ -260,6 +260,77 @@ describe("startOrchestratorSession（新建主脑会话）", () => {
 });
 
 // ===========================================================================
+// T6：主脑汇总工具装配（create_artifact + list_artifacts）
+// 命门①：projectId 在场 → 汇总工具 ∪ submit_plan ∪ 编码工具，四类并存、白名单天然覆盖。
+// 命门②（退化）：projectId 缺省 → 不含汇总工具（只 submit_plan + 编码，与 submit_plan 桩退化对齐、不崩）。
+// 命门③（idle gap 变异对照）：reattach 传 projectId 也须含汇总工具——见 reattach describe 内对照用例。
+// 装配仅读工具名（getActiveToolNames），不触 execute → 不碰真实 registry 文件 I/O，故传任意 projectId 串安全。
+// ===========================================================================
+describe("startOrchestratorSession · T6 汇总工具装配", () => {
+  it("projectId 在场 → 激活集含 create_artifact + list_artifacts + submit_plan + 编码工具（四类并存）", async () => {
+    const faux = makeFaux();
+    const { register, captured } = makeFauxRegister();
+    try {
+      await startOrchestratorSession({
+        cwd,
+        firstMessage: "帮我做个登录功能",
+        projectId: "proj-t6", // 关键：projectId 在场触发汇总工具追加
+        sessionManager: SessionManager.inMemory(),
+        createOptionsOverride: {
+          model: faux.model,
+          authStorage: faux.authStorage,
+          modelRegistry: faux.modelRegistry,
+        },
+        registerInnerSession: register,
+      });
+      const active = captured.inner!.getActiveToolNames();
+      // 汇总工具在场（白名单从 customTools.map(name) 派生、天然覆盖，无须手写名）
+      for (const t of ["create_artifact", "list_artifacts"]) {
+        expect(active).toContain(t);
+      }
+      // 派活工具 + 编码工具仍在场（四类并存、互不挤占）
+      expect(active).toContain("submit_plan");
+      for (const t of ["bash", "write", "edit", "read"]) {
+        expect(active).toContain(t);
+      }
+      // 主脑不改既有文档 → 不挂 propose_edit（buildDispatchDocTools 语义）
+      expect(active).not.toContain("propose_edit");
+    } finally {
+      faux.unregister();
+    }
+  });
+
+  it("projectId 缺省 → 激活集不含汇总工具（退化：只 submit_plan + 编码，不崩）", async () => {
+    const faux = makeFaux();
+    const { register, captured } = makeFauxRegister();
+    try {
+      await startOrchestratorSession({
+        cwd,
+        firstMessage: "你好",
+        // 不传 projectId → buildOrchestratorDocTools 返空
+        sessionManager: SessionManager.inMemory(),
+        createOptionsOverride: {
+          model: faux.model,
+          authStorage: faux.authStorage,
+          modelRegistry: faux.modelRegistry,
+        },
+        registerInnerSession: register,
+      });
+      const active = captured.inner!.getActiveToolNames();
+      // 退化：无汇总工具
+      for (const t of ["create_artifact", "list_artifacts"]) {
+        expect(active).not.toContain(t);
+      }
+      // 但派活 + 编码工具照常在场（会话可用、未崩）
+      expect(active).toContain("submit_plan");
+      expect(active).toContain("bash");
+    } finally {
+      faux.unregister();
+    }
+  });
+});
+
+// ===========================================================================
 // reattachOrchestratorSession：open 既有会话 + 重装工具 + 不发 message
 // ===========================================================================
 describe("reattachOrchestratorSession（idle 重建主脑会话）", () => {
@@ -325,6 +396,38 @@ describe("reattachOrchestratorSession（idle 重建主脑会话）", () => {
       expect(messages.length).toBeGreaterThan(0);
       expect(messages.some((m) => m.role === "user")).toBe(true);
       expect(messages.some((m) => m.role === "assistant")).toBe(true);
+    } finally {
+      faux.unregister();
+    }
+  });
+
+  // T6 承重·idle gap 变异对照：reattach 传 projectId 时也须追加汇总工具——
+  // 若只改 start 忘改 reattach，本用例应红（idle 重建后主脑静默丢 create_artifact/list_artifacts）。
+  it("projectId 在场重建 → 激活集含 create_artifact + list_artifacts（idle gap 命门·与 start 对齐）", async () => {
+    const faux = makeFaux();
+    const filePath = makePersistedSessionFile(cwd, sessionDir);
+    const { register, captured } = makeFauxRegister();
+    try {
+      await reattachOrchestratorSession({
+        sessionId: "ignored",
+        filePath,
+        cwd,
+        projectId: "proj-t6", // 关键：projectId 在场（绕开真实反查、直接注入）→ 触发汇总工具追加
+        sessionManager: SessionManager.open(filePath, undefined),
+        createOptionsOverride: {
+          model: faux.model,
+          authStorage: faux.authStorage,
+          modelRegistry: faux.modelRegistry,
+        },
+        registerInnerSession: register,
+      });
+      const active = captured.inner!.getActiveToolNames();
+      for (const t of ["create_artifact", "list_artifacts"]) {
+        expect(active).toContain(t);
+      }
+      // 派活工具照常在场；主脑不改既有文档 → 无 propose_edit
+      expect(active).toContain("submit_plan");
+      expect(active).not.toContain("propose_edit");
     } finally {
       faux.unregister();
     }

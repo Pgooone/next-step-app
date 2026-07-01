@@ -184,7 +184,7 @@ describe("propose_edit", () => {
 });
 
 describe("list_artifacts", () => {
-  it("返回含 id 的清单（id/title/kind/currentVersion）", async () => {
+  it("返回含 id 的清单（id/title/kind/currentVersion/filePath）", async () => {
     const a1 = artifactService.createArtifact(projectId, { kind: "crd", title: "甲文档", content: "a" });
     const a2 = artifactService.createArtifact(projectId, { kind: "prd", title: "乙文档", content: "b" });
     artifactService.submitVersion(projectId, a2.id, { content: "b2" });
@@ -194,12 +194,16 @@ describe("list_artifacts", () => {
       title: string;
       kind: string;
       currentVersion: number;
+      filePath?: string;
     }[];
 
     expect(list).toHaveLength(2);
     const byId = new Map(list.map((x) => [x.id, x]));
     expect(byId.get(a1.id)).toMatchObject({ title: "甲文档", kind: "crd", currentVersion: 1 });
     expect(byId.get(a2.id)).toMatchObject({ title: "乙文档", kind: "prd", currentVersion: 2 });
+    // T6：filePath（相对项目根）随每条返回，供主脑按需 read 上游产物正文做轻读汇总。
+    expect(byId.get(a1.id)?.filePath).toBe("甲文档.md");
+    expect(byId.get(a2.id)?.filePath).toBe("乙文档.md");
   });
 
   it("空项目 → 空数组", async () => {

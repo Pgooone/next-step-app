@@ -220,7 +220,8 @@ function makeListArtifactsTool(projectId: string, artifactService: ArtifactServi
     label: "list_artifacts",
     description:
       "列出当前项目里所有受管文档（只读）。用户用标题/文件名指代某文档、而你需要它的 id 时，" +
-      "先用本工具按 title 挑出对应的 id，再 propose_edit。返回 [{ id, title, kind, currentVersion }]。",
+      "先用本工具按 title 挑出对应的 id，再 propose_edit。" +
+      "返回 [{ id, title, kind, currentVersion, filePath }]（filePath 是相对项目根的路径，可用 read 工具读该文档正文；旧文档可能无 filePath）。",
     parameters: listArtifactsSchema,
     async execute(
       _toolCallId: string,
@@ -232,11 +233,15 @@ function makeListArtifactsTool(projectId: string, artifactService: ArtifactServi
       try {
         const artifacts = artifactService.listArtifacts(projectId);
         return jsonResult(
+          // filePath（相对项目根）透传：主脑做汇总时按需用 read 工具读上游产物正文（轻读，非全量拼接）。
+          // 旧文档无 filePath（undefined）→ JSON.stringify 略去该键，消费者按「不可轻读」处理。向后兼容：
+          // 多一个字段、doc-session 交互会话 / dispatch-doc worker 等现有消费者忽略即可。
           artifacts.map((a) => ({
             id: a.id,
             title: a.title,
             kind: a.kind,
             currentVersion: a.currentVersion,
+            filePath: a.filePath,
           })),
         );
       } catch (e) {
