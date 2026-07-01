@@ -60,14 +60,16 @@
   - **lead 决策（ADR D-R8.6-13）**：队员 accumulate 不改轻读（P3-Q3 (A)：sf-mini 规模两数量级余量、改破坏累积语义+撞 filePath blocker、失败态优雅、不加 teammates 上限）；compact-and-retry 内核自带不实现；汇总触发 MVP=用户/主脑本轮、自动 nudge 留二期。
   - **⚠️遗留**：compaction/overflow 真触发（P3-Q5，DeepSeek overflow 串是否命中内核 OVERFLOW_PATTERNS）= spike-4 best-effort、待 ns-t6-spike4 回；非阻塞（内核机制已 P3 坐实、正常 sf-mini 规模触发不到）。
 
-### T7 · UI 打磨（M8）[与 T5 卡片交汇]
+### T7 · UI 打磨（M8）[与 T5 卡片交汇 · ✅收官]
 - **目标**：.btn 四型六态 token/类 + 修流水线卡片真 bug + 补 a11y（需求 §三）。
 - **AC**：按钮亮暗六态正确 / 卡片 queued 一致 + hover 过渡 + 键盘可达 + Esc + reduced-motion / pageErrors=0。
-- **依赖**：T5 先 commit（同改 PipelineStageCard、避两次改同文件）。
+- **依赖**：T5 先 commit（同改 PipelineStageCard、避两次改同文件）。**状态**：✅ **收官**（commit `1fcd55b`，本地 v1.2、未 push）。ns-t7-impl 实现（用 ui-ux-pro-max 辅助 .btn 设计）→ **lead 三重复验**（亲读 diff / 独立门禁 lint0/tsc0/test599 / **P0④ 改共享 STATUS_META 配色的消费方安全命门亲核**：DispatchPanel 本地 STATUS_META、共享 .color/.bg 唯一消费方 StageHoverPreview 恒在 t-kimi 壳内）→ **独立 verifier ns-t7-verify 真浏览器 A/B/C 全 PASS**（.btn 亮暗六态注入验 + P0③ queued 卡片=浮窗一致 + P0④ 双蓝消除 + reduced-motion 停 pb-breathe/pb-pulse-led **负对照证守卫非 vacuous** + a11y 键盘 Enter-Space/Esc/外点关 + pageErrors=0）→ lead 亲读截图（A1 .btn 矩阵 primary 深字 7.44:1、B3 queued 一致）。
+  - **ADR D-R8.6-14**：P0①--color-on-accent②danger #dc2626③queued 一致④浮窗徽章 t-kimi token（安全命门亲核）；P1 .btn 四型六态（纯建模板·P2 存量渐进迁）+.brow 交互升级+三卡片键盘 a11y+reduced-motion 守 T5 遗留 pb-breathe/pb-pulse-led。
+  - **验收教训**：验 CSS 改动 dev 重启≠重编译，须 rm -rf .next 或 curl 核实服务的 CSS（verifier 首验 .btn 全不生效=旧 .next 缓存假 FAIL）。
 
 ### 双层验收
 - 机制层确定性测试（vitest）+ 真浏览器（UI 卡）+ **sf-mini 标杆场景**（主脑端到端·产可运行 UI 原型）。
 
 ---
 
-> **进度**：T1 spike-1 GO + **T2 收官** + **T3+T4 编排核心批次收官**（均双层验收全 PASS，本地 v1.2 未 push）。**本会话范围到此（用户拍板 T3+T4 批次）**。**下一步（后续会话）= T5 队员卡片内联·乙 + 临时造角色 UI**（计划卡 UI 也并入 T5、同锚点 ChatWindow messages.map），然后 T6 长上下文真模型 + T7 UI 打磨。机制层地基（主脑装配 + 起会话链 + idle gap + 计划确认闸 + 编排器失败处理）已全部就位，T5 起接 UI 可视化。
+> **进度**：**第8.6轮 T1~T7 全部收官**（均双层验收全 PASS，本地 v1.2）。T1 spike-1 GO + T2 主脑装配起会话链 + T3+T4 编排核心批次（已 push `a80d321`/`eaea131`）；**T5 队员卡片内联+计划卡+临时角色（`0536aa6`+`94a3e51`）+ T6 主脑汇总能力+长上下文（`80177eb`+`0ddba8a`，spike-4 真模型坐实 sf-mini 标杆端到端）+ T7 UI 打磨（`1fcd55b`）三卡 2026-07-01 本会话收官、本地未 push**。**主脑「大脑」愿景端到端达成**：说需求→主脑拆活列计划→计划卡确认→队员卡片内联实时进度→失败暂停抉择→主脑读产物产汇总受管文档。**下一步 = 用户授权 push（T5~T7 共 5 commit `0536aa6`→`1fcd55b`）**。遗留：compaction 真触发 P3-Q5 受限未验（非阻塞）、汇总自动 nudge / 队员 accumulate 轻读 / 临时档案清理去重 = 二期。
