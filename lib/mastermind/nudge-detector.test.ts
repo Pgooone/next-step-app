@@ -349,6 +349,81 @@ describe("多 run 并存：key 含 runId 天然不串", () => {
   });
 });
 
+// ── run 在基线之后才出现（会话中途 submit_plan·ADR D-R8.6-16 修复回归）──────
+// 旧实现无翻转时 snapshot 原样返回 prev → 基线后诞生的 run 的 key 永远「首见」、
+// 每次翻转都被略过 → nudge 全哑（真浏览器端到端揪出、原单测全绿漏网）。
+
+describe("run 在基线后出现：吸收为自身基线、后续翻转正常发（D-R8.6-16）", () => {
+  it("完整序列（verifier repro）：空基线 → run 出现 → stage 翻 done 发小结 → run 翻 done 发汇总", () => {
+    // tick1：首挂 messages 未加载、runIds=[] → 空基线。
+    const t1 = computeNudges({ prev: null, runs: {}, canFire: true, firedFinal: NO_FIRED });
+    expect(t1.nudges).toEqual([]);
+    expect(t1.snapshot).toEqual({});
+    // tick2：run 出现（running/running）→ 吸收为基线、不发。
+    const s2 = { r1: run("r1", "running", ["running", "running"]) };
+    const t2 = computeNudges({ prev: t1.snapshot, runs: s2, canFire: true, firedFinal: NO_FIRED });
+    expect(t2.nudges).toEqual([]);
+    expect(t2.snapshot["r1:run"]).toBe("running"); // 吸收铁证（旧实现这里是 undefined）
+    expect(t2.snapshot["r1:stage:2"]).toBe("running");
+    // tick3：stage2 翻 done → 发阶段小结（旧实现：永远略过）。
+    const s3 = { r1: run("r1", "running", ["running", "done"]) };
+    const t3 = computeNudges({ prev: t2.snapshot, runs: s3, canFire: true, firedFinal: NO_FIRED });
+    expect(t3.nudges).toHaveLength(1);
+    expect(t3.nudges[0].kind).toBe("stage");
+    expect(t3.nudges[0].message).toContain("第 2 个队员");
+    // tick4：stage1 done + run done → 先补 stage1 小结、再下一 tick 发汇总。
+    const s4 = { r1: run("r1", "done", ["done", "done"]) };
+    const t4 = computeNudges({ prev: t3.snapshot, runs: s4, canFire: true, firedFinal: NO_FIRED });
+    expect(t4.nudges[0].kind).toBe("stage");
+    const t5 = computeNudges({ prev: t4.snapshot, runs: s4, canFire: true, firedFinal: NO_FIRED });
+    expect(t5.nudges[0].kind).toBe("final");
+    expect(t5.firedFinalKeys).toEqual(["r1:__final__"]);
+  });
+
+  it("run 出现时 stage 已 done（轮询迟到/历史态）→ 吸收不重放；此后另一 stage 翻 done 只发那一条", () => {
+    const base = computeNudges({ prev: null, runs: {}, canFire: true, firedFinal: NO_FIRED });
+    // run 首见即带一个 done（历史态）：吸收、不发。
+    const s2 = { r1: run("r1", "running", ["done", "running"]) };
+    const t2 = computeNudges({ prev: base.snapshot, runs: s2, canFire: true, firedFinal: NO_FIRED });
+    expect(t2.nudges).toEqual([]);
+    // stage2 翻 done → 只发 stage2（stage1 历史 done 不补发）。
+    const s3 = { r1: run("r1", "running", ["done", "done"]) };
+    const t3 = computeNudges({ prev: t2.snapshot, runs: s3, canFire: true, firedFinal: NO_FIRED });
+    expect(t3.nudges).toHaveLength(1);
+    expect(t3.nudges[0].message).toContain("第 2 个队员");
+  });
+
+  it("忙（canFire=false）时新 run 出现 → 照样吸收（快照含新 key）；空闲后翻转正常发", () => {
+    const base = computeNudges({ prev: null, runs: {}, canFire: true, firedFinal: NO_FIRED });
+    const s2 = { r1: run("r1", "running", ["running"]) };
+    const busy = computeNudges({ prev: base.snapshot, runs: s2, canFire: false, firedFinal: NO_FIRED });
+    expect(busy.nudges).toEqual([]);
+    expect(busy.snapshot["r1:stage:1"]).toBe("running"); // 忙时也吸收
+    const s3 = { r1: run("r1", "running", ["done"]) };
+    const free = computeNudges({ prev: busy.snapshot, runs: s3, canFire: true, firedFinal: NO_FIRED });
+    expectSingle(free, "第 1 个队员");
+  });
+
+  it("第二个 run 中途加入（多 run 混合）：老 run 挂起翻转不丢、新 run 吸收后翻转可发", () => {
+    // 基线：r1 running。
+    const s1 = { r1: run("r1", "running", ["running"]) };
+    const base = computeNudges({ prev: null, runs: s1, canFire: true, firedFinal: NO_FIRED });
+    // r1 翻 done（忙、挂起）+ r2 同 tick 出现。
+    const s2 = { r1: run("r1", "running", ["done"]), r2: run("r2", "running", ["running"]) };
+    const busy = computeNudges({ prev: base.snapshot, runs: s2, canFire: false, firedFinal: NO_FIRED });
+    expect(busy.nudges).toEqual([]);
+    expect(busy.snapshot["r1:stage:1"]).toBe("running"); // 挂起翻转保旧值
+    expect(busy.snapshot["r2:stage:1"]).toBe("running"); // 新 run 已吸收
+    // 空闲：先补 r1 的挂起小结。
+    const free1 = computeNudges({ prev: busy.snapshot, runs: s2, canFire: true, firedFinal: NO_FIRED });
+    expect(free1.nudges[0].runId).toBe("r1");
+    // r2 翻 done → 发 r2。
+    const s3 = { r1: run("r1", "running", ["done"]), r2: run("r2", "running", ["done"]) };
+    const free2 = computeNudges({ prev: free1.snapshot, runs: s3, canFire: true, firedFinal: NO_FIRED });
+    expect(free2.nudges[0].runId).toBe("r2");
+  });
+});
+
 // ── 未拉回的 run（切片有 key、值 undefined）不崩、不发 ─────────────────────
 
 describe("鲁棒性：runs 切片含未拉回（undefined）的 runId", () => {

@@ -143,6 +143,15 @@ export function computeNudges(input: ComputeNudgesInput): ComputeNudgesResult {
     return { nudges: [], snapshot: full, firedFinalKeys: [] };
   }
 
+  // ★吸收新 key（真浏览器端到端揪出的修复，ADR D-R8.6-16）：基线建立**之后**才出现的 run/stage
+  //   （最常见=会话中途 submit_plan 新建 run——组件挂载在先、run 诞生在后；或首 tick messages 未加载
+  //   runIds=[] 建了空基线）——其 key 不在 prev 里。若快照不吸收它们（旧实现无翻转时原样返回 prev），
+  //   这些 key **永远「首见」**、每次状态变化都被翻转判据的「无旧值略过」吞掉 → 新 run 的 nudge 全哑。
+  //   单测全绿漏网原因：所有用例的 run 都在 prev===null 基线轮就已存在。
+  //   规则：prev 已有 key 保旧值（未发的挂起翻转留待补发）；full 独有的新 key 以**现值**吸收为
+  //   「它自己的基线」——吸收本身不发（run 出现时已 done 的历史态不重放，与 baseline-first 语义统一）。
+  const absorbed: NudgeSnapshot = { ...full, ...prev };
+
   // 收集所有本地观察到的翻转（stage 小结在前、run 终态/paused 在后；均按 runId+order 稳定排序）。
   const runIds = Object.keys(runs)
     .filter((id) => runs[id])
@@ -181,15 +190,16 @@ export function computeNudges(input: ComputeNudgesInput): ComputeNudgesResult {
 
   const ordered = [...stageFlips, ...terminalFlips];
 
-  // 忙（canFire=false）或本轮无翻转：零发、快照**原样保留**（未推进 = 下轮空闲时重新检出并补发）。
+  // 忙（canFire=false）或本轮无翻转：零发、已知 key 旧值**原样保留**（未推进 = 下轮空闲时重新检出
+  // 并补发），但新 key 已吸收（absorbed）——否则新 run 永远进不了基线（见上）。
   if (!canFire || ordered.length === 0) {
-    return { nudges: [], snapshot: prev, firedFinalKeys: [] };
+    return { nudges: [], snapshot: absorbed, firedFinalKeys: [] };
   }
 
-  // 铁律 2：一 tick 只发首条；快照只推进这一个 key（其余翻转留在 prev 下轮补发）。
+  // 铁律 2：一 tick 只发首条；快照只推进这一个 key（其余翻转留在旧值上下轮补发）+ 新 key 已吸收。
   const fire = ordered[0];
-  const currentStatusForKey = full[fire.key] ?? prev[fire.key];
-  const nextSnapshot: NudgeSnapshot = { ...prev, [fire.key]: currentStatusForKey };
+  const currentStatusForKey = full[fire.key] ?? absorbed[fire.key];
+  const nextSnapshot: NudgeSnapshot = { ...absorbed, [fire.key]: currentStatusForKey };
   return {
     nudges: [fire],
     snapshot: nextSnapshot,
