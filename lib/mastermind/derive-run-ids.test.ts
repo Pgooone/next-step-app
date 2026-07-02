@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   derivePlanRefsFromMessage,
+  deriveAllRunIds,
   isAssistantMessage,
   parseRunId,
 } from "./derive-run-ids";
-import type { AssistantMessage, ToolResultMessage } from "@/lib/types";
+import type { AgentMessage, AssistantMessage, ToolResultMessage } from "@/lib/types";
 
 /** 造一条带 submit_plan toolCall 的 assistant 消息。 */
 function assistantWithPlans(toolCallIds: string[]): AssistantMessage {
@@ -135,5 +136,43 @@ describe("isAssistantMessage 守卫", () => {
   it("assistant → true，其它 → false", () => {
     expect(isAssistantMessage({ role: "assistant", model: "m", provider: "p", content: [] })).toBe(true);
     expect(isAssistantMessage({ role: "user", content: "hi" })).toBe(false);
+  });
+});
+
+describe("deriveAllRunIds：从整条 transcript 抽全部已解析 runId（去重、保序）", () => {
+  it("多条 assistant、多 submit_plan → 去重按首现保序", () => {
+    const messages: AgentMessage[] = [
+      { role: "user", content: "go" },
+      assistantWithPlans(["tc1", "tc2"]),
+      planResult("tc1", "run-a"),
+      planResult("tc2", "run-b"),
+      { role: "user", content: "again" },
+      assistantWithPlans(["tc3"]),
+      planResult("tc3", "run-c"),
+    ];
+    expect(deriveAllRunIds(messages)).toEqual(["run-a", "run-b", "run-c"]);
+  });
+
+  it("同一 runId 重复出现 → 只留一次（去重）", () => {
+    const messages: AgentMessage[] = [
+      assistantWithPlans(["tc1"]),
+      planResult("tc1", "run-a"),
+      assistantWithPlans(["tc2"]),
+      planResult("tc2", "run-a"), // 同 runId
+    ];
+    expect(deriveAllRunIds(messages)).toEqual(["run-a"]);
+  });
+
+  it("runId 尚未到（toolResult 缺失）→ 略过、不进列表", () => {
+    const messages: AgentMessage[] = [assistantWithPlans(["tc1"])];
+    expect(deriveAllRunIds(messages)).toEqual([]);
+  });
+
+  it("无 submit_plan → 空数组", () => {
+    const messages: AgentMessage[] = [
+      { role: "user", content: "hi" },
+      { role: "assistant", model: "m", provider: "p", content: [{ type: "text", text: "hello" }] },
+    ];
+    expect(deriveAllRunIds(messages)).toEqual([]);
   });
 });

@@ -57,3 +57,31 @@ export function parseRunId(result: ToolResultMessage | undefined): string | null
 export function isAssistantMessage(msg: AgentMessage): msg is AssistantMessage {
   return msg.role === "assistant";
 }
+
+/**
+ * 从整条 transcript 抽出**全部已解析的** runId（去重、按首次出现保序）。
+ * 第 8.6 轮第二期 T1（M1 nudge）：nudge 驱动器需覆盖本会话所有 run（多 run：打回后旧 failed + 新 run 并存）→
+ * 复用与 ChatWindow 渲染同一套 derive（禁 find），把 runId 列表喂给 useMastermindNudge。runId 尚未到（流式窗口，
+ * parseRunId=null）的 submit_plan 略过（下一 tick 到了再纳入）。
+ * @param messages  整条会话消息（含 toolResult）。
+ */
+export function deriveAllRunIds(messages: AgentMessage[]): string[] {
+  const toolResults = new Map<string, ToolResultMessage>();
+  for (const msg of messages) {
+    if (msg.role === "toolResult") {
+      toolResults.set((msg as ToolResultMessage).toolCallId, msg as ToolResultMessage);
+    }
+  }
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const msg of messages) {
+    if (!isAssistantMessage(msg)) continue;
+    for (const ref of derivePlanRefsFromMessage(msg, toolResults)) {
+      if (ref.runId && !seen.has(ref.runId)) {
+        seen.add(ref.runId);
+        ids.push(ref.runId);
+      }
+    }
+  }
+  return ids;
+}

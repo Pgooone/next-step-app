@@ -15,7 +15,8 @@
 
 ## 任务卡（承重优先 · 串行 · 同文件交汇卡先 commit 再改）
 
-### T1 · M1 中间路 nudge 驱动器 [🔴承重·本期主体 · ⬜]
+### T1 · M1 中间路 nudge 驱动器 [🔴承重·本期主体 · ✅收官（逻辑层）]
+> **✅ 实现+lead 三重复验完成**：ns-r2-t1 实现（4 新建：`lib/mastermind/nudge-detector.ts` 纯函数核 + 21 测试 / `hooks/useMastermindNudge.ts` 薄封装 / `MastermindNudgeDriver.tsx` 挂载宿主；3 修改：ChatWindow 挂载 + `deriveAllRunIds` 扩展 + 4 测试）。lead 亲读全量 diff + 独立门禁（lint0/tsc0/**test 599→624**）+ 变异命门（废 baseline-first→21/21 红、废一 tick 一发→3 专属红、恢复即绿）+ 红线 grep（零 followUp 调用、approve/orchestrator/内核零改动）。**队员超出预期的两处正确设计**：①「一 tick 至多一发」（同帧多发会撞 stale agentRunning + 单会话回合冲突→每 tick 只发首条、快照单 key 推进、余下下轮补发）②「首次进入终态」判据替代「prev===running」（后者会让 paused→resume→done 的汇总永久漏发）+ agentRunning 落回触发补发 held nudge（run 终态后 store 冻结、靠 statusSummary 永不再变）。**真浏览器端到端（DeepSeek 真跑多队员 run 看小结/汇总/F5 零重放）留批量验收**。
 - **目标**：run 期主脑退场，前端观察 run 进度，每个队员干完自动 nudge 主脑吐阶段小结、全干完自动 nudge 产总汇总受管文档（模拟 Kimi 边跑边旁白、纯前端不碰 T6 解耦）。
 - **AC（评审 mustFix 1-5 全进）**：
   1. 🔴 nudge 统一走 `handleSend`（`useAgentSession.ts:346`）+ `!agentRunning` gate、忙时本轮跳过下轮补发；**禁 handleFollowUp/followUp**（idle 纯入队黑洞 + 潜伏延迟轰炸，D-R8.6-15）。
@@ -28,7 +29,8 @@
 - **验收**：逻辑层（去重矩阵单测）+ **真浏览器端到端**（DeepSeek 真凭证跑多队员 run：阶段完主脑真冒小结 → 全干完自动产汇总受管文档 → F5 中途刷新零重放，pageErrors=0）。
 - **依赖**：无。
 
-### T2 · M2 计划卡等待态 [🟢UI · ⬜]
+### T2 · M2 计划卡等待态 [🟢UI · ✅收官（commit `158fdcd`）]
+> ns-r2-t2 实现（仅 MastermindPlanCard.tsx +24：awaiting 分支顶部等待条 ⏳ + t-kimi token + 独立 testid、静态无动画）；lead 亲读 diff + 分支结构亲核（等待条仅 awaiting 分支、三按钮未动）+ 独立门禁（lint0/test599 零回归、warnings 经 stash 对照确认既有）。真浏览器随 T3/T4 批量。
 - **目标**：awaiting 分支渲「⏳ 等你确认放行」等待条——用户一眼看出「在等我」非「对话结束」。确认闸三按钮不动。
 - **AC**：等待条独立 data-testid（`mastermind-plan-waiting`，勿复用既有 5 个）+ t-kimi token（var(--sub)/var(--run-accent)）；prompt 不改（§10-① 纯 UI 承载）；真浏览器 awaiting 态渲出 + 亮暗双主题 + pageErrors=0。
 - **落点**：`components/MastermindPlanCard.tsx:36-88` awaiting 分支顶部。

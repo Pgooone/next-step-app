@@ -14,9 +14,11 @@ import { useArtifactStore } from "@/lib/stores/useArtifactStore";
 import { sliceByCodePoint, codePointLength } from "@/lib/code-point-slice";
 import { PendingChangeCard } from "./PendingChangeCard";
 // 第 8.6 轮 T5：主脑派活块内联（计划卡 + 队员卡片）——从 transcript 派生 runId、单宿主批量轮询。
-import { derivePlanRefsFromMessage, isAssistantMessage } from "@/lib/mastermind/derive-run-ids";
+import { derivePlanRefsFromMessage, isAssistantMessage, deriveAllRunIds } from "@/lib/mastermind/derive-run-ids";
 import MastermindTeammateCards from "./MastermindTeammateCards";
 import MastermindPollDriver from "./MastermindPollDriver";
+// 第 8.6 轮第二期 T1：中间路 nudge 驱动（观察 run 进度、隐式 nudge 主脑吐阶段小结/总汇总）。
+import MastermindNudgeDriver from "./MastermindNudgeDriver";
 
 /**
  * 引用条（AC⑥ 读侧）：显示 ArtifactPanel 划选写入的 editTarget.quoteText，可清除。
@@ -183,6 +185,10 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     () => (isMainChat ? extractTransferHistory(messages) : []),
     [isMainChat, messages],
   );
+
+  // 第 8.6 轮第二期 T1（M1 nudge）：从 transcript 派生本会话所有 runId（禁 find、覆盖多 run），喂给 nudge 驱动。
+  // submit_plan 仅主脑（总管）会话有 → 非主脑会话派生为空、驱动天然静默（与 PollDriver/计划卡内联同一 derive）。
+  const mastermindRunIds = useMemo(() => deriveAllRunIds(messages), [messages]);
   const playDoneSoundRef = useRef(playDoneSound);
   playDoneSoundRef.current = playDoneSound;
   const soundEnabledRef = useRef(soundEnabled);
@@ -298,6 +304,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     >
       {/* 第 8.6 轮 T5：主脑派活运行的单宿主批量轮询驱动（不渲 UI，随会话切换 ChatWindow 卸载即清）。 */}
       <MastermindPollDriver />
+      {/* 第 8.6 轮第二期 T1：中间路 nudge 驱动（不渲 UI）——观察 run 进度，每队员完/全完隐式 nudge 主脑。 */}
+      <MastermindNudgeDriver runIds={mastermindRunIds} handleSend={handleSend} agentRunning={agentRunning} />
       {isDragOver && (
         <div className="pointer-events-none absolute inset-0 z-50 flex animate-[drop-zone-in_0.15s_ease_both] items-center justify-center bg-[rgba(37,99,235,0.06)] backdrop-blur-[1px]">
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
