@@ -45,6 +45,8 @@ export const ORCHESTRATOR_SYSTEM_PROMPT = [
   "- 大任务（需要多人协作）：调 `submit_plan` 工具提交一份多队员协作计划，",
   "  每个队员含 name（队员名）/ role（角色）/ subTask（子任务）/ acceptanceCriteria（验收标准）；",
   "  可按子任务性质给队员标 mode（`doc` 出文档 / `coding` 写代码，默认 `doc`）。",
+  "  另可在计划里声明 execution（执行模式）：子任务互相独立、可同时开跑时用 `parallel`（一批队员并行扇出）；",
+  "  有上下游依赖（后面的队员要用到前面队员的产物）时用 `serial`（默认，按顺序接力、上游产物喂给下游）。",
   "  提交计划后**暂停等待用户在计划卡上确认放行**——由用户点确认后系统才起编排，你无需（也无法）自行放行执行。",
   "",
   "汇总一次派活运行的成果（当用户要求汇总、或一轮协作跑完后）：",
@@ -109,6 +111,9 @@ const submitPlanSchema = Type.Object({
   plan: Type.Object({
     teammates: Type.Array(teammateSchema),
     notes: Type.String(),
+    // M6/D-V1.2-87：主脑按子任务性质声明执行模式——parallel（互相独立、批内并行扇出）/
+    // serial（有上下游依赖、按序接力累积喂下游）。可选，缺省 serial（旧计划零迁移、保累积喂下游能力）。
+    execution: Type.Optional(Type.Union([Type.Literal("serial"), Type.Literal("parallel")])),
   }),
 });
 
@@ -149,7 +154,8 @@ export function buildMastermindTools(deps?: BuildMastermindToolsDeps): Mastermin
     label: "submit_plan",
     description:
       "提交一份多队员协作计划等用户在计划卡上确认放行（不立即执行）。" +
-      "参数 plan.teammates=[{name,role,subTask,acceptanceCriteria,mode?}]（mode 可选 doc/coding，默认 doc）、plan.notes。" +
+      "参数 plan.teammates=[{name,role,subTask,acceptanceCriteria,mode?}]（mode 可选 doc/coding，默认 doc）、plan.notes、" +
+      "plan.execution 可选（parallel=子任务互相独立、一批队员并行扇出；serial=有上下游依赖、按序接力上游喂下游；默认 serial）。" +
       "返回 runId；用户在计划卡点确认后系统才起编排，你无需自行放行。",
     parameters: submitPlanSchema,
     async execute(

@@ -104,6 +104,29 @@ export async function runMastermind(
   // ★累积喂下游用的进程内缓存：key=stage.order，value=该阶段产物正文。零额外存储。
   const cache = new Map<number, string>();
 
+  // ★M6/D-V1.2-87 双分支：parallel（批内真并行扇出）与 serial（现有串行 for，默认、一字不动、零回归）。
+  //   parallel 分支自成一体（内部 Promise.allSettled + 全 settle 统一判定），完成即 return，绝不落到下方
+  //   串行 for 循环——故串行分支的既有逻辑、既有测试完全不受影响。
+  if (current.plan.execution === "parallel") {
+    return runParallel(current, {
+      registry,
+      runStore,
+      profileStore,
+      projectId,
+      projectRoot,
+      doRunWorker,
+      doAcquireSlot,
+      doSetOwner,
+      doEvict,
+      workerTimeoutMs,
+      registerInnerSession: deps.registerInnerSession,
+      sessionManager: deps.sessionManager,
+      createOptionsOverride: deps.createOptionsOverride,
+      additionalSkillPaths: deps.additionalSkillPaths,
+      signal,
+    });
+  }
+
   for (let i = 0; i < current.stages.length; i++) {
     const stage = current.stages[i];
 
@@ -265,6 +288,251 @@ export async function runMastermind(
   current.finishedAt = new Date().toISOString();
   runStore.write(projectId, current);
   return current;
+}
+
+/**
+ * 编排器内部解析后的依赖束（runMastermind 顶部已把 deps 的可选项落成实现），供 {@link runParallel} 用。
+ * 与 MastermindOrchestratorDeps 的区别：这里全部必填（已 resolve），且额外带 projectId/projectRoot。
+ */
+interface ResolvedParallelDeps {
+  registry: ProjectRegistry;
+  runStore: MastermindRunStore;
+  profileStore: AgentProfileStore;
+  projectId: string;
+  projectRoot: string;
+  doRunWorker: typeof runWorker;
+  doAcquireSlot: typeof acquireSlot;
+  doSetOwner: (cwd: string, sid: string, agentId: string) => void;
+  doEvict: typeof evictSession;
+  workerTimeoutMs: number;
+  registerInnerSession: RegisterInnerSession;
+  sessionManager?: SessionManager;
+  createOptionsOverride?: Partial<CreateAgentSessionOptions>;
+  additionalSkillPaths?: string[];
+  signal?: AbortSignal;
+}
+
+/**
+ * **并行分支**（M6/D-V1.2-87 档 2·真并行扇出）：把所有非 done/skipped 的 stage **同时**发起（各一个
+ * async 任务），`Promise.allSettled` 等全批 settle 后**统一判定**——任一 failed → pauseRun（failedTeammate
+ * 取 order 最小的失败者）；全 done → done；done+skipped 混合 → partial。
+ *
+ * 与 serial 的三处关键差异：
+ *   1) **无累积喂下游**：parallel 语义 = 队员互相独立，每 stage 的 firstMessage 不带上游产物（cache 不参与）。
+ *   2) **失败不 fail-fast**：单 stage 两 attempt 都失败只把**自己**标 failed 并 settle，绝不中途 pauseRun 或
+ *      return——其余 stage 继续跑到各自结束；批判定在全 settle 后统一做。
+ *   3) **共享内存 run 对象（架构铁律·防 read-modify-write 竞态）**：所有 stage 任务改的都是**同一个** `run`
+ *      对象（编排器持有的 current）+ 同步 `runStore.write(run)`；绝不各自 readRun 再 saveRun。JS 单线程 +
+ *      writeFileSync/renameSync 同步实现下，共享对象的「同步改 + 同步写」天然串行、无 race。
+ *
+ * 单 stage 执行体沿用 serial 同一配方：acquireSlot({timeoutMs:Infinity}) → 临时造 agentId（若需）→
+ * runWorker → setOwner → **该任务自己的 evict 传自己的 sessionId**（每 attempt 都 evict、F16 不漏槽、
+ * 按本阶段 sid 逐出守 owner-map 红线）→ retry 小循环（attempt 0/1）。
+ */
+async function runParallel(run: MastermindRun, deps: ResolvedParallelDeps): Promise<MastermindRun> {
+  const { runStore, projectId, signal } = deps;
+
+  // 全部待跑 stage（跳过 resume 已 done/skipped 的）；空则直接进最终判定（全 done/partial）。
+  const pending = run.stages.filter((s) => s.status !== "done" && s.status !== "skipped");
+
+  // 失败原因进程内暂存：key=stage.order（不落 stage 持久字段、不改落盘契约），供批判定取失败者原因。
+  const failReasons = new Map<number, string>();
+
+  // 每 stage 一个 async 任务；任务内只改自己的 stage + 共享 run 对象，异常一律吞进 stage.failed（不外抛）。
+  await Promise.allSettled(
+    pending.map((stage) => runOneStageParallel(run, stage, deps, failReasons)),
+  );
+
+  // ★全 settle 后统一判定（这里才是唯一决定 run 终态的地方）：
+  //   - 取消（signal/cancelRequested）→ failRun('已取消') 终态。
+  //   - 任一 stage failed → pauseRun（failedTeammate 取 order 最小的失败者，等用户抉择）。
+  //   - 否则含 skipped → partial；全 done → done。
+  if (signal?.aborted || run.cancelRequested) {
+    const failed = run.stages.find((s) => s.status === "failed") ?? run.stages[0];
+    return failRun(runStore, projectId, run, failed, "已取消");
+  }
+  const failedStages = run.stages
+    .filter((s) => s.status === "failed")
+    .sort((a, b) => a.order - b.order);
+  if (failedStages.length > 0) {
+    const first = failedStages[0];
+    return pauseRun(runStore, projectId, run, first, failReasons.get(first.order) ?? "阶段失败");
+  }
+
+  run.status = run.stages.some((s) => s.status === "skipped") ? "partial" : "done";
+  run.finishedAt = new Date().toISOString();
+  runStore.write(projectId, run);
+  return run;
+}
+
+/**
+ * 并行分支下**单个 stage** 的执行体：起停一个队员 worker，把结果落到共享 `run` 对象的该 stage 上并落盘。
+ * **绝不返回/暂停整 run**——最终失败只把本 stage 标 failed（并记 failReason 供批判定取原因）；批判定统一在
+ * {@link runParallel} 的 allSettled 之后做。取消（signal/cancelRequested）在起 worker 前检测：已取消则不起该
+ * stage、保持 pending（批判定按取消收敛整 run）。
+ */
+async function runOneStageParallel(
+  run: MastermindRun,
+  stage: MastermindStage,
+  deps: ResolvedParallelDeps,
+  failReasons: Map<number, string>,
+): Promise<void> {
+  const {
+    runStore,
+    profileStore,
+    projectId,
+    projectRoot,
+    doRunWorker,
+    doAcquireSlot,
+    doSetOwner,
+    doEvict,
+    workerTimeoutMs,
+    signal,
+  } = deps;
+
+  // 起 worker 前顶 cancel：已请求则不起该 stage、保持 pending（批判定按取消收敛整 run）。
+  if (signal?.aborted || run.cancelRequested) return;
+
+  // 临时造 agentId（承重·Q2，同 serial :123-136）：首次进阶段（agentId 占位空串）对该 teammate 造临时档案。
+  if (!stage.agentId) {
+    const teammate = run.plan.teammates[stage.order - 1];
+    const uuid8 = randomUUID().slice(0, 8);
+    const profile = profileStore.create(projectId, {
+      name: `${teammate?.role ?? "worker"}-${uuid8}`,
+      role: teammate?.role ?? "",
+      mode: teammate?.mode ?? "doc",
+    });
+    stage.agentId = profile.id;
+    stage.agentName = profile.name;
+    runStore.write(projectId, run);
+  }
+
+  // 解析该阶段档案（临时造的必存在；resume/reassign 指定的可能已删 → 标 failed 记原因）。
+  let profile;
+  try {
+    profile = profileStore.get(projectId, stage.agentId);
+  } catch (error) {
+    return markStageFailed(
+      runStore,
+      projectId,
+      run,
+      stage,
+      `Agent 档案不存在: ${stage.agentId}（${(error as Error).message}）`,
+      failReasons,
+    );
+  }
+
+  // retry 小循环（AC-2.1/2.3，同 serial :155-259）：attempt 0 首跑 + attempt 1 重试；两次都失败才标 failed。
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    // 每 attempt 顶部再查 cancel（attempt1 前用户可能已取消）：保持 pending、退出。
+    if (signal?.aborted || run.cancelRequested) return;
+
+    // 排队态（在 acquireSlot 之前，超 limit 的 worker 自然渲「排队中」；currentStageIndex 不并行维护）。
+    stage.statusDetail = "queued";
+    runStore.write(projectId, run);
+
+    // 不限超时排队（acquireSlot 本体不动、只传 Infinity；物理并发由全局 acquireSlot 排队墙控）。
+    try {
+      await doAcquireSlot({ timeoutMs: Infinity });
+    } catch (error) {
+      return markStageFailed(runStore, projectId, run, stage, (error as Error).message, failReasons);
+    }
+
+    // 放行：清排队态、阶段→running。
+    stage.statusDetail = undefined;
+    stage.status = "running";
+    stage.startedAt = new Date().toISOString();
+    runStore.write(projectId, run);
+
+    // ★parallel 无累积喂下游：firstMessage 只含本 stage 子任务（每队员独立、不含前序产物）。
+    const firstMessage = stage.subTask + "\n\n请在完成后调用 create_artifact 产出受管文档。";
+
+    // runWorker 包 try/catch（承重）：catch 内 best-effort doEvict 传本 stage sid，标 failed（worker 崩非可 retry）。
+    let result;
+    try {
+      result = await doRunWorker({
+        projectRoot,
+        projectId,
+        profile,
+        cwd: projectRoot,
+        firstMessage,
+        registerInnerSession: deps.registerInnerSession,
+        timeoutMs: workerTimeoutMs,
+        additionalSkillPaths: deps.additionalSkillPaths,
+        sessionManager: deps.sessionManager,
+        createOptionsOverride: deps.createOptionsOverride,
+        signal,
+      });
+    } catch (error) {
+      try {
+        await doEvict(projectRoot, stage.sessionId);
+      } catch {
+        /* best-effort 释槽：evict 失败不盖原始 reason */
+      }
+      return markStageFailed(
+        runStore,
+        projectId,
+        run,
+        stage,
+        `worker 执行失败: ${(error as Error).message}`,
+        failReasons,
+      );
+    }
+
+    // setOwner 在 evict 之前（承重契约顺序 + 看板分组/re-attach 反查）。
+    stage.sessionId = result.sessionId;
+    doSetOwner(projectRoot, result.sessionId, stage.agentId);
+
+    // ★冻结释槽（F16）：每 attempt（含 completed/timeout/aborted/判空）都 evict 本 stage sid、不漏槽；
+    //   按本阶段 sessionId 逐出（只销毁本 stage worker 会话、不连带同 agent 用户接管会话）；只 destroy 不碰 owner map。
+    await doEvict(projectRoot, stage.sessionId);
+
+    // aborted：用户主动停——保持 pending、退出（批判定按取消收敛整 run）。
+    if (result.reason === "aborted") return;
+
+    const failReason =
+      result.reason === "timeout"
+        ? "阶段超时"
+        : !result.output.trim() && result.artifactIds.length === 0
+          ? "阶段未产出"
+          : null;
+
+    if (failReason === null) {
+      // 成功：落产物 id（parallel 无下游累积，不写 cache）。
+      stage.artifactId = result.artifactIds.at(-1) ?? null;
+      stage.status = "done";
+      stage.finishedAt = new Date().toISOString();
+      runStore.write(projectId, run);
+      return;
+    }
+    if (stage.retryCount < MAX_ATTEMPTS - 1) {
+      // 首次失败且未用尽重试：retryCount+1、清 sessionId 供 attempt1 重跑，进下一 attempt。
+      stage.retryCount += 1;
+      stage.sessionId = null;
+      runStore.write(projectId, run);
+    } else {
+      // 两次都失败：标本 stage failed（记 reason 供批判定），退出（绝不 pauseRun 整 run、留给批判定）。
+      return markStageFailed(runStore, projectId, run, stage, failReason, failReasons);
+    }
+  }
+}
+
+/**
+ * 并行分支：把**单个 stage** 标 failed 并落盘（原因记进 failReasons 进程内暂存供批判定取）——**不碰
+ * run.status**。与 pauseRun/failRun 的关键差异：只动这一个 stage、不改整 run 状态机（run 终态由批判定统一决定）。
+ */
+function markStageFailed(
+  store: MastermindRunStore,
+  projectId: string,
+  run: MastermindRun,
+  stage: MastermindStage,
+  reason: string,
+  failReasons: Map<number, string>,
+): void {
+  stage.status = "failed";
+  stage.statusDetail = undefined;
+  failReasons.set(stage.order, reason);
+  store.write(projectId, run);
 }
 
 /**

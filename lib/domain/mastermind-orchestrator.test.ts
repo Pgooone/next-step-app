@@ -445,3 +445,265 @@ describe("runMastermind AC-4.4 临时造 agentId", () => {
     expect(worker).not.toHaveBeenCalled();
   });
 });
+
+// ===========================================================================
+// C. 并行分支（M6/D-V1.2-87 档 2·真并行扇出）
+//    覆盖 T6 AC ①~⑥：全成/部分败(全 settle 才判)/批内 upstream 独立/serial 零回归/取消不起新 stage。
+// ===========================================================================
+describe("runMastermind 并行分支（execution=parallel）", () => {
+  /** 造一个 execution=parallel 的 running run（其余同 makeRun）。 */
+  function makeParallelRun(n: number): MastermindRun {
+    const run = makeRun(n);
+    run.plan.execution = "parallel";
+    return run;
+  }
+
+  /**
+   * 可控并行 harness：每 stage 一个 deferred，测试显式 resolve 才让该 stage 的 worker 回合结束——
+   * 借此断言「真并行」（全部 worker 都已进场后才逐个放行）+「全 settle 才判定」（失败 stage 先结束、
+   * 成功 stage 仍在跑、批判定等到最后一个 settle）。
+   *   - fauxMap 唯一计数源；worker 进场 set、evict destroy 删（真回落）。
+   *   - acquireSlot 用宽 limit（并行放行多 worker）；evictSpy 记 sid。
+   */
+  function makeParallelHarness(opts?: {
+    /** 按 firstMessage（含 stage.subTask=`子任务N`）判该 worker 返 reason；缺省全 completed。 */
+    reasonFor?: (firstMessage: string) => "completed" | "timeout";
+    /** acquireSlot 上限（并行需 ≥ stage 数才能全部同时放行）。 */
+    limit?: number;
+  }) {
+    const limit = opts?.limit ?? 8;
+    const fauxMap = new Map<string, AgentSessionWrapper>();
+    const enteredOrder: string[] = []; // worker 进场序（profile.id 顺序 = 派发序）
+    const firstMessages: string[] = [];
+    const evictedSids: (string | null)[] = [];
+    let seq = 0;
+    let peak = 0;
+
+    // 每次 runWorker 调用对应一个「回合结束」闸门；测试 resolve 它才让该 worker 结束。
+    const gates: Array<{ promise: Promise<void>; resolve: () => void }> = [];
+    function newGate() {
+      let resolve!: () => void;
+      const promise = new Promise<void>((r) => (resolve = r));
+      const g = { promise, resolve };
+      gates.push(g);
+      return g;
+    }
+
+    function makeFakeWrapper(sid: string): AgentSessionWrapper {
+      let alive = true;
+      return {
+        isAlive: () => alive,
+        inner: { isStreaming: false },
+        send: async () => null,
+        destroy: () => {
+          alive = false;
+          fauxMap.delete(sid);
+        },
+      } as unknown as AgentSessionWrapper;
+    }
+
+    const fauxRunWorker = (async (args: { firstMessage: string; profile: { id: string } }) => {
+      const idx = seq++;
+      const sid = "s" + idx;
+      const gate = newGate();
+      fauxMap.set(sid, makeFakeWrapper(sid));
+      peak = Math.max(peak, fauxMap.size);
+      enteredOrder.push(sid);
+      firstMessages.push(args.firstMessage);
+      await gate.promise; // ★等测试放行——期间其它 stage 的 worker 也已进场（证真并行）
+      const reason = opts?.reasonFor?.(args.firstMessage) ?? "completed";
+      return {
+        sessionId: sid,
+        reason,
+        output: reason === "completed" ? "out" + idx : "",
+        artifactIds: reason === "completed" ? ["a" + idx] : ([] as string[]),
+        createdContent: "C" + idx,
+        firstMessage: args.firstMessage,
+      };
+    }) as never;
+
+    const acquireSpy = vi.fn(async (o?: Parameters<typeof acquireSlot>[0]) =>
+      acquireSlot({
+        activeCount: () => fauxMap.size,
+        limit,
+        timeoutMs: o?.timeoutMs === Infinity ? 500 : (o?.timeoutMs ?? 500),
+        pollMs: 1,
+      }),
+    );
+
+    const evictSpy = vi.fn((root: string, sessionId: string | null) => {
+      evictedSids.push(sessionId);
+      return evictSession(root, sessionId, { getSession: (s) => fauxMap.get(s) });
+    });
+
+    return {
+      fauxMap,
+      enteredOrder,
+      firstMessages,
+      evictedSids,
+      gates,
+      /** 放行第 idx 个进场的 worker（让其回合结束）。 */
+      release: (idx: number) => gates[idx]?.resolve(),
+      releaseAll: () => gates.forEach((g) => g.resolve()),
+      get peak() {
+        return peak;
+      },
+      get workerCalls() {
+        return seq;
+      },
+      acquireSpy,
+      evictSpy,
+      deps: {
+        registry,
+        runStore,
+        profileStore,
+        runWorker: fauxRunWorker,
+        acquireSlot: acquireSpy as unknown as typeof acquireSlot,
+        setOwner: vi.fn(),
+        evictSession: evictSpy as unknown as typeof evictSession,
+        registerInnerSession: throwingRegister,
+      },
+    };
+  }
+
+  it("AC① 全成 → done + 每 stage 各 evict 一次 + acquireSlot 调用次数=stage 数 + 三 worker 同时在场（真并行）", async () => {
+    const run = makeParallelRun(3);
+    const h = makeParallelHarness();
+
+    const p = runMastermind(run, h.deps);
+
+    // 等三 worker 都进场（证真并行：全部 acquireSlot 放行、三 worker 同时占槽），再逐个放行。
+    await vi.waitFor(() => expect(h.workerCalls).toBe(3), { timeout: 1000 });
+    expect(h.fauxMap.size).toBe(3); // 三 worker 同时在场
+    expect(h.peak).toBe(3);
+    h.releaseAll();
+
+    const result = await p;
+    expect(result.status).toBe("done");
+    expect(result.stages.every((s) => s.status === "done")).toBe(true);
+    // 每 stage 各 evict 一次（3 次）、命中三 sid
+    expect(h.evictSpy).toHaveBeenCalledTimes(3);
+    expect([...h.evictedSids].sort()).toEqual(["s0", "s1", "s2"]);
+    // acquireSlot 调用次数 = stage 数（每 stage 一次、无重试）
+    expect(h.acquireSpy).toHaveBeenCalledTimes(3);
+    // 全 evict 后 fauxMap 回落 0
+    expect(h.fauxMap.size).toBe(0);
+  }, 6000);
+
+  it("AC② 部分失败 → 全批 settle 后才 pauseRun（不 fail-fast：失败发生后其余 stage 仍完成）", async () => {
+    const run = makeParallelRun(3);
+    // 按 firstMessage 精确指定失败 stage（含 stage.subTask=`子任务N`）：order1 两 attempt 都 timeout、
+    // 其余 completed。全并行（limit=8）；用 waitFor 循环持续放行新出现的 gate（含失败 stage retry 新起的）。
+    const h = makeParallelHarness({
+      limit: 8,
+      reasonFor: (msg) => (msg.includes("子任务1") && !msg.includes("子任务10") ? "timeout" : "completed"),
+    });
+
+    const p = runMastermind(run, h.deps);
+    // 持续放行：任何已出现但未放行的 gate 都 resolve，直到 run 促结。含失败 stage 的 attempt1 新 gate。
+    let settled = false;
+    const settlePromise = p.then((r) => {
+      settled = true;
+      return r;
+    });
+    const released = new Set<number>();
+    while (!settled) {
+      for (let i = 0; i < h.gates.length; i++) {
+        if (!released.has(i)) {
+          released.add(i);
+          h.release(i);
+        }
+      }
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    const result = await settlePromise;
+
+    // ★整批 settle 后才 pause（非 fail-fast）：order1 失败，但 order2/order3 都跑完成 done。
+    expect(result.status).toBe("paused");
+    expect(result.failedTeammate?.order).toBe(1);
+    expect(result.failedReason).toBe("阶段超时");
+    expect(result.failureOptions).toEqual(["retry", "reassign", "skip", "abort"]);
+    const byOrder = [...result.stages].sort((a, b) => a.order - b.order);
+    expect(byOrder[0].status).toBe("failed");
+    expect(byOrder[1].status).toBe("done"); // ★失败发生后其余 stage 仍完成（不 fail-fast 铁证）
+    expect(byOrder[2].status).toBe("done");
+    // 失败 stage 恰 2 次 worker（attempt0+1），成功 stage 各 1 次 → 共 4 次
+    expect(h.workerCalls).toBe(4);
+  }, 8000);
+
+  it("AC③ 批内 upstream 独立：每 stage 的 firstMessage 都不含上游产物（并行无累积喂下游）", async () => {
+    const run = makeParallelRun(3);
+    const h = makeParallelHarness();
+    const p = runMastermind(run, h.deps);
+    await vi.waitFor(() => expect(h.workerCalls).toBe(3), { timeout: 1000 });
+    h.releaseAll();
+    await p;
+    expect(h.firstMessages).toHaveLength(3);
+    for (const msg of h.firstMessages) {
+      expect(msg).not.toContain("上游产物");
+      expect(msg).not.toContain("###"); // formatUpstream 前缀，parallel 绝不出现
+      expect(msg).toContain("请在完成后调用 create_artifact");
+    }
+  }, 6000);
+
+  it("AC⑥ cancelRequested（signal aborted）→ 并行下不起任何 stage、run failed('已取消')、worker 0 调用", async () => {
+    const run = makeParallelRun(3);
+    const controller = new AbortController();
+    controller.abort(); // 起跑前即取消
+    const h = makeParallelHarness();
+    const result = await runMastermind(run, h.deps, controller.signal);
+    expect(result.status).toBe("failed");
+    expect(result.failedReason).toBe("已取消");
+    expect(result.finishedAt).not.toBeNull();
+    expect(h.workerCalls).toBe(0); // 并行下不起任何 stage
+  }, 4000);
+});
+
+// ===========================================================================
+// D. serial 零回归补充：无 execution 字段 / execution='serial' 都走串行 + 累积喂下游
+//    （现有 A/B 组测试已隐含无 execution 走 serial；此处显式钉死语义。）
+// ===========================================================================
+describe("runMastermind serial 零回归（无 execution / execution=serial 均串行累积）", () => {
+  function serialDeps(firstMessages: string[]) {
+    const fakeRun = (async (args: { firstMessage: string }) => {
+      firstMessages.push(args.firstMessage);
+      return {
+        sessionId: "s" + firstMessages.length,
+        output: "out" + firstMessages.length,
+        reason: "completed",
+        artifactIds: ["a" + firstMessages.length],
+        createdContent: "CONTENT" + firstMessages.length,
+      };
+    }) as never;
+    return {
+      registry,
+      runStore,
+      profileStore,
+      runWorker: fakeRun,
+      acquireSlot: (async () => {}) as unknown as typeof acquireSlot,
+      setOwner: vi.fn(),
+      evictSession: vi.fn(async () => {}) as unknown as typeof evictSession,
+      registerInnerSession: throwingRegister,
+    };
+  }
+
+  it("无 execution 字段 → 串行执行，stage2 firstMessage 含 stage1 累积产物", async () => {
+    const run = makeRun(2); // 无 execution
+    const firstMessages: string[] = [];
+    const result = await runMastermind(run, serialDeps(firstMessages));
+    expect(result.status).toBe("done");
+    // 串行累积：第 2 阶段首条消息含上游产物段 + 第 1 阶段产物正文
+    expect(firstMessages[1]).toContain("## 上游产物（累积）");
+    expect(firstMessages[1]).toContain("CONTENT1");
+  });
+
+  it("execution='serial' → 与无字段行为一致（串行累积）", async () => {
+    const run = makeRun(2);
+    run.plan.execution = "serial";
+    const firstMessages: string[] = [];
+    const result = await runMastermind(run, serialDeps(firstMessages));
+    expect(result.status).toBe("done");
+    expect(firstMessages[1]).toContain("## 上游产物（累积）");
+    expect(firstMessages[1]).toContain("CONTENT1");
+  });
+});

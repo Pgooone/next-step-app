@@ -56,6 +56,8 @@ export default function MastermindPlanCard({ run }: { run: MastermindRun }) {
           </span>
         </div>
 
+        <ExecutionModeBadge execution={run.plan.execution} />
+
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {teammates.map((t, i) => (
             <TeammateRow key={i} teammate={t} />
@@ -132,6 +134,26 @@ export default function MastermindPlanCard({ run }: { run: MastermindRun }) {
   }
 
   return null;
+}
+
+/**
+ * 执行模式小徽章（M6/D-V1.2-87）：parallel=「并行扇出」（注明物理并发受全局会话上限约束）/
+ * serial=「串行接力」（上游产物喂下游）。缺省（旧计划无字段）= serial。克制一行、走 t-kimi token。
+ */
+function ExecutionModeBadge({ execution }: { execution?: "serial" | "parallel" }) {
+  const parallel = execution === "parallel";
+  return (
+    <div data-testid="mastermind-plan-execution" style={execRow}>
+      <span style={{ ...execBadge, color: parallel ? "var(--run-accent)" : "var(--sub)" }}>
+        {parallel ? "⑂ 并行扇出" : "→ 串行接力"}
+      </span>
+      <span style={{ fontSize: "0.66rem", color: "var(--sub)", lineHeight: 1.35 }}>
+        {parallel
+          ? "队员同时开跑（物理并发受全局会话上限约束，含主脑）"
+          : "按顺序接力，上游产物喂给下游"}
+      </span>
+    </div>
+  );
 }
 
 /** 单个待派队员行：friendly 名 + role + 子任务 + 验收。 */
@@ -296,6 +318,22 @@ const costPill: React.CSSProperties = {
   background: "var(--run-bg)",
   color: "var(--run-accent)",
   fontWeight: 600,
+};
+// 执行模式徽章行：小徽章 + 一句说明，位于计划头与队员列之间。
+const execRow: React.CSSProperties = {
+  display: "flex",
+  alignItems: "baseline",
+  gap: 8,
+  marginBottom: 8,
+  flexWrap: "wrap",
+};
+const execBadge: React.CSSProperties = {
+  fontSize: "0.68rem",
+  fontWeight: 650,
+  padding: "0.1rem 0.5rem",
+  borderRadius: 999,
+  background: "var(--run-bg)",
+  whiteSpace: "nowrap",
 };
 const teammateRowBox: React.CSSProperties = {
   background: "var(--card)",

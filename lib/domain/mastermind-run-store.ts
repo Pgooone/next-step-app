@@ -86,6 +86,11 @@ export interface MastermindTeammate {
 export interface MastermindPlan {
   teammates: MastermindTeammate[];
   notes: string;
+  /**
+   * 执行模式（M6/D-V1.2-87）：`parallel`=批内真并行扇出（每队员独立、无累积喂下游）；
+   * `serial`=按 order 串行接力（上游产物累积喂下游）。旧 run JSON 无此字段 → 视为 serial、零迁移。
+   */
+  execution?: "serial" | "parallel";
 }
 
 /** 某阶段失败时记录的失败队员信息（供计划卡展示 + resume 定位）。 */
@@ -239,15 +244,23 @@ export class MastermindRunStore {
     }
   }
 
-  /** 「临时文件 + rename」原子落盘，内置 mkdir（仿 PipelineRunStore.atomicWrite）。 */
+  /**
+   * 「临时文件 + rename」原子落盘，内置 mkdir（仿 PipelineRunStore.atomicWrite）。
+   * tmp 名后缀 = `pid-<单调计数器>`（M6/D-V1.2-87 修）：并行分支同进程多 worker 可能对同一 run JSON
+   * 近乎同时 write，`tmp-${pid}` 会互相覆盖同一 tmp 文件、rename 交错致落盘损坏；加进程内单调计数器
+   * 让每次 write 用唯一 tmp 名，写-rename 各自独立、无交错。
+   */
   private atomicWrite(filePath: string, content: string): void {
     const dir = dirname(filePath);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    const tmp = `${filePath}.tmp-${process.pid}`;
+    const tmp = `${filePath}.tmp-${process.pid}-${++atomicWriteSeq}`;
     writeFileSync(tmp, content, "utf-8");
     renameSync(tmp, filePath);
   }
 }
+
+/** atomicWrite 的进程内单调计数器：让并行多 worker 写同一 run 时 tmp 文件名各不相同（防交错覆盖）。 */
+let atomicWriteSeq = 0;
 
 /** mastermind-runs/*.json 磁盘保留上限，超出按 createdAt 删最旧（仅终态 run）。 */
 const KEEP_M = 50;

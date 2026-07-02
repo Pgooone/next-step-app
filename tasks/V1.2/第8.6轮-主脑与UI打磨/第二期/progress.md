@@ -56,7 +56,8 @@
 ### ~~T5 · M5 其余细节~~ [已砍]
 - §10-⑥⑦ 全砍（中文人名池/走马灯/创建角色卡/全局进度头条）；M5a 并入 T3、M5c 零新增并入 T4 验收。**本卡取消**。
 
-### T6 · M6 并发档 2·真并行扇出 [🔴承重（评审升格）· ⬜]
+### T6 · M6 并发档 2·真并行扇出 [🔴承重（评审升格）· ✅收官（逻辑层）]
+> ns-r2-t6 实现（5 文件 +600：submit_plan schema 加 `execution?: serial|parallel` + 工具描述/总管 prompt 引导「独立→parallel/依赖→serial 默认」；编排器 `runParallel`+`runOneStageParallel`+`markStageFailed` 自成一体——**serial for 循环零修改行**、共享内存 run 对象 + 同步 write 防 read-modify-write 竞态、单 stage 沿用 serial 配方〔临时造 agentId/retry 小循环/queued statusDetail/acquireSlot Infinity/setOwner 先于 evict/每 attempt evict 本 stage sid/catch 内 best-effort evict〕、失败只标本 stage 绝不 fail-fast、全 settle 统一判定〔cancel→failRun/任一 failed→pauseRun 取 order 最小/skipped→partial〕、parallel 无累积喂下游；atomicWrite tmp 加单调计数器；计划卡 ExecutionModeBadge「⑂ 并行扇出/→ 串行接力」〕）。lead 三重复验：亲读全量 diff（架构铁律逐条）+ 独立门禁（lint0/tsc0/**test 625→633**）+ 变异命门（废 parallel 分流→3 并行 AC 红〔含 peak=3 真并行铁证/不 fail-fast 铁证〕、恢复 13/13 绿）。**AC⑤ tmp 唯一性判定间接覆盖**（一行 ++seq 亲读直证 + AC① 3 worker 并行多次写盘间接验、专门测试性价比低）。并行观感（N 卡同时亮绿+排队灰）= 真浏览器批量验。
 - **目标**：「并发按每次任务调整」落地为**批内真并行**（D-V1.2-87 档 2）——确认放行后 N 个队员同时亮绿并行跑。
 - **AC（mustFix 11 + ADR D-R8.6-15(5) 全进）**：
   1. submit_plan schema 加 `execution?: "parallel"|"serial"`（主脑按任务声明；**默认 serial 完整保留累积喂下游、既有 run 零回归**——强对照测试）。
