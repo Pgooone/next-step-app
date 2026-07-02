@@ -68,10 +68,10 @@
 - **落点**：`orchestrator-session.ts`（schema）+ `mastermind-orchestrator.ts`（并行分支）+ `mastermind-run-store.ts`（tmp）+ `factory-config.ts`（clamp 导出）+ approve 路由/计划卡（并行数展示）。
 - **依赖**：T1 先收官（nudge 与并行 run 时序交互：多 stage 同帧翻 done→逐条 nudge 或合并，实现时定）。
 
-### T7 · M7 全 Kimi 末步 [🔴唯一 spike · 最后一步 · 可留三期 · ⬜]
+### T7 · M7 全 Kimi 末步 [🔴唯一 spike · 最后一步 · ✅评估收官=留三期 backlog]
 - **目标**：主脑 run 期实时旁白（run→主脑会话推送、碰 T6 解耦）。
-- **流程**：M1~M6 全收官后 → hermetic spike 验可行性 + compaction 扛得住 → GO 才实现；风险过大留三期（本期以中间路收官=九成参与感）。
-- **依赖**：T1~T6 全收官。
+- **✅ 可行性调查收官（非 spike·读码为主的设计评审，workflow `wf_63e502b5-93a` 4 probe + final + lead 亲核三点）=do-not-build → 用户拍板留三期 backlog（QA D-V1.2-88 / ADR D-R8.6-17）**：M1 已端到端拿到 Kimi 旁白九成观感，M7 唯一增量=两边角（子步骤即时〔延迟无感〕+ 切走仍旁白〔伪需求〕），代价=破 T6 解耦 + 新建 run→主脑反查链（`MastermindRun` 零字段回指）+ 服务端并发工程；增量 << 代价。**方法论产出**：M7 无「决定能否动工」的经验型命门（P1/P2/P3 全分析型；P3 compaction 被某 probe 误标需 spike、lead 纠回 analytic=第一期 spike 惯性污染），故本期根本不需 spike。**三期重启条件 + 最小方案预案 + isStreaming 半拍坑证据链**留痕 `../../../../docs/V1.2/第8.6轮-主脑与UI打磨/第二期/M7-可行性调查-留三期backlog.md`。
+- **依赖**：T1~T6 全收官（已达成）。
 
 ### 双层验收（每卡 + 收官）[✅ 全 PASS（2026-07-02）]
 - 每卡：lead 三重复验（亲读全量 diff〔git status 全量看、勿 grep 过滤〕+ 独立门禁 lint/tsc/test + 变异命门即红即绿）→ 独立 verifier。✅ 全部执行。
@@ -82,4 +82,4 @@
 
 ---
 
-> **进度**：**第二期 T1~T6 全收官 + 双层验收全 PASS**（2026-07-02）。8 个 commit（本地 v1.2、基线 `657045c`）：`5283515` 评审+拍板+拆卡 → `158fdcd` T2 → `4fcfe31` T1 → `dc7a6ca` T3 → `52ded81` T4 → `bb9b916` T6 → `a2e01fa` D-R8.6-16 修复 → 收官回写。test 599→**637**。**待用户授权 push**；**T7(M7 全 Kimi spike) 为本期最后一步、可留三期**（M1 中间路已拿九成参与感、用户定夺是否还做）。
+> **进度**：**第二期整体收官**（2026-07-02）。T1~T6 全收官 + 双层验收全 PASS（已 push `b9983f6`、四引用同步）；**T7(M7) 可行性调查=do-not-build → 用户定留三期 backlog**（不需 spike、不改代码，QA D-V1.2-88 / ADR D-R8.6-17 / 留痕 M7-可行性调查-留三期backlog.md）。**第 8.6 轮第二期至此全部收口**。test 599→637。剩留三期 backlog：M7 全 Kimi（重启条件=产品转向无人值守后台跑）。
