@@ -18,6 +18,9 @@ export default function PipelineBoardStyles() {
 .pipeline-board.t-kimi-dark{--bg:#0c0c0e;--container:#161619;--card:transparent;--card-bd:transparent;--text:#e9e9ec;--sub:#8a8a90;--task:#6e6e74;--line:#46464c;--accent:#3b9eff;--run-bg:#11161f;--run-accent:#3b9eff;--run-glow:rgba(59,158,255,.3);--led:#30d158;--ledoff:#3a3a40;--done-bg:rgba(48,209,88,.16);--done-fg:#30d158;--badge-bg:#26262b;--badge-fg:#8a8a90;--pop:#1f1f24;--avab:rgba(255,255,255,.1);--error:#ff453a;--bg-hover:#26262b;--border:#46464c;--text-muted:#8a8a90}
 
 .pipeline-board.board{border-radius:14px;padding:.7rem;background:var(--bg);color:var(--text)}
+/* 主脑派活集群框（T4·仅 MastermindTeammateCards 用，不碰看板 .board）：圆角 + 细边框 + 容器底
+   （background 用 --container 而非 --bg——暗色 --bg=#0c0c0e 比对话背景更黑=方向反）。 */
+.pipeline-board.mastermind-board{border-radius:14px;padding:.7rem;border:1px solid var(--line);background:var(--container);color:var(--text)}
 .pipeline-board .hd{padding:.35rem .5rem .65rem}
 .pipeline-board .hd1{display:flex;align-items:center;gap:.45rem;font-size:.8rem;font-weight:650;color:var(--text)}
 .pipeline-board .hd1 .fork{color:var(--accent);display:inline-flex;align-items:center}

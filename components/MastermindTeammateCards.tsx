@@ -77,7 +77,10 @@ export default function MastermindTeammateCards({
     <div
       ref={containerRef}
       data-testid="mastermind-teammate-cards"
-      className={`pipeline-board ${themeClass}`}
+      // 专属修饰类 mastermind-board（非看板 .board）：给松散卡片列表加限定框（圆角/细边框/容器底），
+      // 对标 Kimi「⑂ Agent 集群」；样式在 PipelineBoardStyles 补 .pipeline-board.mastermind-board，
+      // background 用 var(--container) 而非 var(--bg)（暗色 #0c0c0e 比对话背景更黑=方向反）。
+      className={`pipeline-board mastermind-board ${themeClass}`}
       style={{ margin: "0.4rem 0 0.8rem" }}
     >
       <PipelineBoardStyles />
@@ -88,19 +91,49 @@ export default function MastermindTeammateCards({
           加载派活计划…
         </div>
       ) : isRunning ? (
-        <div className="clist">
-          {run.stages.map((s) => (
-            // MastermindStage 结构上是 StageCardStage 的子类型（多字段 + status 更宽），直传无需 as 强转。
-            <PipelineStageCard
-              key={s.order}
-              stage={s}
-              totalStages={run.stages.length}
-              stages={run.stages}
-              onOpenSession={onOpenSession}
-              onOpenArtifact={onOpenArtifact}
-            />
-          ))}
-        </div>
+        <>
+          {/* 集群头（仿 PipelineBoard.tsx:135-159 的 .hd/.hd1）：⑂ fork + 「主脑派活」+ .cnt 计数。
+              串行 + 排队语义 → 用「已完成 x/N」（非 Kimi「N 并行」）；running/queued 靠卡片本体区分、不进头计数。 */}
+          <div className="hd">
+            <div className="hd1">
+              <span className="fork" aria-hidden="true">
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <line x1="6" y1="3" x2="6" y2="15" />
+                  <circle cx="18" cy="6" r="3" />
+                  <circle cx="6" cy="18" r="3" />
+                  <path d="M18 9a9 9 0 0 1-9 9" />
+                </svg>
+              </span>
+              <span>主脑派活</span>
+              <span className="cnt">
+                已完成 {run.stages.filter((s) => s.status === "done").length} /{" "}
+                {run.stages.length}
+              </span>
+            </div>
+          </div>
+          <div className="clist">
+            {run.stages.map((s) => (
+              // MastermindStage 结构上是 StageCardStage 的子类型（多字段 + status 更宽），直传无需 as 强转。
+              <PipelineStageCard
+                key={s.order}
+                stage={s}
+                totalStages={run.stages.length}
+                stages={run.stages}
+                onOpenSession={onOpenSession}
+                onOpenArtifact={onOpenArtifact}
+              />
+            ))}
+          </div>
+        </>
       ) : (
         <MastermindPlanCard run={run} />
       )}

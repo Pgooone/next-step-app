@@ -47,7 +47,8 @@
   5. friendlyAgentName 补 4 位置：`StageHoverPreview:156` + `StageSessionMenu:190/280/293`（不再露 role-uuid8）。
 - **依赖**：无；**先于 T4 commit**（同轮多卡改 PipelineBoardStyles/卡片族，串行防冲突）。
 
-### T4 · M4 集群框 + queued 态 [🟢视觉 · ⬜]
+### T4 · M4 集群框 + queued 态 [🟢视觉 · ✅收官（逻辑层）]
+> ns-r2-t4 实现（2 文件 +64-14：外层加专属类 `mastermind-board`〔PipelineBoardStyles 新增一条规则：圆角 14px + 1px var(--line) 边框 + var(--container) 底、绝不铺 var(--bg)、不碰 .board 既有规则〕+ running 分支渲 .hd 集群头〔fork SVG 复制 + 「主脑派活」+ .cnt「已完成 done/total」〕；PipelineStageCard 映射/gsap/queued badgeFor 一字未动）。lead 亲读全量 diff + 独立门禁（lint0/tsc0/test625 零回归）。**队员自报取舍待真浏览器判**：外框恒在最外层（awaiting 计划卡态也带框=与计划卡自框双层嵌套），若视觉冗余再一行收窄。框/集群头/双态/双主题 = 真浏览器批量验。
 - **目标**：内联队员卡片加限定框（对标 Kimi「⑂ Agent 集群」）+ 集群头 + queued 灰态呈现。
 - **AC（mustFix 8 进）**：专属类 `mastermind-board`（`MastermindTeammateCards.tsx:80` 加类 + `PipelineBoardStyles` 补 `.pipeline-board.mastermind-board{圆角/padding/border/background:var(--container) 或透明}`、**绝不铺 var(--bg)**）；渲 `.hd` 集群头（fork SVG 复制 `PipelineBoard.tsx:137-153` + 「主脑派活」+ `.cnt`「已完成 {done}/{total}」）；running 亮绿点阵 + queued「排队中」双态同框（链路已通、评审坐实）；看板 modal 视觉零回归；真浏览器亮暗双主题 + pageErrors=0 + **顺带确认 M5c 下钻可用**（点队员→StageSessionMenu transcript/产物，零新增）。
 - **依赖**：T3 先 commit（同改 PipelineBoardStyles/卡片族）。
