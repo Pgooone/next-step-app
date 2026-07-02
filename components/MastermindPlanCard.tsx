@@ -37,6 +37,18 @@ export default function MastermindPlanCard({ run }: { run: MastermindRun }) {
     const teammates = run.plan.teammates;
     return (
       <div data-testid="mastermind-plan-card" style={cardBox}>
+        <div data-testid="mastermind-plan-waiting" style={waitingBar}>
+          <span aria-hidden style={{ fontSize: "0.95rem", lineHeight: 1 }}>
+            ⏳
+          </span>
+          <div style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0 }}>
+            <span style={{ fontWeight: 650, color: "var(--run-accent)" }}>等你确认放行</span>
+            <span style={{ fontSize: "0.68rem", color: "var(--sub)" }}>
+              主脑已暂停，确认或打回后才会继续
+            </span>
+          </div>
+        </div>
+
         <div style={cardHead}>
           <span style={{ fontWeight: 700 }}>派活计划</span>
           <span data-testid="mastermind-plan-cost" style={costPill}>
@@ -250,6 +262,18 @@ function PausedDecision({
 }
 
 // ---- 样式（全用 t-kimi token，须在 .pipeline-board t-kimi 壳内渲染才生效） ----
+// awaiting 态顶部等待条：细底色条 + ⏳，让用户一眼看出「主脑在等我」非「对话结束」（静态、无动画）。
+const waitingBar: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  marginBottom: 10,
+  padding: "0.4rem 0.6rem",
+  borderRadius: 8,
+  background: "var(--run-bg)",
+  border: "1px solid var(--run-accent)",
+  fontSize: "0.78rem",
+};
 const cardBox: React.CSSProperties = {
   background: "var(--container)",
   border: "1px solid var(--line)",
