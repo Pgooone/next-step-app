@@ -73,10 +73,13 @@
 - **流程**：M1~M6 全收官后 → hermetic spike 验可行性 + compaction 扛得住 → GO 才实现；风险过大留三期（本期以中间路收官=九成参与感）。
 - **依赖**：T1~T6 全收官。
 
-### 双层验收（每卡 + 收官）
-- 每卡：lead 三重复验（亲读全量 diff〔git status 全量看、勿 grep 过滤〕+ 独立门禁 lint/tsc/test + 变异命门即红即绿）→ 独立 verifier。
-- 收官端到端（对标 Kimi 回放）：说需求 → 计划卡「⏳等确认」→ 确认 → 集群框内 N 队员**并行**跑（running 亮绿 + queued 灰）→ 每队员完主脑自动冒小结 → 全完自动产汇总受管文档 → hover 贴卡 6px 显职衔+验收点 → pageErrors=0。
+### 双层验收（每卡 + 收官）[✅ 全 PASS（2026-07-02）]
+- 每卡：lead 三重复验（亲读全量 diff〔git status 全量看、勿 grep 过滤〕+ 独立门禁 lint/tsc/test + 变异命门即红即绿）→ 独立 verifier。✅ 全部执行。
+- **UI 判据批 ✅ 全 PASS**（独立 verifier ns-r2-verify-ui + lead 亲读 B1/B4/C4/C3 截图，`/tmp/r86p2-verify/results.json`）：T2 等待条亮暗双主题真值样式；T3 hover **贴卡 gap=6px 实测**（修复前 +320px）+ Portal 到 body 铁证（closest('.brow')=null）+ token 不白屏 + z:1050/1060 + **板内浮框盖 modal（elementFromPoint 命中）** + 无 uuid8 + role 职衔 + 验收清单真值 + menu 内点不关/Esc/外点关；T4 集群框（14px 圆角/1px --line/--container 底≠--bg）+ 集群头「主脑派活 已完成 1/3」+ queued「排队中·等会话槽」双态 + 双主题；T6 执行模式徽章两态；pageErrors=0。**C4 双框裁决=保持现状**（外层薄框把等待条+计划+徽章+按钮框成主脑派活块、层次清晰）。
+- **🔥 端到端首跑揪出真 bug（ADR D-R8.6-16、fix commit `a2e01fa`）**：`computeNudges`「无翻转返回旧快照」×「首见略过」组合使**基线后诞生的 run nudge 全哑**（=会话中途 submit_plan 主流程必踩；21 单测全绿漏网+评审 M1-P3 矩阵未覆盖「run 中途诞生」时序）→ 修快照吸收新 key + 4 回归测试（test 633→637）+ 变异恰 4 红。**教训：真浏览器端到端是权威 oracle 再应验；状态机测试矩阵必须含「实体在观察者就位后才诞生」时序**。
+- **T1 端到端 ✅ 全 PASS**（修复后 lead 亲驱 `scripts/verify-r86p2-nudge-e2e.mjs`〔不入 git〕，真 DeepSeek 2 队员 parallel，jsonl 权威 + lead 亲读 E1/E2 截图，`results-e2e2.json`）：**阶段小结 nudge 自动冒 ×2**（且第 2 队员先完成先被 nudge=parallel 真并行侧证；显 role 职衔）→ 主脑真吐旁白（「文案B已完成…一半完成一半等待」→「两并行任务全部完工…进入汇总收尾」）→ **终态汇总 nudge 带 runId + summaryCalls 0→1** + 两队员受管文档真落盘（书店/咖啡店宣传口号 v1）→ **F5 零重放**（前后 stage=2/final=1 不变）。2 条 403 = fixture 根名不匹配允许根正则 `^pi-cwd-\d{8}$` 的文件树噪声、非产品错误（dev log 佐证）。**杂音记录**：主脑首条小结回合违反措辞调了 `bash echo`（被工具超时取消 245s、无害）——反诱导措辞对 LLM 遵守率不完美、属预期内。
+- **v1 端到端驱动两教训**（verifier 版）：①读 transcript 按 mtime 最新会误读队员 worker 会话（与主脑同 cwd 同目录且最新写入）→ 须按 URL `?session=` 精确锚定；②8 分钟总预算太紧 → 14 分钟。
 
 ---
 
-> **进度**：设计评审 GO（2026-07-02）+ §10 全拍 + 详设回填完毕。**下一步 = T1 实现**（agent team）。
+> **进度**：**第二期 T1~T6 全收官 + 双层验收全 PASS**（2026-07-02）。8 个 commit（本地 v1.2、基线 `657045c`）：`5283515` 评审+拍板+拆卡 → `158fdcd` T2 → `4fcfe31` T1 → `dc7a6ca` T3 → `52ded81` T4 → `bb9b916` T6 → `a2e01fa` D-R8.6-16 修复 → 收官回写。test 599→**637**。**待用户授权 push**；**T7(M7 全 Kimi spike) 为本期最后一步、可留三期**（M1 中间路已拿九成参与感、用户定夺是否还做）。
