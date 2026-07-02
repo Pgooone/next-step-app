@@ -20,5 +20,7 @@ export type StageCardStage = Omit<PipelineRunStage, "status"> & {
   status: DispatchStatus | "skipped";
   retryCount?: number;
   acceptanceCriteria?: string;
+  /** 队员职衔（M5a，来自 MastermindStage.role）；第七轮流水线 stage 无此字段 → undefined，卡片 fallback friendly 名。 */
+  role?: string;
   isDynamic?: boolean;
 };

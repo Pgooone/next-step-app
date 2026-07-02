@@ -47,6 +47,7 @@ export async function POST(
       finishedAt: null,
       retryCount: 0,
       acceptanceCriteria: t.acceptanceCriteria,
+      role: t.role, // M5a：职衔落 stage（比 agentName「role-uuid8」更早有值、供 hover 显职衔）。
     }));
     run.currentStageIndex = 0;
     run.status = "running";

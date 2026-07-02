@@ -68,6 +68,8 @@ export interface MastermindStage {
   finishedAt: string | null;
   retryCount: number;
   acceptanceCriteria?: string;
+  /** 计划里的队员职衔（如「日本市场研究员」），供 hover/菜单显职衔（M5a）；旧 run JSON 无则 undefined、向后兼容。 */
+  role?: string;
   isDynamic?: boolean;
 }
 

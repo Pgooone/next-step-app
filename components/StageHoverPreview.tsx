@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { agentAvatarDataUri } from "@/lib/pipeline/avatar";
 import { STATUS_META } from "@/lib/pipeline/status-meta";
 import { computeFixedPopover } from "@/lib/pipeline/popover-position";
+import { friendlyAgentName } from "@/lib/mastermind/friendly-name";
+import { usePopoverPortalHost } from "@/lib/pipeline/use-popover-portal-host";
 import type { StageCardStage } from "@/lib/pipeline/stage-card-stage"; // 仅类型（超集，含 skipped）
 
 /** 把 startedAt/finishedAt 算成「耗时 1m23s」；未完成显「运行中」、未起显「—」。 */
@@ -77,9 +80,13 @@ export default function StageHoverPreview({
   // 卡片 badgeFor 已优先显「排队中·等会话槽」，浮窗头徽章同步取 queued 键，消「卡片排队/浮窗待执行」矛盾。
   const meta =
     stage.statusDetail === "queued" ? STATUS_META.queued : STATUS_META[stage.status];
-  const roleLabel = totalStages
+  const stageLabel = totalStages
     ? `阶段 ${stage.order} / ${totalStages}`
     : `阶段 ${stage.order}`;
+  // M5a：头徽章名剥 uuid8（friendlyAgentName）；副行显职衔=优先 stage.role（计划角色，如「日本市场研究员」），
+  //   并接阶段序号——role 缺省（如第七轮流水线看板 stage 无 role）时只显阶段序号，不重复主名。
+  const displayName = friendlyAgentName(stageName ?? stage.agentName ?? stage.agentId);
+  const subLabel = stage.role ? `${stage.role} · ${stageLabel}` : stageLabel;
 
   // N2：fixed 坐标必须在 useLayoutEffect 测量后存 state（渲染期/SSR 不能同步 getBoundingClientRect、首帧 rect 为 0）。
   const [placement, setPlacement] = useState<{
@@ -96,7 +103,12 @@ export default function StageHoverPreview({
     setPlacement({ left: p.left, top: p.top, bottom: p.bottom, maxHeight: p.maxHeight });
   }, [anchorRef]);
 
-  return (
+  // M3：Portal 到 body 级 `.pipeline-board t-kimi-{theme}` wrapper——脱离 `.brow`（GSAP transform 造的包含块）、
+  // fixed 恢复相对视口 + token 有值。host 未就绪（SSR/首帧）不渲。
+  const host = usePopoverPortalHost();
+  if (!host) return null;
+
+  return createPortal(
     <div
       data-testid="stage-hover-preview"
       role="tooltip"
@@ -109,7 +121,9 @@ export default function StageHoverPreview({
         bottom: placement?.bottom ?? undefined,
         left: placement?.left ?? 0,
         visibility: placement ? "visible" : "hidden",
-        zIndex: 50,
+        // M3 评审遗漏命门：Portal 到 body 后成 PipelineModal(z:1000) 同胞，须 >1000 才不被盖；
+        // 取 1050（<ModelsConfig z:1100 / OnboardingTour z:2000 / Toaster z:9999），与 menu(1060) 保相对序。
+        zIndex: 1050,
         width: POPOVER_WIDTH,
         maxWidth: "calc(100vw - 16px)",
         background: "var(--pop)",
@@ -153,10 +167,10 @@ export default function StageHoverPreview({
               whiteSpace: "nowrap",
             }}
           >
-            {stageName ?? stage.agentName ?? stage.agentId}
+            {displayName}
           </div>
           <div style={{ fontSize: "0.72rem", color: "var(--sub)", marginTop: "0.04rem" }}>
-            {roleLabel}
+            {subLabel}
           </div>
         </div>
         <span
@@ -191,7 +205,7 @@ export default function StageHoverPreview({
         </div>
 
         <div style={h3Style}>验收清单</div>
-        <div style={bodyTextStyle}>暂无</div>
+        <div style={bodyTextStyle}>{stage.acceptanceCriteria || "暂无"}</div>
 
         <div style={h3Style}>最近动作</div>
         <div style={bodyTextStyle}>暂无</div>
@@ -209,6 +223,7 @@ export default function StageHoverPreview({
       >
         耗时 · {formatDuration(stage.startedAt, stage.finishedAt)}
       </div>
-    </div>
+    </div>,
+    host,
   );
 }

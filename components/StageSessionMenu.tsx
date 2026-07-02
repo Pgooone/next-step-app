@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { MessageView } from "@/components/MessageView";
 import { computeFixedPopover } from "@/lib/pipeline/popover-position";
+import { friendlyAgentName } from "@/lib/mastermind/friendly-name";
+import { usePopoverPortalHost } from "@/lib/pipeline/use-popover-portal-host";
 // D-R7B-07：领域层含 node:fs，UI 只 import type + fetch JSON。第 8.6 轮 T5：收超集 StageCardStage
 // （status 含 "skipped"，协变兼容第七轮窄 PipelineRunStage）。
 import type { StageCardStage } from "@/lib/pipeline/stage-card-stage";
@@ -145,7 +148,12 @@ export default function StageSessionMenu({
     onSelectStage?.(s);
   };
 
-  return (
+  // M3：Portal 到 body 级 `.pipeline-board t-kimi-{theme}` wrapper——同 StageHoverPreview，脱离 `.brow`
+  // （GSAP transform 造的包含块）、fixed 恢复相对视口 + token 有值。host 未就绪（SSR/首帧）不渲。
+  const host = usePopoverPortalHost();
+  if (!host) return null;
+
+  return createPortal(
     <div
       ref={menuRef}
       data-testid="stage-session-menu"
@@ -169,7 +177,9 @@ export default function StageSessionMenu({
         bottom: placement?.bottom ?? undefined,
         left: placement?.left ?? 0,
         visibility: placement ? "visible" : "hidden",
-        zIndex: 60,
+        // M3 评审遗漏命门：Portal 到 body 后成 PipelineModal(z:1000) 同胞，须 >1000 才不被盖；
+        // 取 1060（>hover 浮窗 1050 保相对序，<ModelsConfig z:1100 / OnboardingTour z:2000 / Toaster z:9999）。
+        zIndex: 1060,
         width: MENU_WIDTH,
         maxWidth: "calc(100vw - 16px)",
         maxHeight: placement?.maxHeight ?? "80vh",
@@ -187,7 +197,8 @@ export default function StageSessionMenu({
       {/* 头部：名 + 序号 + 关闭（钉死不跟滚：flex none） */}
       <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", flex: "none" }}>
         <span style={{ fontWeight: 700, fontSize: "0.86rem", color: "var(--text)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {viewStage.agentName ?? viewStage.agentId}
+          {/* M5a：剥 uuid8 尾巴——优先 role（职衔）、否则 friendly 名。 */}
+          {viewStage.role || friendlyAgentName(viewStage.agentName ?? viewStage.agentId)}
         </span>
         <span style={{ fontSize: "0.68rem", color: "var(--sub)", fontVariantNumeric: "tabular-nums" }}>
           阶段 {String(viewStage.order).padStart(2, "0")}
@@ -277,7 +288,7 @@ export default function StageSessionMenu({
                   key={s.order}
                   disabled={disabled}
                   onClick={() => selectStage(s)}
-                  title={disabled ? "该阶段尚未开始" : s.agentName ?? s.agentId}
+                  title={disabled ? "该阶段尚未开始" : s.role || friendlyAgentName(s.agentName ?? s.agentId)}
                   style={{
                     fontSize: "0.66rem",
                     padding: "0.12rem 0.45rem",
@@ -290,14 +301,15 @@ export default function StageSessionMenu({
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {String(s.order).padStart(2, "0")} {s.agentName ?? s.agentId}
+                  {String(s.order).padStart(2, "0")} {s.role || friendlyAgentName(s.agentName ?? s.agentId)}
                 </button>
               );
             })}
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    host,
   );
 }
 

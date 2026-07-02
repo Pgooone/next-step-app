@@ -36,7 +36,8 @@
 - **落点**：`components/MastermindPlanCard.tsx:36-88` awaiting 分支顶部。
 - **依赖**：无（可与 T1 并批实现、不同文件）。
 
-### T3 · M3 hover Portal 修 + M5a role/uuid8/验收点 [🟢回归+P1 · ⬜]
+### T3 · M3 hover Portal 修 + M5a role/uuid8/验收点 [🟢回归+P1 · ✅收官（逻辑层）]
+> ns-r2-t3 实现（7 文件：新建 `lib/pipeline/use-popover-portal-host.ts` 共享 Portal 宿主 hook〔自建自毁 + theme 跟手 + 绝不含 board + 无 transform + SSR 守卫〕；两浮框 createPortal + z 1050/1060〔评审遗漏命门、保相对序〕+ scheduleHide/外点关/Esc 原样保留 + popover-position 零改动；role 3 处纯增量〔store/approve/StageCardStage〕+ friendlyAgentName 补 4 位置 + 验收清单渲真值 + 41 行 role 兼容测试）。lead 三重复验：亲读全量 diff + useTheme 形态命门亲核（Theme="light"|"dark" 与既有消费方一致）+ 独立门禁（lint0/tsc0/**test 624→625**）+ 变异（删 StageCardStage.role → 5 消费点 + 2 断言红、恢复绿）。**⚠️ lead 操作教训：变异恢复对「已跟踪但未 commit」文件误用 git checkout 抹掉队员改动（幸有 diff 在手逐字恢复）——变异一律 cp 备份法、任何未 commit 状态禁 git checkout**。hover 贴卡 6px/token 不白屏/板内盖 modal = 真浏览器批量验。
 - **目标**：修 T5 GSAP transform 包含块回归（浮框飞 +320px→贴卡 6px）+ hover 内容对齐 Kimi（职衔 + 验收点 + 剥 uuid8）。
 - **AC（mustFix 6/7/9 全进）**：
   1. 🔴 `StageHoverPreview` + `StageSessionMenu` createPortal 到 body 级 wrapper：`pipeline-board t-kimi-{theme}`（**绝不含 board**）、static、无 transform/filter/contain；每实例自建自毁 + theme 跟手 + mounted 守卫；`popover-position.ts` 一字不动。
